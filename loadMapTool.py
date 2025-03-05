@@ -21,9 +21,13 @@ MapListFromTxt = openMapFile.readlines()
 openMapFile.close()
 MapListFromTxt = MapListFromTxt[0].split(',')
 
+startIndexForMapText = 0
+
+
 for x in range(len(grid)):
     for y in range(len(grid[x])):
-        grid[x][y]=int(MapListFromTxt[y * (x+1)])
+        grid[x][y]=int(MapListFromTxt[startIndexForMapText])
+        startIndexForMapText += 1
 
 runing = True
 while runing:
