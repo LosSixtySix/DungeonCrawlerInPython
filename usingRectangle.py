@@ -31,18 +31,6 @@ grid[wallStartx][wallstarty- 20] = 2
 
 
 runing = True
-font2 = pygame.freetype.SysFont("timesnewroman",30)
-
-
-
-font = pygame.freetype.SysFont("timesnewroman",10)
-text = font.render('@',blue,green)
-wall = font2.render('-',blue,green)
-
-
-
-print(map)
-
 while runing:
     
     pygame.time.delay(100)
@@ -77,8 +65,11 @@ while runing:
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if grid[x][y] == 2:
-                font2.render_to(win,(x,y),'-',green,blue)
+                pygame.draw.rect(win,blue,pygame.Rect(x,y,10,10))
+    
+    pygame.draw.rect(win,green,pygame.Rect(playerposx,playerposy,10,10))
+    pygame.display.flip()
 
-    font.render_to(win,playerpos,'@',green,green)
+
     pygame.display.update()
 
