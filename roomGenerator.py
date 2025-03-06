@@ -2,6 +2,7 @@
 import pygame
 import pygame.freetype
 import random as rand
+import connectingEmptyRooms as CER
 
 pygame.init()
 pygame.font.init()

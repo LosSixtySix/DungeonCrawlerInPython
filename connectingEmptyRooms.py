@@ -1,22 +1,23 @@
 
 
+WIDTH = 720
+HEIGHT = 720
+#grid = [[2 for i in range(10)] for j in range(10)]
+grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 
-grid = [[2 for i in range(10)] for j in range(10)]
+
+openMapFile = open("savedMaps.txt",'r')
+MapListFromTxt = openMapFile.readlines()
+openMapFile.close()
+MapListFromTxt = MapListFromTxt[0].split(',')
+
+startIndexForMapText = 0
 
 
-grid[0][0] = 0
-
-grid[2][3]= 0
-grid[2][4]= 0
-grid[2][5]= 0
-grid[2][6]= 0
-grid[3][6] =0
-grid[4][6] =0
-grid[3][5] =0
-grid[4][5] =0
-grid[3][4] =0
-grid[4][4] =0
-
+for x in range(len(grid)):
+    for y in range(len(grid[x])):
+        grid[x][y]=int(MapListFromTxt[startIndexForMapText])
+        startIndexForMapText += 1
 
 
 def findEmptySpots(grid):
@@ -41,6 +42,14 @@ def CheckIfEdge(position, grid):
         return True
     return False
 
+def noAdjacency(position):
+    x = position[0]
+    y = position[1]
+
+    if grid[x][y-1] == 2 and grid[x][y+1] == 2 and grid[x-1][y] == 2 and grid[x+1][y] == 2:
+        return True
+    return False
+
 def CheckAdjacency(positionOne,positionTwo):
     if positionOne[0] +1 == positionTwo[0] or positionOne[0] -1 == positionTwo[0]:
         return True
@@ -56,99 +65,60 @@ def CheckAdjacentNode(nodeOne,nodeTwo):
             if CheckAdjacency(positionOne,positionTwo):
                 return True
     return False
-def CheckDuplicatePosition(NodeOne,NodeTwo):
-    for positionOne in NodeOne:
-        for positionTwo in NodeTwo:
-            if positionOne == positionTwo:
-                return True
-    return False
 
 
-def LookForEdges(position,listOfEdges,grid):
-    if CheckIfEdge(position, grid):
-        listOfEdges.append(position)
-        
-def removeDuplicates(listOfPositions):
-    if len(listOfPositions) != 0:
-        for position in listOfPositions:
-            for positionTwo in listOfPositions:
-                if position == positionTwo:
-                    while(position in listOfPositions):
-                        listOfPositions.remove(position)
-                    listOfPositions.append(position)
+def CreateNode(emptySpots, node):
+    for index in range(len(emptySpots)):
+        if noAdjacency(emptySpots[index]):
+            node.append(emptySpots[index])
+            emptySpots.remove(emptySpots[index])
+            return
+        else:
+            for index2 in range(len(emptySpots)):
+                if emptySpots[index] != emptySpots[index2]:
+                    if CheckAdjacency(emptySpots[index],emptySpots[index2]):
+                        node.append(emptySpots[index2])
+            node.append(emptySpots[index])
 
-def CreateNode(emptySpots, currentPosition):
-    node = []
-    for spot in emptySpots:
-        if CheckAdjacency(spot,currentPosition):
-            node.append(spot)
-    node.append(currentPosition)
-    return node
-
-def getEmptyNodes(emptySpots, grid):
-    emptyNodes = []
+#def CreateNode(emptySpots, currentPosition):
+#    node = []
+#    for spot in emptySpots:
+#        if CheckAdjacency(spot,currentPosition):
+#            node.append(spot)
+#    node.append(currentPosition)
+#    return node
 
 
-
-    for emptyPosition in emptySpots:
-        edges = []
-        LookForEdges(emptyPosition,edges,grid)
-        edges = removeDuplicates(edges)
-        emptyNodes.append(edges)
-    return emptyNodes
-
-
-def detectDuplicatesInNodes(nodes):
-    for nodeOne in nodes:
-        for nodeTwo in nodes:
-            if nodeOne == nodeTwo:
-                pass
-            else:
-                if CheckDuplicatePosition(nodeOne,nodeTwo):
-                    return True
                 
 def mergeNodes(nodeOne,nodeTwo):
     for position in nodeTwo:
         nodeOne.append(position)
     return nodeOne
 
-emptyPockets = findEmptySpots(grid)
-nodes = []
+def createNodes(grid):
+    emptySpots = findEmptySpots(grid)
+    nodes = []
 
-for x in emptyPockets:
-    node = CreateNode(emptyPockets, x)
-    nodes.append(node)
+    for spot in emptySpots:
+        node = []
+        CreateNode(emptySpots, node)
 
+    return nodes
 
-while(detectDuplicatesInNodes(nodes)):
-    for nodeOne in nodes:
-        for nodeTwo in nodes:
-            if nodeOne == nodeTwo:
-                pass
-            else:
-                if CheckAdjacentNode(nodeOne,nodeTwo):
-                    mergedNode = mergeNodes(nodeOne,nodeTwo)
-                    nodes.remove(nodeOne)
-                    nodes.remove(nodeTwo)
-                    nodes.append(mergedNode)
-
-for node in nodes:
-    removeDuplicates(node)
-    print(node)
-
+createNodes(grid)
 
 
 #emptyNodes = getEmptyNodes(emptyPockets,grid)
 
 
 
-consoleVersionOfGrid = []
+#consoleVersionOfGrid = []
 
-for x in range(len(grid)):
-    row = ""
-    for y in range(len(grid[x])):
-        row += str(grid[x][y])
-    consoleVersionOfGrid.append(row)
+#for x in range(len(grid)):
+#    row = ""
+#    for y in range(len(grid[x])):
+#        row += str(grid[x][y])
+#    consoleVersionOfGrid.append(row)
 
-for x in consoleVersionOfGrid:
-    print(x)
+#for x in consoleVersionOfGrid:
+#    print(x)
