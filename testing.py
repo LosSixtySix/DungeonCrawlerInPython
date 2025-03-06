@@ -1,4 +1,7 @@
-list = [ (0,0)]
+list = [ (0,0),(0,0),(0,0)]
+print(list)
 
-if (0,0) in list == False:
-    print("yes")
+
+while((0,0) in list):
+    list.remove((0,0))
+print(list)
