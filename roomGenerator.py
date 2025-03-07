@@ -44,6 +44,12 @@ else:
     grid[wallStartx][wallstarty- 2] = 2
 
 
+
+emptyNodes = CER.createNodes(grid)
+
+
+print(emptyNodes)
+
 win = pygame.display.set_mode((WIDTH,HEIGHT))
 
 white = (255, 255, 255) 

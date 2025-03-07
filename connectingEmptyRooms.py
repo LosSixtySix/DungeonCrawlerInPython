@@ -1,24 +1,24 @@
 
 
-WIDTH = 720
-HEIGHT = 720
+#WIDTH = 720
+#HEIGHT = 720
 #grid = [[2 for i in range(10)] for j in range(10)]
 
-grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+#grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 
 
-openMapFile = open("savedMaps.txt",'r')
-MapListFromTxt = openMapFile.readlines()
-openMapFile.close()
-MapListFromTxt = MapListFromTxt[0].split(',')
+#openMapFile = open("savedMaps.txt",'r')
+#MapListFromTxt = openMapFile.readlines()
+#openMapFile.close()
+#MapListFromTxt = MapListFromTxt[0].split(',')
 
-startIndexForMapText = 0
+#startIndexForMapText = 0
 
 
-for x in range(len(grid)):
-    for y in range(len(grid[x])):
-        grid[x][y]=int(MapListFromTxt[startIndexForMapText])
-        startIndexForMapText += 1
+#or x in range(len(grid)):
+#    for y in range(len(grid[x])):
+#        grid[x][y]=int(MapListFromTxt[startIndexForMapText])
+#        startIndexForMapText += 1
 
 #grid2 = [[0 for i in range(12)] for j in range(3)]
 
@@ -51,7 +51,7 @@ def CheckIfEdge(position, grid):
         return True
     return False
 
-def noAdjacency(position):
+def noAdjacency(position,grid):
     x = position[0]
     y = position[1]
 
@@ -111,11 +111,11 @@ def createNodes(grid):
             if notOdd:
                 foundSpotOneAdjacency = False
                 foundSpotTwoAdjacency = False
-            if noAdjacency(spotOne):
+            if noAdjacency(spotOne,grid):
                 nodes.append([spotOne])
                 if len(emptySpots) > 0:
                     spotOne = emptySpots.pop(0)
-            elif noAdjacency(spotTwo):
+            elif noAdjacency(spotTwo,grid):
                 nodes.append([spotTwo])
                 if len(emptySpots) > 0:
                     spotTwo = emptySpots.pop(0)
@@ -182,17 +182,17 @@ def createNodes(grid):
         nodes.append(emptySpots.pop())
     return nodes
 
-nodes = createNodes(grid)
+#nodes = createNodes(grid)
 
-print(nodes)
+#print(nodes)
 
-consoleVersionOfGrid = []
+#consoleVersionOfGrid = []
 
-for x in range(len(grid)):
-    row = ""
-    for y in range(len(grid[x])):
-        row += str(grid[x][y])
-    consoleVersionOfGrid.append(row)
+#for x in range(len(grid)):
+#    row = ""
+#    for y in range(len(grid[x])):
+#        row += str(grid[x][y])
+#    consoleVersionOfGrid.append(row)
 
-for x in consoleVersionOfGrid:
-    print(x)
+#for x in consoleVersionOfGrid:
+#    print(x)
