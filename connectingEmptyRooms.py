@@ -94,21 +94,6 @@ def CheckAdjacency(positionOne,positionTwo):
             return True
     return False
 
-def CheckAdjacentNode(nodeOne,nodeTwo):
-    for positionOne in nodeOne:
-        for positionTwo in nodeTwo:
-            if positionOne == positionTwo:
-                return True
-            if CheckAdjacency(positionOne,positionTwo):
-                return True
-    return False
-
-         
-def mergeNodes(nodeOne,nodeTwo):
-    for position in nodeTwo:
-        nodeOne.append(position)
-    return nodeOne
-
 def createNodes(grid):
     emptySpots = findEmptySpots(grid)
     nodes = []
@@ -193,7 +178,6 @@ def createNodes(grid):
                                 spotOne = spotThree
                                 emptySpots.append(spotOne)
                                 foundSpotOneAdjacency = False
-
     else:
         nodes.append(emptySpots.pop())
     return nodes
