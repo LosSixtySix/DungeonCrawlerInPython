@@ -86,23 +86,42 @@ while runing:
             runing = False
 
     keys = pygame.key.get_pressed()
+    
+    if keys[pygame.K_e]:
+        if playerDirection == 0:
+            if grid[playerposx - 1][playerposy] == 2:
+                grid[playerposx - 1][playerposy] = 0
+        elif playerDirection == 1:
+            if grid[playerposx + 1][playerposy] == 2:
+                grid[playerposx + 1][playerposy] = 0
+        elif playerDirection == 2:
+            if grid[playerposx][playerposy - 1] == 2:
+                grid[playerposx][playerposy - 1] = 0
+        elif playerDirection == 3:
+            if grid[playerposx][playerposy + 1] == 2:
+                grid[playerposx][playerposy + 1] = 0
+
 
     if keys[pygame.K_LEFT]:
+        playerDirection = 0
         if grid[playerposx - playervel][playerposy] != 2:
             grid[playerposx][playerposy] = 0
             playerposx -= playervel
             print("left")
     if keys[pygame.K_RIGHT]:
+        playerDirection = 1
         if grid[playerposx + playervel][playerposy] != 2:
             grid[playerposx][playerposy] = 0
-            playerposx += playervel
+            playerposx += playervel 
             print("right")
     if keys[pygame.K_UP]:
+        playerDirection = 2
         if grid[playerposx][playerposy- playervel] != 2:
             grid[playerposx][playerposy] = 0
             playerposy -= playervel
             print("up")
     if keys[pygame.K_DOWN]:
+        playerDirection = 3
         if grid[playerposx][playerposy+ playervel] != 2:
             grid[playerposx][playerposy] = 0
             playerposy += playervel
