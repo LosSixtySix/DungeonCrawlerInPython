@@ -20,13 +20,13 @@ for x in range(len(grid)):
         grid[x][y]=int(MapListFromTxt[startIndexForMapText])
         startIndexForMapText += 1
 
-grid2 = [[0 for i in range(12)] for j in range(3)]
+#grid2 = [[0 for i in range(12)] for j in range(3)]
 
-for x in range(3):
-    for y in range(12):
-        grid2[x][y] = grid[x][y]
+#for x in range(3):
+#    for y in range(12):
+#        grid2[x][y] = grid[x][y]
 
-grid = grid2
+#grid = grid2
 
 
 def findEmptySpots(grid):
@@ -87,10 +87,10 @@ def noAdjacency(position):
 
 def CheckAdjacency(positionOne,positionTwo):
     if positionOne[0] +1 == positionTwo[0] or positionOne[0] -1 == positionTwo[0]:
-        if positionOne[1] +1 == positionTwo[1] or positionOne[1] -1 == positionTwo[1]:
+        if positionOne[1] +1 == positionTwo[1] or positionOne[1] -1 == positionTwo[1] or positionOne[1] == positionTwo[1]:
             return True
     if positionOne[1] +1 == positionTwo[1] or positionOne[1] -1 == positionTwo[1]:
-        if positionOne[0] +1 == positionTwo[0] or positionOne[0] -1 == positionTwo[0]:
+        if positionOne[0] +1 == positionTwo[0] or positionOne[0] -1 == positionTwo[0] or positionOne[0] == positionTwo[0]:
             return True
     return False
 
@@ -130,69 +130,69 @@ def createNodes(grid):
                 nodes.append([spotOne])
                 if len(emptySpots) > 0:
                     spotOne = emptySpots.pop(0)
-            if noAdjacency(spotTwo):
+            elif noAdjacency(spotTwo):
                 nodes.append([spotTwo])
                 if len(emptySpots) > 0:
                     spotTwo = emptySpots.pop(0)
-
-            if len(nodes) == 0:
-                if CheckAdjacency(spotOne,spotTwo):
-                    nodes.append([spotOne,spotTwo])
-                    if len(emptySpots) > 1:
-                        spotOne = emptySpots.pop(0)
-                        spotTwo = emptySpots.pop(0)
-                else:
-                    emptySpots.append(spotTwo)
-                    if len(emptySpots > 1):
-                        spotTwo = emptySpots.pop(0)
-                    else:
-                        nodes.append(emptySpots.pop())
-            elif len(nodes) > 0:
-                for index in range(len(nodes)):
-                    for position in nodes[index]:
-                        if CheckAdjacency(spotOne, position) and foundSpotOneAdjacency == False:
-                            nodes[index].append(spotOne)
-                            if len(emptySpots) > 0:
-                                spotOne = emptySpots.pop(0)
-                                foundSpotOneAdjacency = True
-                        if CheckAdjacency(spotTwo,position) and foundSpotTwoAdjacency == False:
-                            nodes[index].append(spotTwo)
-                            if len(emptySpots)> 0:
-                                spotTwo = emptySpots.pop(0)
-                                foundSpotTwoAdjacency = True
-                        if foundSpotOneAdjacency and foundSpotTwoAdjacency:
-                            break
-            if foundSpotOneAdjacency == False and foundSpotTwoAdjacency == False:
-                if CheckAdjacency(spotOne,spotTwo):
-                    nodes.append([spotOne,spotTwo])
-                    if len(emptySpots) > 1:
-                        spotOne = emptySpots.pop(0)
-                        spotTwo = emptySpots.pop(0)
-                    elif len(emptySpots) > 0:
-                        spotOne = emptySpots.pop(0)
-                        emptySpots.append(spotOne)
-                else:
-                    nodes.append([spotOne])
-                    nodes.append([spotTwo])
-                    if len(emptySpots) >1:
-                        spotOne = emptySpots.pop(0)
-                        spotTwo = emptySpots.pop(0)
-                    elif len(emptySpots) > 0:
-                        spotOne = emptySpots.pop(0)
-                        emptySpots.append(spotOne)
-            if foundSpotOneAdjacency and foundSpotTwoAdjacency:
-                if CheckAdjacency(spotOne, spotTwo):
-                    if len(emptySpots) == 0:
+            else:
+                if len(nodes) == 0:
+                    if CheckAdjacency(spotOne,spotTwo):
                         nodes.append([spotOne,spotTwo])
-                    elif len(emptySpots) == 1:
-                        spotThree = emptySpots.pop()
-                        if CheckAdjacency(spotOne,spotThree) or CheckAdjacency(spotTwo,spotThree):
-                            nodes.append([spotOne,spotTwo,spotThree])
+                        if len(emptySpots) > 1:
+                            spotOne = emptySpots.pop(0)
+                            spotTwo = emptySpots.pop(0)
+                    else:
+                        emptySpots.append(spotTwo)
+                        if len(emptySpots > 1):
+                            spotTwo = emptySpots.pop(0)
                         else:
-                            nodes.append([spotOne,spotTwo])
-                            spotOne = spotThree
+                            nodes.append(emptySpots.pop())
+                elif len(nodes) > 0:
+                    for index in range(len(nodes)):
+                        for position in nodes[index]:
+                            if CheckAdjacency(spotOne, position) and foundSpotOneAdjacency == False:
+                                nodes[index].append(spotOne)
+                                if len(emptySpots) > 0:
+                                    spotOne = emptySpots.pop(0)
+                                    foundSpotOneAdjacency = True
+                            if CheckAdjacency(spotTwo,position) and foundSpotTwoAdjacency == False:
+                                nodes[index].append(spotTwo)
+                                if len(emptySpots)> 0:
+                                    spotTwo = emptySpots.pop(0)
+                                    foundSpotTwoAdjacency = True
+                            if foundSpotOneAdjacency and foundSpotTwoAdjacency:
+                                break
+                if foundSpotOneAdjacency == False and foundSpotTwoAdjacency == False:
+                    if CheckAdjacency(spotOne,spotTwo):
+                        nodes.append([spotOne,spotTwo])
+                        if len(emptySpots) > 1:
+                            spotOne = emptySpots.pop(0)
+                            spotTwo = emptySpots.pop(0)
+                        elif len(emptySpots) > 0:
+                            spotOne = emptySpots.pop(0)
                             emptySpots.append(spotOne)
-                            foundSpotOneAdjacency = False
+                    else:
+                        nodes.append([spotOne])
+                        nodes.append([spotTwo])
+                        if len(emptySpots) >1:
+                            spotOne = emptySpots.pop(0)
+                            spotTwo = emptySpots.pop(0)
+                        elif len(emptySpots) > 0:
+                            spotOne = emptySpots.pop(0)
+                            emptySpots.append(spotOne)
+                if foundSpotOneAdjacency and foundSpotTwoAdjacency:
+                    if CheckAdjacency(spotOne, spotTwo):
+                        if len(emptySpots) == 0:
+                            nodes.append([spotOne,spotTwo])
+                        elif len(emptySpots) == 1:
+                            spotThree = emptySpots.pop()
+                            if CheckAdjacency(spotOne,spotThree) or CheckAdjacency(spotTwo,spotThree):
+                                nodes.append([spotOne,spotTwo,spotThree])
+                            else:
+                                nodes.append([spotOne,spotTwo])
+                                spotOne = spotThree
+                                emptySpots.append(spotOne)
+                                foundSpotOneAdjacency = False
 
     else:
         nodes.append(emptySpots.pop())
@@ -200,7 +200,7 @@ def createNodes(grid):
 
 nodes = createNodes(grid)
 
-print(nodes[0])
+print(nodes)
 
 consoleVersionOfGrid = []
 
