@@ -3,6 +3,8 @@ import pygame
 import pygame.freetype
 import random as rand
 import connectingEmptyRooms as CER
+import playerClass as pc
+import copy
 
 pygame.init()
 pygame.font.init()
@@ -10,7 +12,7 @@ pygame.font.init()
 WIDTH = 720
 HEIGHT = 720
 SCREENWIDTH = 1000
-SCREENHEIGHT = 1000
+SCREENHEIGHT = 800
 
 TEXTSTARTWIDTH = 732
 TEXTSTARTHEIGHT = 15
@@ -27,23 +29,44 @@ green = (0, 255, 0)
 blue = (0, 0, 128) 
 black = (0, 0, 0)
 
-CharacterStatistics = {"Health":90,"AC":5,"Wall Damage":1}
+player = pc.PlayerClass()
 
 
-def displayStatistics(stats):
+
+
+
+def displayStatistics(stats,startHeight):
     keys = stats.keys()
 
     font = pygame.font.Font('freesansbold.ttf',15)
     passes = 0
-
+    
     for key in keys:
-        text = font.render(f"{key}: {stats[key]}",True,blue,black)
-        textRect = text.get_rect()
-        textWidth = text.get_width()
-        textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), TEXTSTARTHEIGHT + (TEXTROWGAPDISTANCE * passes))
-        win.blit(text, textRect)
-        passes += 1
-
+        if isinstance(stats[key], list):
+            if stats[key][0] == 3: #number 3 in a list for the grid means a list of items.
+                for item in stats[key]:
+                    if item == 3:
+                        text = font.render("Items in Room:",True,blue,black)
+                        textRect = text.get_rect()
+                        textWidth = text.get_width()
+                        textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
+                        win.blit(text, textRect)
+                        passes += 1
+                    else:
+                        text = font.render(f"{getItem(item)}",True,blue,black)
+                        textRect = text.get_rect()
+                        textWidth = text.get_width()
+                        textRect.center = (TEXTSTARTWIDTH + int(textWidth/2) + 10, startHeight + (TEXTROWGAPDISTANCE * passes))
+                        win.blit(text, textRect)
+                        passes += 1
+        else:
+            text = font.render(f"{key}: {stats[key]}",True,blue,black)
+            textRect = text.get_rect()
+            textWidth = text.get_width()
+            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
+            win.blit(text, textRect)
+            passes += 1
+    return TEXTROWGAPDISTANCE * passes
 win = pygame.display.set_mode((SCREENWIDTH,SCREENHEIGHT))
 
 
@@ -57,6 +80,34 @@ playervel = 1
 playerDirection = 0
 
 grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+
+
+def convertToItemGrid(itemsGrid):
+    for x in range(len(itemsGrid)):
+        for y in range(len(itemsGrid[x])):
+            itemsGrid[x][y] = [itemsGrid[x][y]]
+
+
+
+def addItem(itemsGrid, position, item):
+    x = position[0]
+    y = position[1]
+
+    if itemsGrid[x][y][0] != 2:
+        itemsGrid[x][y][0] = 3
+        itemsGrid[x][y].append(item)
+
+def getItemsFromGrid(itemsGrid,position):
+    x = position[0]
+    y = position[1]
+
+    if itemsGrid[x][y][0] == 3:
+        return itemsGrid[x][y]
+    return "None"
+
+def getItem(itemId):
+    if itemId == 4:
+        return "Sword"
 
 if loadRoom:
     openMapFile = open("savedMaps.txt",'r')
@@ -84,14 +135,47 @@ else:
     grid[wallStartx][wallstarty] = 2
     grid[wallStartx][wallstarty- 2] = 2
 
+def CreateRooms(emptyNodes):
+    rooms = {"Stone":[],"Wood":[],"Sand":[]}
+    for node in emptyNodes:
+        randomType = rand.randint(0,2)
+        if randomType == 0:
+            rooms["Stone"].append(node)
+        elif randomType == 1:
+            rooms["Wood"].append(node)
+        else:
+            rooms["Sand"].append(node)
+    return rooms
+
+def getRoomType(playerpos,rooms):
+    keys = rooms.keys()
+
+    for key in keys:
+        for node in rooms[key]:
+            for pos in node:
+                if pos == playerpos:
+                    return key
+
+
 emptyNodes = CER.createNodes(grid)
+rooms = CreateRooms(emptyNodes)
 
+ItemsGrid = copy.deepcopy(grid)
+convertToItemGrid(ItemsGrid)
 
+print(ItemsGrid[playerposx][playerposy])
+
+addItem(ItemsGrid,playerpos,4)
 
 
 runing = True
 while runing:
     
+    roomType = getRoomType(playerpos,rooms)
+    roomItems = getItemsFromGrid(ItemsGrid,playerpos)
+
+    CharacterStatistics = {"Health":player.hp,"AC":player.ac,"Wall Damage":player.wallDamage}
+    RoomStatistics = {"Room Type":roomType, "Items in Room":roomItems}
     pygame.time.delay(100)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -164,7 +248,9 @@ while runing:
     
     win.fill((black))
 
-    displayStatistics(CharacterStatistics)
+    TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT)
+    displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement)
+
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if grid[x][y] == 2:
