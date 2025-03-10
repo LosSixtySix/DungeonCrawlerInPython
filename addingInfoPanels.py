@@ -35,10 +35,11 @@ player = pc.PlayerClass()
 
 
 
-def displayStatistics(stats,startHeight):
+def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
     keys = stats.keys()
 
     font = pygame.font.Font('freesansbold.ttf',15)
+    selectItemIndex += 1
     passes = 0
     
     for key in keys:
@@ -54,6 +55,8 @@ def displayStatistics(stats,startHeight):
                         passes += 1
                     else:
                         text = font.render(f"{getItem(item)}",True,blue,black)
+                        if passes == selectItemIndex and selectItem:
+                            text = font.render(f"> {getItem(item)}",True,blue,black)
                         textRect = text.get_rect()
                         textWidth = text.get_width()
                         textRect.center = (TEXTSTARTWIDTH + int(textWidth/2) + 10, startHeight + (TEXTROWGAPDISTANCE * passes))
@@ -105,6 +108,11 @@ def getItemsFromGrid(itemsGrid,position):
         return itemsGrid[x][y]
     return "None"
 
+def areItemsInTile(Id):
+    if Id == 3:
+        return True
+    return False
+
 def getItem(itemId):
     if itemId == 4:
         return "Sword"
@@ -155,7 +163,7 @@ def getRoomType(playerpos,rooms):
             for pos in node:
                 if pos == playerpos:
                     return key
-
+            
 
 emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
@@ -166,8 +174,12 @@ convertToItemGrid(ItemsGrid)
 print(ItemsGrid[playerposx][playerposy])
 
 addItem(ItemsGrid,playerpos,4)
+addItem(ItemsGrid,playerpos,4)
+addItem(ItemsGrid,playerpos,4)
+addItem(ItemsGrid,playerpos,4)
 
-
+selectItem = False
+selectItemIndex = 1
 runing = True
 while runing:
     
@@ -194,53 +206,73 @@ while runing:
 
     keys = pygame.key.get_pressed()
     
-    if keys[pygame.K_e]:
-        if playerDirection == 0:
-            if playerposx - 1 >= 0:
-                if grid[playerposx - 1][playerposy] == 2:
-                    grid[playerposx - 1][playerposy] = 0
-        elif playerDirection == 1:
-            if playerposx + 1 < int(WIDTH/10):
-                if grid[playerposx + 1][playerposy] == 2:
-                    grid[playerposx + 1][playerposy] = 0
-        elif playerDirection == 2:
-            if playerposy - 1 >= 0:
-                if grid[playerposx][playerposy - 1] == 2:
-                    grid[playerposx][playerposy - 1] = 0
-        elif playerDirection == 3:
-            if playerposy + 1 < int(HEIGHT/10):
-                if grid[playerposx][playerposy + 1] == 2:
-                    grid[playerposx][playerposy + 1] = 0
+    if keys[pygame.K_RETURN]:
+        if selectItem == False:
+            if areItemsInTile(roomItems[0]):
+                print("There are items in this room")
+                selectItem = True
+        else:
+            pass
 
+    if keys[pygame.K_q]:
+        if selectItem:
+            selectItem = False
+            selectItemIndex = 1
 
+    if selectItem == False:
+        if keys[pygame.K_e]:
+            if playerDirection == 0:
+                if playerposx - 1 >= 0:
+                    if grid[playerposx - 1][playerposy] == 2:
+                        grid[playerposx - 1][playerposy] = 0
+            elif playerDirection == 1:
+                if playerposx + 1 < int(WIDTH/10):
+                    if grid[playerposx + 1][playerposy] == 2:
+                        grid[playerposx + 1][playerposy] = 0
+            elif playerDirection == 2:
+                if playerposy - 1 >= 0:
+                    if grid[playerposx][playerposy - 1] == 2:
+                        grid[playerposx][playerposy - 1] = 0
+            elif playerDirection == 3:
+                if playerposy + 1 < int(HEIGHT/10):
+                    if grid[playerposx][playerposy + 1] == 2:
+                        grid[playerposx][playerposy + 1] = 0
+
+    
     if keys[pygame.K_LEFT]:
-        playerDirection = 0
-        if playerposx - 1 >= 0:
-            if grid[playerposx - playervel][playerposy] != 2:
-                grid[playerposx][playerposy] = 0
-                playerposx -= playervel
-                print("left")
+        if selectItem == False:
+            playerDirection = 0
+            if playerposx - 1 >= 0:
+                if grid[playerposx - playervel][playerposy] != 2:
+                    grid[playerposx][playerposy] = 0
+                    playerposx -= playervel
     if keys[pygame.K_RIGHT]:
-        playerDirection = 1
-        if playerposx + 1 < int(WIDTH/10):
-            if grid[playerposx + playervel][playerposy] != 2:
-                grid[playerposx][playerposy] = 0
-                playerposx += playervel 
-                print("right")
+        if selectItem == False:
+            playerDirection = 1
+            if playerposx + 1 < int(WIDTH/10):
+                if grid[playerposx + playervel][playerposy] != 2:
+                    grid[playerposx][playerposy] = 0
+                    playerposx += playervel 
     if keys[pygame.K_UP]:
-        playerDirection = 2
-        if playerposy - 1 >= 0:
-            if grid[playerposx][playerposy- playervel] != 2:
-                grid[playerposx][playerposy] = 0
-                playerposy -= playervel
-                print("up")
+        if selectItem == False:
+            playerDirection = 2
+            if playerposy - 1 >= 0:
+                if grid[playerposx][playerposy- playervel] != 2:
+                    grid[playerposx][playerposy] = 0
+                    playerposy -= playervel
+        else:
+            if selectItemIndex - 1 > 0:
+                selectItemIndex -=1
     if keys[pygame.K_DOWN]:
-        playerDirection = 3
-        if playerposy + 1 < int(HEIGHT/10):
-            if grid[playerposx][playerposy+ playervel] != 2:
-                grid[playerposx][playerposy] = 0
-                playerposy += playervel
-                print(playerposy)
+        if selectItem == False:
+            playerDirection = 3
+            if playerposy + 1 < int(HEIGHT/10):
+                if grid[playerposx][playerposy+ playervel] != 2:
+                    grid[playerposx][playerposy] = 0
+                    playerposy += playervel
+        else:
+            if selectItemIndex + 1 < len(roomItems):
+                selectItemIndex +=1
 
     playerpos = (playerposx,playerposy)
     grid[playerposx][playerposy] = 1
@@ -248,8 +280,8 @@ while runing:
     
     win.fill((black))
 
-    TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT)
-    displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement)
+    TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT,selectItem,selectItemIndex)
+    displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
 
     for x in range(len(grid)):
         for y in range(len(grid[x])):
