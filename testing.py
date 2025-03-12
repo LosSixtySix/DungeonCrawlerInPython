@@ -1,4 +1,19 @@
-grid = [[0 for i in range(int(10))] for j in range(int(10))]
+WIDTH = 720
+HEIGHT = 720
+grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+
+openMapFile = open("savedMaps.txt",'r')
+MapListFromTxt = openMapFile.readlines()
+openMapFile.close()
+MapListFromTxt = MapListFromTxt[0].split(',')
+
+startIndexForMapText = 0
+
+
+for x in range(len(grid)):
+    for y in range(len(grid[x])):
+        grid[x][y]=int(MapListFromTxt[startIndexForMapText])
+        startIndexForMapText += 1
 
 
 def simpleTest(limit,returnVal = 0):
@@ -67,13 +82,13 @@ def getNearestEmptyTile(position,grid):
                     else:
                         return(position[0] - rightSteps,position[1])
                 elif leftSteps <= downSteps and leftSteps !=0:
-                    return(position[0],position[1] + downSteps)
+                    return(position[0] + leftSteps,position[1])
                 else:
-                    return (position[0] + leftSteps, position[1])
+                    return (position[0], position[1] + downSteps)
             else:
                 if rightSteps <= leftSteps and rightSteps !=0:
                     return(position[0] - rightSteps,position[1])
                 return(position[0] + leftSteps,position[1])
     return position
 grid[3][2] = 2
-print(getNearestEmptyTile((9,0),grid))
+print(getNearestEmptyTile((65,9),grid))

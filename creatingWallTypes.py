@@ -5,6 +5,7 @@ import random as rand
 import connectingEmptyRooms as CER
 import playerClass as pc
 import copy
+import wall
 
 pygame.init()
 pygame.font.init()
@@ -95,7 +96,12 @@ def convertToItemGrid(itemsGrid):
         for y in range(len(itemsGrid[x])):
             itemsGrid[x][y] = [itemsGrid[x][y]]
 
-
+def convertToWallGrid(wallGrid,grid,rooms):
+    for x in range(len(wallGrid)):
+        for y in range(len(wallGrid[x])):
+            if wallGrid[x][y] == 2:
+                wall = CreateWall((x,y),grid,rooms)
+                wallGrid[x][y] = wall
 
 def addItem(itemsGrid, position, item):
     x = position[0]
@@ -173,64 +179,79 @@ def getRoomType(position,rooms):
 def stepsToEmptyTile(position,grid,direction):
     steps = 0
     x = position[0]
-    y = position[y]
+    y = position[1]
     if direction == 0:
-        if grid[x][y-1] == 0:
-            steps += 1
-            return steps
-        else:
-            steps += stepsToEmptyTile((x,y-1),grid,direction)
+        if y - 1 > 0:
+            if grid[x][y-1] != 0:
+                steps += stepsToEmptyTile((x,y-1),grid,direction)
+            return steps +1
+        return steps
     if direction == 1:
-        if grid[x][y+1] == 0:
-            steps += 1
-            return steps
-        else:
-            steps += stepsToEmptyTile((x,y+1),grid,direction)
+        if y + 1 < len(grid[x]):
+            if grid[x][y+1] != 0:
+                steps += stepsToEmptyTile((x,y+1),grid,direction)     
+            return steps +1
+        return steps
     if direction == 2:
-        if grid[x-1][y] == 0:
-            steps += 1
-            return steps
-        else:
-            steps += stepsToEmptyTile((x-1,y),grid,direction)
+        if x -1 > 0:
+            if grid[x-1][y] != 0:
+                steps += stepsToEmptyTile((x-1,y),grid,direction)   
+            return steps +1
+        return steps        
     if direction == 3:
-        if grid[x+1][y] == 0:
-            steps += 1
-            return steps
-        else:
-            steps += stepsToEmptyTile((x+1,y),grid,direction)
+        if x + 1 < len(grid):
+            if grid[x+1][y] != 0:
+                steps += stepsToEmptyTile((x+1,y),grid,direction)   
+            return steps +1
+        return steps     
     return steps
     
-
-
 def getNearestEmptyTile(position,grid):
     upSteps = stepsToEmptyTile(position,grid,0)
     downSteps = stepsToEmptyTile(position,grid,1)
     rightSteps = stepsToEmptyTile(position,grid,2)
     leftSteps = stepsToEmptyTile(position,grid,3)
 
-    if upSteps <= downSteps:
-        if rightSteps <= leftSteps:
-            if upSteps <=rightSteps:
-                return (position[0],position[1] - upSteps)
+    if (upSteps != 0 or downSteps !=0 or rightSteps !=0 or leftSteps !=0):
+        if upSteps <= downSteps and upSteps != 0:
+            if rightSteps <= leftSteps and rightSteps !=0:
+                if upSteps <=rightSteps:
+                    return (position[0],position[1] - upSteps)
+                else:
+                    return (position[0] - rightSteps,position[1])
             else:
-                return (position[0] - rightSteps,position[1])
+                if upSteps <= leftSteps and leftSteps !=0:
+                    return(position[0],position[1]-upSteps)
+                else:
+                    return (position[0] + leftSteps, position[1])
         else:
-            if upSteps <= leftSteps:
-                return(position[0],position[1]-upSteps)
+            if downSteps > 0:
+                if rightSteps <= leftSteps and rightSteps !=0:
+                    if downSteps <= rightSteps:
+                        return(position[0],position[1] + downSteps)
+                    else:
+                        return(position[0] - rightSteps,position[1])
+                elif leftSteps <= downSteps and leftSteps !=0:
+                    return(position[0] + leftSteps,position[1])
+                else:
+                    return (position[0], position[1] + downSteps)
             else:
-                return (position[0] + leftSteps, position[1])
+                if rightSteps <= leftSteps and rightSteps !=0:
+                    return(position[0] - rightSteps,position[1])
+                return(position[0] + leftSteps,position[1])
+    return position
+
+
+def CreateWall(position,grid,rooms):
+    roomType = getRoomType(getNearestEmptyTile(position,grid),rooms)
+    newWall = None
+    if roomType == "Stone":
+        newWall = wall.StoneWall()
+    elif roomType == "Wood":
+        newWall = wall.WoodWall()
     else:
-        if rightSteps <= leftSteps:
-            if downSteps <= rightSteps:
-                return (position[0],position[1] + downSteps)
-            else:
-                return (position[0] -rightSteps,position[1])
-        else:
-            if downSteps <= leftSteps:
-                return (position[0],position[1] + downSteps)
-            return (position[0] + leftSteps,position[1])
-
-
+        newWall = wall.SandWall()
+    return newWall
 
 def gameRunning(menuOpen,selectItem):
     if menuOpen:
@@ -273,6 +294,11 @@ rooms = CreateRooms(emptyNodes)
 
 ItemsGrid = copy.deepcopy(grid)
 convertToItemGrid(ItemsGrid)
+
+WallGrid = copy.deepcopy(grid)
+convertToWallGrid(WallGrid,grid,rooms)
+
+print(WallGrid)
 
 print(ItemsGrid[playerposx][playerposy])
 
@@ -348,19 +374,43 @@ while runing:
             if playerDirection == 0:
                 if playerposx - 1 >= 0:
                     if grid[playerposx - 1][playerposy] == 2:
-                        grid[playerposx - 1][playerposy] = 0
+                        if WallGrid[playerposx -1][playerposy].hp > 0:
+                            WallGrid[playerposx -1][playerposy].hp -= 1
+                            print("You damaged the wall")
+                        else:
+                            print("wall destroyed")
+                            WallGrid[playerposx -1][playerposy] = 0
+                            grid[playerposx - 1][playerposy] = 0
             elif playerDirection == 1:
                 if playerposx + 1 < int(WIDTH/10):
                     if grid[playerposx + 1][playerposy] == 2:
-                        grid[playerposx + 1][playerposy] = 0
+                        if WallGrid[playerposx + 1][playerposy].hp > 0:
+                            WallGrid[playerposx + 1][playerposy].hp -= 1
+                            print("You damaged the wall")
+                        else:
+                            print("wall destroyed")
+                            WallGrid[playerposx + 1][playerposy] = 0
+                            grid[playerposx + 1][playerposy] = 0
             elif playerDirection == 2:
                 if playerposy - 1 >= 0:
                     if grid[playerposx][playerposy - 1] == 2:
-                        grid[playerposx][playerposy - 1] = 0
+                        if WallGrid[playerposx][playerposy -1].hp > 0:
+                            WallGrid[playerposx][playerposy -1].hp -= 1
+                            print("You damaged the wall")
+                        else:
+                            print("wall destroyed")
+                            WallGrid[playerposx][playerposy -1] = 0
+                            grid[playerposx][playerposy - 1] = 0
             elif playerDirection == 3:
                 if playerposy + 1 < int(HEIGHT/10):
                     if grid[playerposx][playerposy + 1] == 2:
-                        grid[playerposx][playerposy + 1] = 0
+                        if WallGrid[playerposx][playerposy + 1].hp > 0:
+                            WallGrid[playerposx][playerposy + 1].hp -= 1
+                            print("You damaged the wall")
+                        else:
+                            print("wall destroyed")
+                            WallGrid[playerposx][playerposy + 1] = 0
+                            grid[playerposx][playerposy + 1] = 0
 
     
     if KEYS[pygame.K_LEFT]:
