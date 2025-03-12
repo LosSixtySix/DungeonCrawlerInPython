@@ -161,7 +161,6 @@ def CreateRooms(emptyNodes):
     return rooms
 
 
-
 def getRoomType(position,rooms):
     keys = rooms.keys()
 
@@ -170,7 +169,69 @@ def getRoomType(position,rooms):
             for pos in node:
                 if pos == position:
                     return key
-            
+
+def stepsToEmptyTile(position,grid,direction):
+    steps = 0
+    x = position[0]
+    y = position[y]
+    if direction == 0:
+        if grid[x][y-1] == 0:
+            steps += 1
+            return steps
+        else:
+            steps += stepsToEmptyTile((x,y-1),grid,direction)
+    if direction == 1:
+        if grid[x][y+1] == 0:
+            steps += 1
+            return steps
+        else:
+            steps += stepsToEmptyTile((x,y+1),grid,direction)
+    if direction == 2:
+        if grid[x-1][y] == 0:
+            steps += 1
+            return steps
+        else:
+            steps += stepsToEmptyTile((x-1,y),grid,direction)
+    if direction == 3:
+        if grid[x+1][y] == 0:
+            steps += 1
+            return steps
+        else:
+            steps += stepsToEmptyTile((x+1,y),grid,direction)
+    return steps
+    
+
+
+def getNearestEmptyTile(position,grid):
+    upSteps = stepsToEmptyTile(position,grid,0)
+    downSteps = stepsToEmptyTile(position,grid,1)
+    rightSteps = stepsToEmptyTile(position,grid,2)
+    leftSteps = stepsToEmptyTile(position,grid,3)
+
+    if upSteps <= downSteps:
+        if rightSteps <= leftSteps:
+            if upSteps <=rightSteps:
+                return (position[0],position[1] - upSteps)
+            else:
+                return (position[0] - rightSteps,position[1])
+        else:
+            if upSteps <= leftSteps:
+                return(position[0],position[1]-upSteps)
+            else:
+                return (position[0] + leftSteps, position[1])
+    else:
+        if rightSteps <= leftSteps:
+            if downSteps <= rightSteps:
+                return (position[0],position[1] + downSteps)
+            else:
+                return (position[0] -rightSteps,position[1])
+        else:
+            if downSteps <= leftSteps:
+                return (position[0],position[1] + downSteps)
+            return (position[0] + leftSteps,position[1])
+
+
+
 def gameRunning(menuOpen,selectItem):
     if menuOpen:
         return False
