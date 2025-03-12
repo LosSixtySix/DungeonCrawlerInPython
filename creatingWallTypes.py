@@ -27,7 +27,9 @@ loadRoom = True
 generateRoom = False
 saveMap = False
 
-menuOptions = {"Load Room":True,"Generate Room":False, "Save on Exit":False}
+menuOptions = {"Load Room":True,"Generate Room":True, "Save on Exit":True}
+
+
 
 
 white = (255, 255, 255) 
@@ -39,6 +41,25 @@ player = pc.PlayerClass()
 
 FONT = pygame.font.Font('freesansbold.ttf',15)
 
+def saveMenuOptions(fileName,menuOptions):
+    openOptions = open(fileName,'w')
+    keys = menuOptions.keys()
+    for key in keys:
+        openOptions.write(f"{key},{menuOptions[key]}\n")
+
+
+def loadMenuOptions(fileName,menuOptions):
+    openOptions = open(fileName,'r')
+    menuItems = openOptions.readlines()
+    openOptions.close()
+
+    for passes in range(len(menuItems)):
+        menuItems.append(menuItems.pop(0).split(','))
+    for item in menuItems:
+        if item[1] == 'True\n' or item[1] == 'True':
+            menuOptions[item[0]] = True
+        elif item[1] == 'False\n' or item[1] == 'False':
+            menuOptions[item[0]] = False
 
 
 def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
@@ -128,31 +149,7 @@ def getItem(itemId):
     if itemId == 4:
         return "Sword"
 
-if menuOptions["Load Room"]:
-    openMapFile = open("savedMaps.txt",'r')
-    MapListFromTxt = openMapFile.readlines()
-    openMapFile.close()
-    MapListFromTxt = MapListFromTxt[0].split(',')
 
-    startIndexForMapText = 0
-
-
-    for x in range(len(grid)):
-        for y in range(len(grid[x])):
-            grid[x][y]=int(MapListFromTxt[startIndexForMapText])
-            startIndexForMapText += 1
-elif menuOptions["Generate Room"]:
-    for x in range(len(grid)):
-        for y in range(len(grid[x])):
-            isWall = rand.randint(0,1)
-            if isWall == 1:
-                grid[x][y] = 2
-else:
-    wallStartx = 30
-    wallstarty = 30
-
-    grid[wallStartx][wallstarty] = 2
-    grid[wallStartx][wallstarty- 2] = 2
 
 def CreateRooms(emptyNodes):
     rooms = {"Stone":[],"Wood":[],"Sand":[]}
@@ -289,6 +286,37 @@ def DrawMenu(selectItemIndex):
             win.blit(text, textRect)
             passes += 1
 
+
+loadMenuOptions("menuOpts.txt",menuOptions)
+
+
+if menuOptions["Load Room"]:
+    openMapFile = open("savedMaps.txt",'r')
+    MapListFromTxt = openMapFile.readlines()
+    openMapFile.close()
+    MapListFromTxt = MapListFromTxt[0].split(',')
+
+    startIndexForMapText = 0
+
+
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            grid[x][y]=int(MapListFromTxt[startIndexForMapText])
+            startIndexForMapText += 1
+elif menuOptions["Generate Room"]:
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            isWall = rand.randint(0,1)
+            if isWall == 1:
+                grid[x][y] = 2
+else:
+    wallStartx = 30
+    wallstarty = 30
+
+    grid[wallStartx][wallstarty] = 2
+    grid[wallStartx][wallstarty- 2] = 2
+
+
 emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
@@ -298,14 +326,13 @@ convertToItemGrid(ItemsGrid)
 WallGrid = copy.deepcopy(grid)
 convertToWallGrid(WallGrid,grid,rooms)
 
-print(WallGrid)
-
-print(ItemsGrid[playerposx][playerposy])
 
 addItem(ItemsGrid,playerpos,4)
 addItem(ItemsGrid,playerpos,4)
 addItem(ItemsGrid,playerpos,4)
 addItem(ItemsGrid,playerpos,4)
+
+
 
 menuOpen = False
 selectItem = False
@@ -321,6 +348,7 @@ while runing:
     pygame.time.delay(100)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
+            saveMenuOptions("menuOpts.txt",menuOptions)
             if menuOptions["Save on Exit"]:
                 f = open("savedMaps.txt","a")   
                 for x in range(len(grid)):

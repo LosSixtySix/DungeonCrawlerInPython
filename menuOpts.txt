@@ -1,0 +1,3 @@
+Load Room,False
+Generate Room,False
+Save on Exit,True
