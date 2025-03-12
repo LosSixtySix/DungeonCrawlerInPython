@@ -268,7 +268,7 @@ while runing:
     if KEYS[pygame.K_ESCAPE]:
         if menuOpen:
             menuOpen = False
-            selectItem = 1
+            selectItemIndex = 1
         else:
             menuOpen = True
 
