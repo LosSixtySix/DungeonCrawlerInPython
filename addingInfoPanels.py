@@ -218,7 +218,7 @@ addItem(ItemsGrid,playerpos,4)
 addItem(ItemsGrid,playerpos,4)
 addItem(ItemsGrid,playerpos,4)
 
-menuOpen = True
+menuOpen = False
 selectItem = False
 selectItemIndex = 1
 runing = True
