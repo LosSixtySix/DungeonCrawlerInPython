@@ -104,7 +104,7 @@ win = pygame.display.set_mode((SCREENWIDTH,SCREENHEIGHT))
 
 playerposx = 35
 playerposy = 25
-playerpos = (playerposx, playerposy)
+
 playervel = 1
 
 playerDirection = 0
@@ -336,7 +336,14 @@ else:
     grid[wallStartx][wallstarty] = 2
     grid[wallStartx][wallstarty- 2] = 2
 
+for x in range(len(grid)):
+    for y in range(len(grid[x])):
+        if grid[x][y] == 1:
+            playerposx = x
+            playerposy = y
 
+
+playerpos = (playerposx, playerposy)
 emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
@@ -356,6 +363,8 @@ selectItemIndex = 1
 runing = True
 while runing:
     
+    grid[playerposx][playerposy] = 1
+
     roomType = getRoomType(playerpos,rooms)
     roomItems = getItemsFromGrid(ItemsGrid,playerpos)
     cardinalDirection = getDirection(playerDirection)
@@ -415,6 +424,7 @@ while runing:
             selectItemIndex = 1
         else:
             menuOpen = True
+            selectItemIndex =1
 
     if KEYS[pygame.K_q]:
         if selectItem:
