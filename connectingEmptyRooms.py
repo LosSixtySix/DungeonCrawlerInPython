@@ -128,7 +128,7 @@ def createNodes(grid):
                             spotTwo = emptySpots.pop(0)
                     else:
                         emptySpots.append(spotTwo)
-                        if len(emptySpots > 1):
+                        if len(emptySpots) > 1:
                             spotTwo = emptySpots.pop(0)
                         else:
                             nodes.append(emptySpots.pop())

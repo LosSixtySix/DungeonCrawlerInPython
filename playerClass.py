@@ -13,3 +13,5 @@ class PlayerClass():
     def addItemToInventory(self,item):
         if len(self.inventory) < self.inventoryLimit:
             self.inventory.append(item)
+            return True
+        return False
