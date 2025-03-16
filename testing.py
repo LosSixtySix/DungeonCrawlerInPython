@@ -1,25 +1,20 @@
-menuOptions = {"Load Room":True,"Generate Room":False, "Save on Exit":True}
-
-def saveMenuOptions(fileName,menuOptions):
-    openOptions = open(fileName,'w')
-    keys = menuOptions.keys()
-    for key in keys:
-        openOptions.write(f"{key},{menuOptions[key]}\n")
+import pygame
 
 
-def loadMenuOptions(fileName,menuOptions):
-    openOptions = open(fileName,'r')
-    menuItems = openOptions.readlines()
-    openOptions.close()
+pygame.init()
+black = [0,0,0]
+win = pygame.display.set_mode((720,720))
 
-    for passes in range(len(menuItems)):
-        menuItems.append(menuItems.pop(0).split(','))
-    for item in menuItems:
-        if item[1] == 'True\n' or item[1] == 'True':
-            menuOptions[item[0]] = True
-        elif item[1] == 'False\n' or item[1] == 'False':
-            menuOptions[item[0]] = False
-    print(menuOptions)
+while True:
+    for event in pygame.event.get():
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                print("Clicked")
+    
+    
+    #KEYS = pygame.key.get_pressed()
+        
+    #if KEYS[pygame.K_RETURN]:
+    #    print("clicked")
 
-
-loadMenuOptions("menuOpts.txt",menuOptions)
+    win.fill((black))

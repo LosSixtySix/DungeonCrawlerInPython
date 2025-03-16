@@ -356,6 +356,7 @@ addItem(ItemsGrid,playerpos,4)
 addItem(ItemsGrid,playerpos,4)
 addItem(ItemsGrid,playerpos,4)
 
+playerTurn = True
 
 menuOpen = False
 selectItem = False
@@ -394,132 +395,124 @@ while runing:
                             f.write(f",{grid[x][y]}\n")
                         else:
                             f.write(f",{grid[x][y]}")
-
             runing = False
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                if selectItem == False and menuOpen == False:
+                    if areItemsInTile(roomItems[0]):
+                        print("There are items in this room")
+                        selectItem = True
+                elif menuOpen:
+                    keys = menuOptions.keys()
+                    passes = 0
+                    for key in keys:
+                        if passes == selectItemIndex -1:
+                            if menuOptions[key]:
+                                menuOptions[key] = False
+                            else:
+                                menuOptions[key] = True
+                        passes += 1
+                elif selectItem:
+                    pickUpItem(player,ItemsGrid,playerpos,selectItemIndex)
+            if event.key == pygame.K_ESCAPE:
+                if menuOpen:
+                    menuOpen = False
+                    selectItemIndex = 1
+                else:
+                    menuOpen = True
+                    selectItemIndex =1
+            if event.key == pygame.K_q:
+                if selectItem:
+                    selectItem = False
+                    selectItemIndex = 1
+                if menuOpen:
+                    menuOpen = False
+                    selectItemIndex = 1
+            if gameRunning(selectItem,menuOpen):
+                if event.key == pygame.K_e:
+                    if playerDirection == 0:
+                        if playerposx - 1 >= 0:
+                            if grid[playerposx - 1][playerposy] == 2:
+                                if WallGrid[playerposx -1][playerposy].hp > 0:
+                                    WallGrid[playerposx -1][playerposy].hp -= 1
+                                    print("You damaged the wall")
+                                else:
+                                    print("wall destroyed")
+                                    WallGrid[playerposx -1][playerposy] = 0
+                                    grid[playerposx - 1][playerposy] = 0
+                    elif playerDirection == 1:
+                        if playerposx + 1 < int(WIDTH/10):
+                            if grid[playerposx + 1][playerposy] == 2:
+                                if WallGrid[playerposx + 1][playerposy].hp > 0:
+                                    WallGrid[playerposx + 1][playerposy].hp -= 1
+                                    print("You damaged the wall")
+                                else:
+                                    print("wall destroyed")
+                                    WallGrid[playerposx + 1][playerposy] = 0
+                                    grid[playerposx + 1][playerposy] = 0
+                    elif playerDirection == 2:
+                        if playerposy - 1 >= 0:
+                            if grid[playerposx][playerposy - 1] == 2:
+                                if WallGrid[playerposx][playerposy -1].hp > 0:
+                                    WallGrid[playerposx][playerposy -1].hp -= 1
+                                    print("You damaged the wall")
+                                else:
+                                    print("wall destroyed")
+                                    WallGrid[playerposx][playerposy -1] = 0
+                                    grid[playerposx][playerposy - 1] = 0
+                    elif playerDirection == 3:
+                        if playerposy + 1 < int(HEIGHT/10):
+                            if grid[playerposx][playerposy + 1] == 2:
+                                if WallGrid[playerposx][playerposy + 1].hp > 0:
+                                    WallGrid[playerposx][playerposy + 1].hp -= 1
+                                    print("You damaged the wall")
+                                else:
+                                    print("wall destroyed")
+                                    WallGrid[playerposx][playerposy + 1] = 0
+                                    grid[playerposx][playerposy + 1] = 0
+            if event.key == pygame.K_LEFT:
+                if gameRunning(selectItem,menuOpen):
+                    playerDirection = 0
+                    if playerposx - 1 >= 0:
+                        if grid[playerposx - playervel][playerposy] != 2:
+                            grid[playerposx][playerposy] = 0
+                            playerposx -= playervel
         
-    KEYS = pygame.key.get_pressed()
-    
-    if KEYS[pygame.K_RETURN]:
-        if selectItem == False and menuOpen == False:
-            if areItemsInTile(roomItems[0]):
-                print("There are items in this room")
-                selectItem = True
-        elif menuOpen:
-            keys = menuOptions.keys()
-            passes = 0
-            for key in keys:
-                if passes == selectItemIndex -1:
-                    if menuOptions[key]:
-                        menuOptions[key] = False
-                    else:
-                        menuOptions[key] = True
-                passes += 1
-        elif selectItem:
-            pickUpItem(player,ItemsGrid,playerpos,selectItemIndex)
-            
-
-    if KEYS[pygame.K_ESCAPE]:
-        if menuOpen:
-            menuOpen = False
-            selectItemIndex = 1
-        else:
-            menuOpen = True
-            selectItemIndex =1
-
-    if KEYS[pygame.K_q]:
-        if selectItem:
-            selectItem = False
-            selectItemIndex = 1
-        if menuOpen:
-            menuOpen = False
-            selectItemIndex = 1
-
-    if gameRunning(selectItem,menuOpen):
-        if KEYS[pygame.K_e]:
-            if playerDirection == 0:
-                if playerposx - 1 >= 0:
-                    if grid[playerposx - 1][playerposy] == 2:
-                        if WallGrid[playerposx -1][playerposy].hp > 0:
-                            WallGrid[playerposx -1][playerposy].hp -= 1
-                            print("You damaged the wall")
-                        else:
-                            print("wall destroyed")
-                            WallGrid[playerposx -1][playerposy] = 0
-                            grid[playerposx - 1][playerposy] = 0
-            elif playerDirection == 1:
-                if playerposx + 1 < int(WIDTH/10):
-                    if grid[playerposx + 1][playerposy] == 2:
-                        if WallGrid[playerposx + 1][playerposy].hp > 0:
-                            WallGrid[playerposx + 1][playerposy].hp -= 1
-                            print("You damaged the wall")
-                        else:
-                            print("wall destroyed")
-                            WallGrid[playerposx + 1][playerposy] = 0
-                            grid[playerposx + 1][playerposy] = 0
-            elif playerDirection == 2:
-                if playerposy - 1 >= 0:
-                    if grid[playerposx][playerposy - 1] == 2:
-                        if WallGrid[playerposx][playerposy -1].hp > 0:
-                            WallGrid[playerposx][playerposy -1].hp -= 1
-                            print("You damaged the wall")
-                        else:
-                            print("wall destroyed")
-                            WallGrid[playerposx][playerposy -1] = 0
-                            grid[playerposx][playerposy - 1] = 0
-            elif playerDirection == 3:
-                if playerposy + 1 < int(HEIGHT/10):
-                    if grid[playerposx][playerposy + 1] == 2:
-                        if WallGrid[playerposx][playerposy + 1].hp > 0:
-                            WallGrid[playerposx][playerposy + 1].hp -= 1
-                            print("You damaged the wall")
-                        else:
-                            print("wall destroyed")
-                            WallGrid[playerposx][playerposy + 1] = 0
-                            grid[playerposx][playerposy + 1] = 0
-
-    
-    if KEYS[pygame.K_LEFT]:
-        if gameRunning(selectItem,menuOpen):
-            playerDirection = 0
-            if playerposx - 1 >= 0:
-                if grid[playerposx - playervel][playerposy] != 2:
-                    grid[playerposx][playerposy] = 0
-                    playerposx -= playervel
-    if KEYS[pygame.K_RIGHT]:
-        if gameRunning(selectItem,menuOpen):
-            playerDirection = 1
-            if playerposx + 1 < int(WIDTH/10):
-                if grid[playerposx + playervel][playerposy] != 2:
-                    grid[playerposx][playerposy] = 0
-                    playerposx += playervel 
-    if KEYS[pygame.K_UP]:
-        if gameRunning(selectItem,menuOpen):
-            playerDirection = 2
-            if playerposy - 1 >= 0:
-                if grid[playerposx][playerposy- playervel] != 2:
-                    grid[playerposx][playerposy] = 0
-                    playerposy -= playervel
-        else:
-            if selectItem:
-                if selectItemIndex - 1 > 0:
-                    selectItemIndex -=1
-            elif menuOpen:
-                if selectItemIndex - 1 > 0:
-                    selectItemIndex -= 1
-    if KEYS[pygame.K_DOWN]:
-        if gameRunning(selectItem,menuOpen):
-            playerDirection = 3
-            if playerposy + 1 < int(HEIGHT/10):
-                if grid[playerposx][playerposy+ playervel] != 2:
-                    grid[playerposx][playerposy] = 0
-                    playerposy += playervel
-        else:
-            if selectItem:
-                if selectItemIndex + 1 < len(roomItems):
-                    selectItemIndex +=1
-            elif menuOpen:
-                if selectItemIndex +1 <= len(menuOptions.keys()):
-                    selectItemIndex +=1
+            if event.key == pygame.K_RIGHT:
+                if gameRunning(selectItem,menuOpen):
+                    playerDirection = 1
+                    if playerposx + 1 < int(WIDTH/10):
+                        if grid[playerposx + playervel][playerposy] != 2:
+                            grid[playerposx][playerposy] = 0
+                            playerposx += playervel
+            if event.key == pygame.K_UP:
+                if gameRunning(selectItem,menuOpen):
+                    playerDirection = 2
+                    if playerposy - 1 >= 0:
+                        if grid[playerposx][playerposy- playervel] != 2:
+                            grid[playerposx][playerposy] = 0
+                            playerposy -= playervel
+                else:
+                    if selectItem:
+                        if selectItemIndex - 1 > 0:
+                            selectItemIndex -=1
+                    elif menuOpen:
+                        if selectItemIndex - 1 > 0:
+                            selectItemIndex -= 1
+            if event.key == pygame.K_DOWN:
+                if gameRunning(selectItem,menuOpen):
+                    playerDirection = 3
+                    if playerposy + 1 < int(HEIGHT/10):
+                        if grid[playerposx][playerposy+ playervel] != 2:
+                            grid[playerposx][playerposy] = 0
+                            playerposy += playervel
+                else:
+                    if selectItem:
+                        if selectItemIndex + 1 < len(roomItems):
+                            selectItemIndex +=1
+                    elif menuOpen:
+                        if selectItemIndex +1 <= len(menuOptions.keys()):
+                            selectItemIndex +=1
 
     playerpos = (playerposx,playerposy)
     grid[playerposx][playerposy] = 1
@@ -531,7 +524,8 @@ while runing:
     
 
     TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT,selectItem,selectItemIndex)
-    displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
+    TextHeightIncrement += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
+    displayStatistics(player.equipment,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
 
     for x in range(len(grid)):
         for y in range(len(grid[x])):
