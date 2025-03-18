@@ -1,17 +1,20 @@
+import items
+
 class PlayerClass():
     def __init__(self):
         self.hp = 0
         self.ac = 0
-        self.wallDamage = 0 
-        self.inventory = []
+        self.itemIncrement = 0
+        self.wallDamage = 1 
+        self.inventory = {"Inventory":[4]}
         self.inventoryLimit = 10
-        self.equipment = {"Head":0,"Chest":0,"Gloves":0,"Left Hand":0,"Right Hand":0,"Legs":0,"Feet":0}
+        self.equipment = {"Head":"None","Chest":"None","Gloves":"None","Left Hand":"None","Right Hand":"None","Legs":"None","Feet":"None"}
 
     def equipItem(self,item,place):
         self.equipment[place] = item
 
     def addItemToInventory(self,item):
         if len(self.inventory) < self.inventoryLimit:
-            self.inventory.append(item)
+            self.inventory["Inventory"].append(item)
             return True
         return False

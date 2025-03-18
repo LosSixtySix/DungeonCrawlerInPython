@@ -4,6 +4,7 @@ import pygame.freetype
 import random as rand
 import connectingEmptyRooms as CER
 import playerClass as pc
+import items
 import copy
 import wall
 
@@ -69,33 +70,52 @@ def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
     selectItemIndex += 1
     passes = 0
     
-    for key in keys:
-        if isinstance(stats[key], list):
-            if stats[key][0] == 3: #number 3 in a list for the grid means a list of items.
-                for item in stats[key]:
-                    if item == 3:
-                        text = FONT.render("Items in Room:",True,blue,black)
-                        textRect = text.get_rect()
-                        textWidth = text.get_width()
-                        textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
-                        win.blit(text, textRect)
-                        passes += 1
-                    else:
-                        text = FONT.render(f"{getItem(item)}",True,blue,black)
-                        if passes == selectItemIndex and selectItem:
-                            text = FONT.render(f"> {getItem(item)}",True,blue,black)
-                        textRect = text.get_rect()
-                        textWidth = text.get_width()
-                        textRect.center = (TEXTSTARTWIDTH + int(textWidth/2) + 10, startHeight + (TEXTROWGAPDISTANCE * passes))
-                        win.blit(text, textRect)
-                        passes += 1
-        else:
-            text = FONT.render(f"{key}: {stats[key]}",True,blue,black)
-            textRect = text.get_rect()
-            textWidth = text.get_width()
-            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
-            win.blit(text, textRect)
-            passes += 1
+    if len(keys) > 0:
+        for key in keys:
+            if isinstance(stats[key], list):
+                if stats[key][0] == 3: #number 3 in a list for the grid means a list of items.
+                    for item in stats[key]:
+                        if item == 3:
+                            text = FONT.render("Items in Room:",True,blue,black)
+                            textRect = text.get_rect()
+                            textWidth = text.get_width()
+                            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
+                            win.blit(text, textRect)
+                            passes += 1
+                        else:
+                            text = FONT.render(f"{items.getItem(item)}",True,blue,black)
+                            if passes == selectItemIndex and selectItem:
+                                text = FONT.render(f"> {items.getItem(item)}",True,blue,black)
+                            textRect = text.get_rect()
+                            textWidth = text.get_width()
+                            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2) + 10, startHeight + (TEXTROWGAPDISTANCE * passes))
+                            win.blit(text, textRect)
+                            passes += 1
+                elif stats[key][0] == 4: #number 4 in a list means a list of the inventory items
+                    for item in stats[key]:
+                        if item == 4:
+                            text = FONT.render("Inventory:",True,blue,black)
+                            textRect = text.get_rect()
+                            textWidth = text.get_width()
+                            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
+                            win.blit(text, textRect)
+                            passes += 1
+                        else:
+                            text = FONT.render(f"{items.getItem(item)}",True,blue,black)
+                            if passes == selectItemIndex and selectItem:
+                                text = FONT.render(f"> {items.getItem(item)}",True,blue,black)
+                            textRect = text.get_rect()
+                            textWidth = text.get_width()
+                            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2) + 10, startHeight + (TEXTROWGAPDISTANCE * passes))
+                            win.blit(text, textRect)
+                            passes += 1
+            else:
+                text = FONT.render(f"{key}: {stats[key]}",True,blue,black)
+                textRect = text.get_rect()
+                textWidth = text.get_width()
+                textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
+                win.blit(text, textRect)
+                passes += 1
     return TEXTROWGAPDISTANCE * passes
 win = pygame.display.set_mode((SCREENWIDTH,SCREENHEIGHT))
 
@@ -147,9 +167,7 @@ def areItemsInTile(Id):
         return True
     return False
 
-def getItem(itemId):
-    if itemId == 4:
-        return "Sword"
+
 
 def pickUpItem(player,itemGrid,position,selectItemIndex):
     x = position[0]
@@ -351,10 +369,10 @@ convertToItemGrid(ItemsGrid)
 
 convertToWallGrid(WallGrid,grid,rooms)
 
-addItem(ItemsGrid,playerpos,4)
-addItem(ItemsGrid,playerpos,4)
-addItem(ItemsGrid,playerpos,4)
-addItem(ItemsGrid,playerpos,4)
+addItem(ItemsGrid,playerpos,5)
+addItem(ItemsGrid,playerpos,5)
+addItem(ItemsGrid,playerpos,5)
+addItem(ItemsGrid,playerpos,5)
 
 playerTurn = True
 
@@ -434,9 +452,9 @@ while runing:
                         if playerposx - 1 >= 0:
                             if grid[playerposx - 1][playerposy] == 2:
                                 if WallGrid[playerposx -1][playerposy].hp > 0:
-                                    WallGrid[playerposx -1][playerposy].hp -= 1
+                                    WallGrid[playerposx -1][playerposy].hp -= player.wallDamage
                                     print("You damaged the wall")
-                                else:
+                                if WallGrid[playerposx -1][playerposy].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx -1][playerposy] = 0
                                     grid[playerposx - 1][playerposy] = 0
@@ -444,9 +462,9 @@ while runing:
                         if playerposx + 1 < int(WIDTH/10):
                             if grid[playerposx + 1][playerposy] == 2:
                                 if WallGrid[playerposx + 1][playerposy].hp > 0:
-                                    WallGrid[playerposx + 1][playerposy].hp -= 1
+                                    WallGrid[playerposx + 1][playerposy].hp -= player.wallDamage
                                     print("You damaged the wall")
-                                else:
+                                if WallGrid[playerposx + 1][playerposy].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx + 1][playerposy] = 0
                                     grid[playerposx + 1][playerposy] = 0
@@ -454,9 +472,9 @@ while runing:
                         if playerposy - 1 >= 0:
                             if grid[playerposx][playerposy - 1] == 2:
                                 if WallGrid[playerposx][playerposy -1].hp > 0:
-                                    WallGrid[playerposx][playerposy -1].hp -= 1
+                                    WallGrid[playerposx][playerposy -1].hp -= player.wallDamage
                                     print("You damaged the wall")
-                                else:
+                                if WallGrid[playerposx][playerposy -1].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx][playerposy -1] = 0
                                     grid[playerposx][playerposy - 1] = 0
@@ -464,9 +482,9 @@ while runing:
                         if playerposy + 1 < int(HEIGHT/10):
                             if grid[playerposx][playerposy + 1] == 2:
                                 if WallGrid[playerposx][playerposy + 1].hp > 0:
-                                    WallGrid[playerposx][playerposy + 1].hp -= 1
+                                    WallGrid[playerposx][playerposy + 1].hp -= player.wallDamage
                                     print("You damaged the wall")
-                                else:
+                                if WallGrid[playerposx][playerposy + 1].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx][playerposy + 1] = 0
                                     grid[playerposx][playerposy + 1] = 0
@@ -525,7 +543,8 @@ while runing:
 
     TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT,selectItem,selectItemIndex)
     TextHeightIncrement += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
-    displayStatistics(player.equipment,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
+    TextHeightIncrement += displayStatistics(player.equipment,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
+    TextHeightIncrement += displayStatistics(player.inventory,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
 
     for x in range(len(grid)):
         for y in range(len(grid[x])):
