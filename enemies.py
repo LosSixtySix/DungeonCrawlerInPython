@@ -12,6 +12,6 @@ class Enemy():
         
 class Goblin(Enemy):
     def __init__(self):
-        super().__init__(5, 10, 1, 0)
+        super().__init__(5, 10, 1, 5)
         self.inventory = [5]
 

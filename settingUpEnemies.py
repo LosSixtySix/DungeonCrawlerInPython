@@ -150,7 +150,7 @@ def convertToWallGrid(wallGrid,grid,rooms):
 def convertToNPCGrid(NPCGrid,grid,rooms):
     for x in range(len(NPCGrid)):
         for y in range(len(NPCGrid[x])):
-            if NPCGrid[x][y] == 5:
+            if grid[x][y] == 5:
                 NPC = CreateNPC((x,y),grid,rooms)
                 NPCGrid[x][y] = NPC
 
@@ -346,17 +346,33 @@ def SetGridTile(grid,position,tileIndex):
     y = position[1]
 
     grid[x][y] = tileIndex
-
-def MoveEnemies(grid,NPCGrid):
-    moving = True
+def PlaceRandomEnemies(grid,amount):
+    placed = 0
+    placedPositions = []
+    while placed < amount:
+        gettingPosition = True
+        placed +=1
+        x = 0
+        y = 0
+        while gettingPosition:
+            x = rand.randint(0,len(grid))
+            y = rand.randint(0,len(grid[0]))
+            if (x,y) in placedPositions:
+                pass
+            else:
+                placedPositions.append((x,y))
+                gettingPosition = False
+        grid[x][y] = 5
+def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if grid[x][y] == 5:
+                moving = True
                 passes = 0
                 while moving:
                     passes += 1
                     randomDirection = rand.randint(0,3)
-                    if randomDirection == 0:
+                    if randomDirection == 0 and y -1 > 0:
                         if grid[x][y-1] == 0:
                             grid[x][y] = 0
                             grid[x][y-1] = 5
@@ -364,7 +380,13 @@ def MoveEnemies(grid,NPCGrid):
                             NPCGrid[x][y-1]=NPCGrid[x][y]
                             NPCGrid[x][y] = 0
                             moving = False
-                    if randomDirection == 1:
+                        elif NPCGrid[x][y].dig and grid[x][y-1] == 2:
+                            wallGrid[x][y-1].hp -= NPCGrid[x][y].wallDamage
+                            moving = False
+                            if WallGrid[x][y-1].hp <= 0:
+                                WallGrid[x][y-1] = 0
+                                grid[x][y-1] = 0
+                    if randomDirection == 1 and y+1 < len(grid[x]):
                         if grid[x][y+1] == 0:
                             grid[x][y] = 0
                             grid[x][y+1] = 5
@@ -372,7 +394,13 @@ def MoveEnemies(grid,NPCGrid):
                             NPCGrid[x][y+1] = NPCGrid[x][y]
                             NPCGrid[x][y] = 0
                             moving = False
-                    if randomDirection == 2:
+                        elif NPCGrid[x][y].dig and grid[x][y+1] == 2:
+                            wallGrid[x][y+1].hp -= NPCGrid[x][y].wallDamage
+                            moving = False
+                            if WallGrid[x][y+1].hp <= 0:
+                                WallGrid[x][y+1] = 0
+                                grid[x][y+1] = 0
+                    if randomDirection == 2 and x -1 > 0:
                         if grid[x-1][y] == 0:
                             grid[x][y] = 0
                             grid[x-1][y] = 5
@@ -380,7 +408,13 @@ def MoveEnemies(grid,NPCGrid):
                             NPCGrid[x-1][y] = NPCGrid[x][y]
                             NPCGrid[x][y] = 0
                             moving = False
-                    if randomDirection == 3:
+                        elif NPCGrid[x][y].dig and grid[x-1][y] == 2:
+                            wallGrid[x-1][y].hp -= NPCGrid[x][y].wallDamage
+                            moving = False
+                            if WallGrid[x -1][y].hp <= 0:
+                                WallGrid[x -1][y] = 0
+                                grid[x - 1][y] = 0
+                    if randomDirection == 3 and x+1 < len(grid):
                         if grid[x+1][y] == 0:
                             grid[x][y] = 0
                             grid[x+1][y] = 5
@@ -388,6 +422,12 @@ def MoveEnemies(grid,NPCGrid):
                             NPCGrid[x+1][y] = NPCGrid[x][y]
                             NPCGrid[x][y] = 0
                             moving = False
+                        elif NPCGrid[x][y].dig and grid[x+1][y] == 2:
+                            wallGrid[x+1][y].hp -= NPCGrid[x][y].wallDamage
+                            moving = False
+                            if WallGrid[x +1][y].hp <= 0:
+                                WallGrid[x +1][y] = 0
+                                grid[x +1][y] = 0
                     if passes == 4:
                         moving = False
 
@@ -434,7 +474,7 @@ playerpos = (playerposx, playerposy)
 emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
-SetGridTile(grid,(playerposx-1,playerposy-3),5)
+PlaceRandomEnemies(grid,5)
 
 convertToItemGrid(ItemsGrid)
 convertToNPCGrid(NPCGrid,grid,rooms)
@@ -611,7 +651,7 @@ while runing:
 
     playerpos = (playerposx,playerposy)
     grid[playerposx][playerposy] = 1
-    MoveEnemies(grid,NPCGrid)
+    MoveEnemiesRandomly(grid,NPCGrid,WallGrid)
     
     win.fill((black))
 
