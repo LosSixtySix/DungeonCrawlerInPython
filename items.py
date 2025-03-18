@@ -1,3 +1,3 @@
 def getItem(itemId):
-    if itemId == 5:
+    if itemId == 15:
         return "Sword"

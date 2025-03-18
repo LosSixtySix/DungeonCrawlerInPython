@@ -1,0 +1,640 @@
+
+import pygame
+import pygame.freetype
+import random as rand
+import connectingEmptyRooms as CER
+import playerClass as pc
+import items
+import enemies
+import wall
+
+pygame.init()
+pygame.font.init()
+
+WIDTH = 720
+HEIGHT = 720
+SCREENWIDTH = 1000
+SCREENHEIGHT = 800
+
+MENUWIDTH = int(WIDTH/2)-125
+MENUHEIGHT = 10
+
+TEXTSTARTWIDTH = 732
+TEXTSTARTHEIGHT = 15
+
+TEXTROWGAPDISTANCE = 20
+
+loadRoom = True
+generateRoom = False
+saveMap = False
+
+menuOptions = {"Load Room":True,"Generate Room":True, "Save on Exit":True}
+
+
+
+
+white = (255, 255, 255) 
+green = (0, 255, 0) 
+blue = (0, 0, 128) 
+black = (0, 0, 0)
+red = (255,0,0)
+
+player = pc.PlayerClass()
+
+FONT = pygame.font.Font('freesansbold.ttf',15)
+
+def saveMenuOptions(fileName,menuOptions):
+    openOptions = open(fileName,'w')
+    keys = menuOptions.keys()
+    for key in keys:
+        openOptions.write(f"{key},{menuOptions[key]}\n")
+
+
+def loadMenuOptions(fileName,menuOptions):
+    openOptions = open(fileName,'r')
+    menuItems = openOptions.readlines()
+    openOptions.close()
+
+    for passes in range(len(menuItems)):
+        menuItems.append(menuItems.pop(0).split(','))
+    for item in menuItems:
+        if item[1] == 'True\n' or item[1] == 'True':
+            menuOptions[item[0]] = True
+        elif item[1] == 'False\n' or item[1] == 'False':
+            menuOptions[item[0]] = False
+
+
+def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
+    keys = stats.keys()
+
+    
+    selectItemIndex += 1
+    passes = 0
+    
+    if len(keys) > 0:
+        for key in keys:
+            if isinstance(stats[key], list):
+                if stats[key][0] == 3: #number 3 in a list for the grid means a list of items.
+                    for item in stats[key]:
+                        if item == 3:
+                            text = FONT.render("Items in Room:",True,blue,black)
+                            textRect = text.get_rect()
+                            textWidth = text.get_width()
+                            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
+                            win.blit(text, textRect)
+                            passes += 1
+                        else:
+                            text = FONT.render(f"{items.getItem(item)}",True,blue,black)
+                            if passes == selectItemIndex and selectItem:
+                                text = FONT.render(f"> {items.getItem(item)}",True,blue,black)
+                            textRect = text.get_rect()
+                            textWidth = text.get_width()
+                            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2) + 10, startHeight + (TEXTROWGAPDISTANCE * passes))
+                            win.blit(text, textRect)
+                            passes += 1
+                elif stats[key][0] == 4: #number 4 in a list means a list of the inventory items
+                    for item in stats[key]:
+                        if item == 4:
+                            text = FONT.render("Inventory:",True,blue,black)
+                            textRect = text.get_rect()
+                            textWidth = text.get_width()
+                            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
+                            win.blit(text, textRect)
+                            passes += 1
+                        else:
+                            text = FONT.render(f"{items.getItem(item)}",True,blue,black)
+                            if passes == selectItemIndex and selectItem:
+                                text = FONT.render(f"> {items.getItem(item)}",True,blue,black)
+                            textRect = text.get_rect()
+                            textWidth = text.get_width()
+                            textRect.center = (TEXTSTARTWIDTH + int(textWidth/2) + 10, startHeight + (TEXTROWGAPDISTANCE * passes))
+                            win.blit(text, textRect)
+                            passes += 1
+            else:
+                text = FONT.render(f"{key}: {stats[key]}",True,blue,black)
+                textRect = text.get_rect()
+                textWidth = text.get_width()
+                textRect.center = (TEXTSTARTWIDTH + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
+                win.blit(text, textRect)
+                passes += 1
+    return TEXTROWGAPDISTANCE * passes
+win = pygame.display.set_mode((SCREENWIDTH,SCREENHEIGHT))
+
+
+
+
+playerposx = 35
+playerposy = 25
+
+playervel = 1
+
+playerDirection = 0
+
+grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+
+def convertToItemGrid(itemsGrid):
+    for x in range(len(itemsGrid)):
+        for y in range(len(itemsGrid[x])):
+            itemsGrid[x][y] = [itemsGrid[x][y]]
+
+def convertToWallGrid(wallGrid,grid,rooms):
+    for x in range(len(wallGrid)):
+        for y in range(len(wallGrid[x])):
+            if wallGrid[x][y] == 2:
+                wall = CreateWall((x,y),grid,rooms)
+                wallGrid[x][y] = wall
+
+def convertToNPCGrid(NPCGrid,grid,rooms):
+    for x in range(len(NPCGrid)):
+        for y in range(len(NPCGrid[x])):
+            if NPCGrid[x][y] == 5:
+                NPC = CreateNPC((x,y),grid,rooms)
+                NPCGrid[x][y] = NPC
+
+def addItem(itemsGrid, position, item):
+    x = position[0]
+    y = position[1]
+
+    if itemsGrid[x][y][0] != 2:
+        itemsGrid[x][y][0] = 3
+        itemsGrid[x][y].append(item)
+
+def getItemsFromGrid(itemsGrid,position):
+    x = position[0]
+    y = position[1]
+
+    if itemsGrid[x][y][0] == 3:
+        return itemsGrid[x][y]
+    return "None"
+
+def areItemsInTile(Id):
+    if Id == 3:
+        return True
+    return False
+
+
+
+def pickUpItem(player,itemGrid,position,selectItemIndex):
+    x = position[0]
+    y = position[1]
+
+    if itemGrid[x][y][0] == 3:
+        itemId = itemGrid[x][y].pop(selectItemIndex)
+        player.addItemToInventory(itemId)
+
+
+def CreateRooms(emptyNodes):
+    rooms = {"Stone":[],"Wood":[],"Sand":[]}
+    for node in emptyNodes:
+        randomType = rand.randint(0,2)
+        if randomType == 0:
+            rooms["Stone"].append(node)
+        elif randomType == 1:
+            rooms["Wood"].append(node)
+        else:
+            rooms["Sand"].append(node)
+    return rooms
+
+
+def getRoomType(position,rooms):
+    keys = rooms.keys()
+
+    for key in keys:
+        for node in rooms[key]:
+            for pos in node:
+                if pos == position:
+                    return key
+
+def stepsToEmptyTile(position,grid,direction):
+    steps = 0
+    x = position[0]
+    y = position[1]
+    if direction == 0:
+        if y - 1 > 0:
+            if grid[x][y-1] != 0:
+                steps += stepsToEmptyTile((x,y-1),grid,direction)
+            return steps +1
+        return steps
+    if direction == 1:
+        if y + 1 < len(grid[x]):
+            if grid[x][y+1] != 0:
+                steps += stepsToEmptyTile((x,y+1),grid,direction)     
+            return steps +1
+        return steps
+    if direction == 2:
+        if x -1 > 0:
+            if grid[x-1][y] != 0:
+                steps += stepsToEmptyTile((x-1,y),grid,direction)   
+            return steps +1
+        return steps        
+    if direction == 3:
+        if x + 1 < len(grid):
+            if grid[x+1][y] != 0:
+                steps += stepsToEmptyTile((x+1,y),grid,direction)   
+            return steps +1
+        return steps     
+    return steps
+    
+def getNearestEmptyTile(position,grid):
+    upSteps = stepsToEmptyTile(position,grid,0)
+    downSteps = stepsToEmptyTile(position,grid,1)
+    rightSteps = stepsToEmptyTile(position,grid,2)
+    leftSteps = stepsToEmptyTile(position,grid,3)
+
+    if (upSteps != 0 or downSteps !=0 or rightSteps !=0 or leftSteps !=0):
+        if upSteps <= downSteps and upSteps != 0:
+            if rightSteps <= leftSteps and rightSteps !=0:
+                if upSteps <=rightSteps:
+                    return (position[0],position[1] - upSteps)
+                else:
+                    return (position[0] - rightSteps,position[1])
+            else:
+                if upSteps <= leftSteps and leftSteps !=0:
+                    return(position[0],position[1]-upSteps)
+                else:
+                    return (position[0] + leftSteps, position[1])
+        else:
+            if downSteps > 0:
+                if rightSteps <= leftSteps and rightSteps !=0:
+                    if downSteps <= rightSteps:
+                        return(position[0],position[1] + downSteps)
+                    else:
+                        return(position[0] - rightSteps,position[1])
+                elif leftSteps <= downSteps and leftSteps !=0:
+                    return(position[0] + leftSteps,position[1])
+                else:
+                    return (position[0], position[1] + downSteps)
+            else:
+                if rightSteps <= leftSteps and rightSteps !=0:
+                    return(position[0] - rightSteps,position[1])
+                return(position[0] + leftSteps,position[1])
+    return position
+
+def getDirection(direction):
+    if direction == 0:
+        return "Left"
+    elif direction ==1:
+        return "Right"
+    elif direction ==2:
+        return "Up"
+    elif direction ==3:
+        return "Down"
+
+def CreateWall(position,grid,rooms):
+    roomType = getRoomType(getNearestEmptyTile(position,grid),rooms)
+    newWall = None
+    if roomType == "Stone":
+        newWall = wall.StoneWall()
+    elif roomType == "Wood":
+        newWall = wall.WoodWall()
+    else:
+        newWall = wall.SandWall()
+    return newWall
+
+def CreateNPC(position,grid,rooms):
+    roomType = getRoomType(getNearestEmptyTile(position,grid),rooms)
+    newNPC = None
+    if roomType == "Stone":
+        newNPC = enemies.Goblin()
+    elif roomType == "Wood":
+        newNPC = enemies.Goblin()
+    else:
+        newNPC = enemies.Goblin()
+    return newNPC
+
+def gameRunning(menuOpen,selectItem):
+    if menuOpen:
+        return False
+    if selectItem:
+        return False
+    return True
+
+
+def DrawMenu(selectItemIndex):
+    pygame.draw.rect(win,black,pygame.Rect(MENUWIDTH-5,MENUHEIGHT,255,505))
+    pygame.draw.rect(win,white,pygame.Rect(MENUWIDTH,MENUHEIGHT,250,500))
+
+    keys = menuOptions.keys()
+
+    selectItemIndex -= 1
+    passes = 0
+    for key in keys:
+        if menuOptions[key]:
+            text = FONT.render(f"{key} [x]",True,black,white)
+            if passes == selectItemIndex:
+                text = FONT.render(f"> {key} [x]",True,black,white)
+            textRect = text.get_rect()
+            textWidth = text.get_width()
+            textRect.center = (MENUWIDTH + int(textWidth/2), MENUHEIGHT + (TEXTROWGAPDISTANCE * passes) + TEXTROWGAPDISTANCE)
+            win.blit(text, textRect)
+            passes += 1
+        else:
+            text = FONT.render(f"{key} [ ]",True,black,white)
+            if passes == selectItemIndex:
+                text = FONT.render(f"> {key} [ ]",True,black,white)
+            textRect = text.get_rect()
+            textWidth = text.get_width()
+            textRect.center = (MENUWIDTH + int(textWidth/2), MENUHEIGHT + (TEXTROWGAPDISTANCE * passes) + TEXTROWGAPDISTANCE)
+            win.blit(text, textRect)
+            passes += 1
+
+def SetGridTile(grid,position,tileIndex):
+    x = position[0]
+    y = position[1]
+
+    grid[x][y] = tileIndex
+
+def MoveEnemies(grid,NPCGrid):
+    moving = True
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            if grid[x][y] == 5:
+                passes = 0
+                while moving:
+                    passes += 1
+                    randomDirection = rand.randint(0,3)
+                    if randomDirection == 0:
+                        if grid[x][y-1] == 0:
+                            grid[x][y] = 0
+                            grid[x][y-1] = 5
+
+                            NPCGrid[x][y-1]=NPCGrid[x][y]
+                            NPCGrid[x][y] = 0
+                            moving = False
+                    if randomDirection == 1:
+                        if grid[x][y+1] == 0:
+                            grid[x][y] = 0
+                            grid[x][y+1] = 5
+
+                            NPCGrid[x][y+1] = NPCGrid[x][y]
+                            NPCGrid[x][y] = 0
+                            moving = False
+                    if randomDirection == 2:
+                        if grid[x-1][y] == 0:
+                            grid[x][y] = 0
+                            grid[x-1][y] = 5
+
+                            NPCGrid[x-1][y] = NPCGrid[x][y]
+                            NPCGrid[x][y] = 0
+                            moving = False
+                    if randomDirection == 3:
+                        if grid[x+1][y] == 0:
+                            grid[x][y] = 0
+                            grid[x+1][y] = 5
+
+                            NPCGrid[x+1][y] = NPCGrid[x][y]
+                            NPCGrid[x][y] = 0
+                            moving = False
+                    if passes == 4:
+                        moving = False
+
+
+loadMenuOptions("menuOpts.txt",menuOptions)
+
+
+if menuOptions["Load Room"]:
+    openMapFile = open("savedMaps.txt",'r')
+    MapListFromTxt = openMapFile.readlines()
+    openMapFile.close()
+    MapListFromTxt = MapListFromTxt[0].split(',')
+
+    startIndexForMapText = 0
+
+
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            WallGrid[x][y]=int(MapListFromTxt[startIndexForMapText])
+            grid[x][y]=int(MapListFromTxt[startIndexForMapText])
+            startIndexForMapText += 1
+elif menuOptions["Generate Room"]:
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            isWall = rand.randint(0,1)
+            if isWall == 1:
+                grid[x][y] = 2
+                WallGrid[x][y] = 2
+else:
+    wallStartx = 30
+    wallstarty = 30
+
+    grid[wallStartx][wallstarty] = 2
+    grid[wallStartx][wallstarty- 2] = 2
+
+for x in range(len(grid)):
+    for y in range(len(grid[x])):
+        if grid[x][y] == 1:
+            playerposx = x
+            playerposy = y
+
+
+playerpos = (playerposx, playerposy)
+emptyNodes = CER.createNodes(grid)
+rooms = CreateRooms(emptyNodes)
+
+SetGridTile(grid,(playerposx-1,playerposy-3),5)
+
+convertToItemGrid(ItemsGrid)
+convertToNPCGrid(NPCGrid,grid,rooms)
+convertToWallGrid(WallGrid,grid,rooms)
+
+addItem(ItemsGrid,playerpos,15)
+addItem(ItemsGrid,playerpos,15)
+addItem(ItemsGrid,playerpos,15)
+addItem(ItemsGrid,playerpos,15)
+
+
+
+playerTurn = True
+
+menuOpen = False
+selectItem = False
+selectItemIndex = 1
+runing = True
+while runing:
+    
+    grid[playerposx][playerposy] = 1
+
+    roomType = getRoomType(playerpos,rooms)
+    roomItems = getItemsFromGrid(ItemsGrid,playerpos)
+    cardinalDirection = getDirection(playerDirection)
+    if selectItem:
+        if len(roomItems) == 1:
+                ItemsGrid[playerposx][playerposy][0] = 0
+                selectItem = False
+                selectItemIndex = 1
+        if selectItemIndex > len(roomItems):
+            selectItemIndex -=2
+        if selectItemIndex == len(roomItems):
+            selectItemIndex -=1
+
+    CharacterStatistics = {"Health":player.hp,"AC":player.ac,"Player Direction":cardinalDirection,"Wall Damage":player.wallDamage,"Player X":playerposx,"Player Y":playerposy}
+    RoomStatistics = {"Room Type":roomType, "Items in Room":roomItems}
+    pygame.time.delay(100)
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            saveMenuOptions("menuOpts.txt",menuOptions)
+            if menuOptions["Save on Exit"]:
+                f = open("savedMaps.txt","a")   
+                for x in range(len(grid)):
+                    for y in range(len(grid[x])):
+                        if x == 0 and y == 0:
+                            f.write(f"{grid[x][y]}")
+                        elif x == len(grid) -1 and y == len(grid[0]) -1:
+                            f.write(f",{grid[x][y]}\n")
+                        else:
+                            f.write(f",{grid[x][y]}")
+            runing = False
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                if selectItem == False and menuOpen == False:
+                    if areItemsInTile(roomItems[0]):
+                        print("There are items in this room")
+                        selectItem = True
+                elif menuOpen:
+                    keys = menuOptions.keys()
+                    passes = 0
+                    for key in keys:
+                        if passes == selectItemIndex -1:
+                            if menuOptions[key]:
+                                menuOptions[key] = False
+                            else:
+                                menuOptions[key] = True
+                        passes += 1
+                elif selectItem:
+                    pickUpItem(player,ItemsGrid,playerpos,selectItemIndex)
+            if event.key == pygame.K_ESCAPE:
+                if menuOpen:
+                    menuOpen = False
+                    selectItemIndex = 1
+                else:
+                    menuOpen = True
+                    selectItemIndex =1
+            if event.key == pygame.K_q:
+                if selectItem:
+                    selectItem = False
+                    selectItemIndex = 1
+                if menuOpen:
+                    menuOpen = False
+                    selectItemIndex = 1
+            if gameRunning(selectItem,menuOpen):
+                if event.key == pygame.K_e:
+                    if playerDirection == 0:
+                        if playerposx - 1 >= 0:
+                            if grid[playerposx - 1][playerposy] == 2:
+                                if WallGrid[playerposx -1][playerposy].hp > 0:
+                                    WallGrid[playerposx -1][playerposy].hp -= player.wallDamage
+                                    print("You damaged the wall")
+                                if WallGrid[playerposx -1][playerposy].hp <= 0:
+                                    print("wall destroyed")
+                                    WallGrid[playerposx -1][playerposy] = 0
+                                    grid[playerposx - 1][playerposy] = 0
+                    elif playerDirection == 1:
+                        if playerposx + 1 < int(WIDTH/10):
+                            if grid[playerposx + 1][playerposy] == 2:
+                                if WallGrid[playerposx + 1][playerposy].hp > 0:
+                                    WallGrid[playerposx + 1][playerposy].hp -= player.wallDamage
+                                    print("You damaged the wall")
+                                if WallGrid[playerposx + 1][playerposy].hp <= 0:
+                                    print("wall destroyed")
+                                    WallGrid[playerposx + 1][playerposy] = 0
+                                    grid[playerposx + 1][playerposy] = 0
+                    elif playerDirection == 2:
+                        if playerposy - 1 >= 0:
+                            if grid[playerposx][playerposy - 1] == 2:
+                                if WallGrid[playerposx][playerposy -1].hp > 0:
+                                    WallGrid[playerposx][playerposy -1].hp -= player.wallDamage
+                                    print("You damaged the wall")
+                                if WallGrid[playerposx][playerposy -1].hp <= 0:
+                                    print("wall destroyed")
+                                    WallGrid[playerposx][playerposy -1] = 0
+                                    grid[playerposx][playerposy - 1] = 0
+                    elif playerDirection == 3:
+                        if playerposy + 1 < int(HEIGHT/10):
+                            if grid[playerposx][playerposy + 1] == 2:
+                                if WallGrid[playerposx][playerposy + 1].hp > 0:
+                                    WallGrid[playerposx][playerposy + 1].hp -= player.wallDamage
+                                    print("You damaged the wall")
+                                if WallGrid[playerposx][playerposy + 1].hp <= 0:
+                                    print("wall destroyed")
+                                    WallGrid[playerposx][playerposy + 1] = 0
+                                    grid[playerposx][playerposy + 1] = 0
+            if event.key == pygame.K_LEFT:
+                if gameRunning(selectItem,menuOpen):
+                    playerDirection = 0
+                    if playerposx - 1 >= 0:
+                        if grid[playerposx - playervel][playerposy] != 2 and grid[playerposx - playervel][playerposy] != 5:
+                            grid[playerposx][playerposy] = 0
+                            playerposx -= playervel
+                            
+        
+            if event.key == pygame.K_RIGHT:
+                if gameRunning(selectItem,menuOpen):
+                    playerDirection = 1
+                    if playerposx + 1 < int(WIDTH/10):
+                        if grid[playerposx + playervel][playerposy] != 2 and grid[playerposx + playervel][playerposy] != 5:
+                            grid[playerposx][playerposy] = 0
+                            playerposx += playervel
+                            
+            if event.key == pygame.K_UP:
+                if gameRunning(selectItem,menuOpen):
+                    playerDirection = 2
+                    if playerposy - 1 >= 0:
+                        if grid[playerposx][playerposy- playervel] != 2 and grid[playerposx][playerposy- playervel] != 5:
+                            grid[playerposx][playerposy] = 0
+                            playerposy -= playervel
+                            
+                else:
+                    if selectItem:
+                        if selectItemIndex - 1 > 0:
+                            selectItemIndex -=1
+                    elif menuOpen:
+                        if selectItemIndex - 1 > 0:
+                            selectItemIndex -= 1
+            if event.key == pygame.K_DOWN:
+                if gameRunning(selectItem,menuOpen):
+                    playerDirection = 3
+                    if playerposy + 1 < int(HEIGHT/10):
+                        if grid[playerposx][playerposy+ playervel] != 2 and grid[playerposx][playerposy+ playervel] != 5:
+                            grid[playerposx][playerposy] = 0
+                            playerposy += playervel
+                            
+                else:
+                    if selectItem:
+                        if selectItemIndex + 1 < len(roomItems):
+                            selectItemIndex +=1
+                    elif menuOpen:
+                        if selectItemIndex +1 <= len(menuOptions.keys()):
+                            selectItemIndex +=1
+
+    playerpos = (playerposx,playerposy)
+    grid[playerposx][playerposy] = 1
+    MoveEnemies(grid,NPCGrid)
+    
+    win.fill((black))
+
+
+    
+
+    TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT,selectItem,selectItemIndex)
+    TextHeightIncrement += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
+    TextHeightIncrement += displayStatistics(player.equipment,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
+    TextHeightIncrement += displayStatistics(player.inventory,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
+
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            if grid[x][y] == 2:
+                pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+            if grid[x][y] == 1:
+                pygame.draw.rect(win,green,pygame.Rect(x*10,y*10,10,10))
+            if grid[x][y] ==5:
+                pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
+    if menuOpen:
+        DrawMenu(selectItemIndex)
+    
+    pygame.display.flip()
+
+
+    pygame.display.update()
