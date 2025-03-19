@@ -355,8 +355,8 @@ def PlaceRandomEnemies(grid,amount):
         x = 0
         y = 0
         while gettingPosition:
-            x = rand.randint(0,len(grid))
-            y = rand.randint(0,len(grid[0]))
+            x = rand.randint(0,len(grid) -1)
+            y = rand.randint(0,len(grid[0]) -1)
             if (x,y) in placedPositions:
                 pass
             else:
@@ -472,6 +472,7 @@ loadMenuOptions("menuOpts.txt",menuOptions)
 
 
 if menuOptions["Load Room"]:
+    print("Loaded Room")
     openMapFile = open("savedMaps.txt",'r')
     MapListFromTxt = openMapFile.readlines()
     openMapFile.close()
@@ -486,6 +487,7 @@ if menuOptions["Load Room"]:
             grid[x][y]=int(MapListFromTxt[startIndexForMapText])
             startIndexForMapText += 1
 elif menuOptions["Generate Room"]:
+    print("Generated Room")
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             isWall = rand.randint(0,1)
@@ -604,6 +606,7 @@ while runing:
                                 if WallGrid[playerposx -1][playerposy].hp > 0:
                                     WallGrid[playerposx -1][playerposy].hp -= player.wallDamage
                                     print("You damaged the wall")
+                                    enemyMove = True
                                 if WallGrid[playerposx -1][playerposy].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx -1][playerposy] = 0
@@ -614,6 +617,7 @@ while runing:
                                 if WallGrid[playerposx + 1][playerposy].hp > 0:
                                     WallGrid[playerposx + 1][playerposy].hp -= player.wallDamage
                                     print("You damaged the wall")
+                                    enemyMove = True
                                 if WallGrid[playerposx + 1][playerposy].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx + 1][playerposy] = 0
@@ -624,6 +628,7 @@ while runing:
                                 if WallGrid[playerposx][playerposy -1].hp > 0:
                                     WallGrid[playerposx][playerposy -1].hp -= player.wallDamage
                                     print("You damaged the wall")
+                                    enemyMove = True
                                 if WallGrid[playerposx][playerposy -1].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx][playerposy -1] = 0
@@ -634,6 +639,7 @@ while runing:
                                 if WallGrid[playerposx][playerposy + 1].hp > 0:
                                     WallGrid[playerposx][playerposy + 1].hp -= player.wallDamage
                                     print("You damaged the wall")
+                                    enemyMove = True
                                 if WallGrid[playerposx][playerposy + 1].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx][playerposy + 1] = 0
