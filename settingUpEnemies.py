@@ -389,6 +389,10 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             if WallGrid[x][y-1].hp <= 0:
                                 WallGrid[x][y-1] = 0
                                 grid[x][y-1] = 0
+                        elif grid[x][y-1] == 1:
+                            player.hp -= NPCGrid[x][y].damage
+                            moving = False
+                            print(player.hp)
                     if randomDirection == 1 and y+1 < len(grid[x]):
                         if grid[x][y+1] == 0:
                             grid[x][y] = 0
@@ -403,6 +407,10 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             if WallGrid[x][y+1].hp <= 0:
                                 WallGrid[x][y+1] = 0
                                 grid[x][y+1] = 0
+                        elif grid[x][y+1] == 1:
+                            player.hp -= NPCGrid[x][y].damage
+                            moving = False
+                            print(player.hp)
                     if randomDirection == 2 and x -1 > 0:
                         if grid[x-1][y] == 0:
                             grid[x][y] = 0
@@ -417,6 +425,10 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             if WallGrid[x -1][y].hp <= 0:
                                 WallGrid[x -1][y] = 0
                                 grid[x - 1][y] = 0
+                        elif grid[x-1][y] == 1:
+                            player.hp -= NPCGrid[x][y].damage
+                            moving = False
+                            print(player.hp)
                     if randomDirection == 3 and x+1 < len(grid):
                         if grid[x+1][y] == 0:
                             grid[x][y] = 0
@@ -431,6 +443,10 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             if WallGrid[x +1][y].hp <= 0:
                                 WallGrid[x +1][y] = 0
                                 grid[x +1][y] = 0
+                        elif grid[x+1][y] == 1:
+                            player.hp -= NPCGrid[x][y].damage
+                            moving = False
+                            print(player.hp)
                     if passes == 4:
                         moving = False
     for NPC in listOfMovedEnemies:
