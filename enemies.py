@@ -5,6 +5,7 @@ class Enemy():
         self.speed = speed
         self.wallDamage = wallDamage
         self.dig = self.CanDig()
+        self.move = True
 
     def CanDig(self):
         if self.wallDamage > 0:

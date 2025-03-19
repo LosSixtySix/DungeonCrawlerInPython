@@ -364,9 +364,12 @@ def PlaceRandomEnemies(grid,amount):
                 gettingPosition = False
         grid[x][y] = 5
 def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
+    listOfMovedEnemies = []
     for x in range(len(grid)):
         for y in range(len(grid[x])):
-            if grid[x][y] == 5:
+            if grid[x][y] == 5 and NPCGrid[x][y].move:
+                NPCGrid[x][y].move = False
+                listOfMovedEnemies.append(NPCGrid[x][y])
                 moving = True
                 passes = 0
                 while moving:
@@ -430,7 +433,24 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                                 grid[x +1][y] = 0
                     if passes == 4:
                         moving = False
+    for NPC in listOfMovedEnemies:
+        NPC.move = True
 
+
+def CheckIfMovedMoreThanOne(current,last,lastDir):
+    current_x = current[0]
+    current_y = current[1]
+
+    last_x = last[0]
+    last_y = last[1]
+
+    if current_x -2 == last_x or current_x +2 == last_x:
+        print(f"x moved more than two lastDir: {lastDir}\nC: {current}\nL: {last}\n")
+
+    elif current_y -2 == last_y or current_y +2 == last_y:
+        print(f"y moved more than two lastDir: {lastDir}\nC: {current}\nL: {last}\n")
+
+    return current
 
 loadMenuOptions("menuOpts.txt",menuOptions)
 
@@ -474,7 +494,8 @@ playerpos = (playerposx, playerposy)
 emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
-PlaceRandomEnemies(grid,5)
+
+PlaceRandomEnemies(grid,20)
 
 convertToItemGrid(ItemsGrid)
 convertToNPCGrid(NPCGrid,grid,rooms)
@@ -485,7 +506,7 @@ addItem(ItemsGrid,playerpos,15)
 addItem(ItemsGrid,playerpos,15)
 addItem(ItemsGrid,playerpos,15)
 
-
+enemyMove = False
 
 playerTurn = True
 
@@ -608,6 +629,7 @@ while runing:
                         if grid[playerposx - playervel][playerposy] != 2 and grid[playerposx - playervel][playerposy] != 5:
                             grid[playerposx][playerposy] = 0
                             playerposx -= playervel
+                            enemyMove = True
                             
         
             if event.key == pygame.K_RIGHT:
@@ -617,6 +639,7 @@ while runing:
                         if grid[playerposx + playervel][playerposy] != 2 and grid[playerposx + playervel][playerposy] != 5:
                             grid[playerposx][playerposy] = 0
                             playerposx += playervel
+                            enemyMove = True
                             
             if event.key == pygame.K_UP:
                 if gameRunning(selectItem,menuOpen):
@@ -625,6 +648,7 @@ while runing:
                         if grid[playerposx][playerposy- playervel] != 2 and grid[playerposx][playerposy- playervel] != 5:
                             grid[playerposx][playerposy] = 0
                             playerposy -= playervel
+                            enemyMove = True
                             
                 else:
                     if selectItem:
@@ -640,6 +664,7 @@ while runing:
                         if grid[playerposx][playerposy+ playervel] != 2 and grid[playerposx][playerposy+ playervel] != 5:
                             grid[playerposx][playerposy] = 0
                             playerposy += playervel
+                            enemyMove = True
                             
                 else:
                     if selectItem:
@@ -651,7 +676,9 @@ while runing:
 
     playerpos = (playerposx,playerposy)
     grid[playerposx][playerposy] = 1
-    MoveEnemiesRandomly(grid,NPCGrid,WallGrid)
+    if enemyMove:
+        MoveEnemiesRandomly(grid,NPCGrid,WallGrid)
+        enemyMove = False
     
     win.fill((black))
 
