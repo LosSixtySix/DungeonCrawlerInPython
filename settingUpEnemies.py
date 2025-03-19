@@ -38,6 +38,7 @@ green = (0, 255, 0)
 blue = (0, 0, 128) 
 black = (0, 0, 0)
 red = (255,0,0)
+purple = (128, 0, 128)
 
 player = pc.PlayerClass()
 
@@ -154,11 +155,13 @@ def convertToNPCGrid(NPCGrid,grid,rooms):
                 NPC = CreateNPC((x,y),grid,rooms)
                 NPCGrid[x][y] = NPC
 
-def addItem(itemsGrid, position, item):
+def addItem(itemsGrid,grid, position, item):
     x = position[0]
     y = position[1]
 
     if itemsGrid[x][y][0] != 2:
+        grid[x][y] = 3
+
         itemsGrid[x][y][0] = 3
         itemsGrid[x][y].append(item)
 
@@ -452,6 +455,12 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
     for NPC in listOfMovedEnemies:
         NPC.move = True
 
+def CheckForItem(grid,itemGrid):
+    for x in range(len(itemGrid)):
+        for y in range(len(itemGrid[x])):
+            if itemGrid[x][y][0] == 3:
+                grid[x][y] = 3
+
 
 def CheckIfMovedMoreThanOne(current,last,lastDir):
     current_x = current[0]
@@ -519,10 +528,10 @@ convertToItemGrid(ItemsGrid)
 convertToNPCGrid(NPCGrid,grid,rooms)
 convertToWallGrid(WallGrid,grid,rooms)
 
-addItem(ItemsGrid,playerpos,15)
-addItem(ItemsGrid,playerpos,15)
-addItem(ItemsGrid,playerpos,15)
-addItem(ItemsGrid,playerpos,15)
+addItem(ItemsGrid,grid,playerpos,15)
+addItem(ItemsGrid,grid,playerpos,15)
+addItem(ItemsGrid,grid,playerpos,15)
+addItem(ItemsGrid,grid,playerpos,15)
 
 enemyMove = False
 
@@ -652,6 +661,7 @@ while runing:
                             grid[playerposx][playerposy] = 0
                             playerposx -= playervel
                             enemyMove = True
+                            CheckForItem(grid,ItemsGrid)
                             
         
             if event.key == pygame.K_RIGHT:
@@ -662,6 +672,7 @@ while runing:
                             grid[playerposx][playerposy] = 0
                             playerposx += playervel
                             enemyMove = True
+                            CheckForItem(grid,ItemsGrid)
                             
             if event.key == pygame.K_UP:
                 if gameRunning(selectItem,menuOpen):
@@ -671,6 +682,7 @@ while runing:
                             grid[playerposx][playerposy] = 0
                             playerposy -= playervel
                             enemyMove = True
+                            CheckForItem(grid,ItemsGrid)
                             
                 else:
                     if selectItem:
@@ -687,6 +699,7 @@ while runing:
                             grid[playerposx][playerposy] = 0
                             playerposy += playervel
                             enemyMove = True
+                            CheckForItem(grid,ItemsGrid)
                             
                 else:
                     if selectItem:
@@ -718,6 +731,8 @@ while runing:
                 pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
             if grid[x][y] == 1:
                 pygame.draw.rect(win,green,pygame.Rect(x*10,y*10,10,10))
+            if grid[x][y] == 3:
+                pygame.draw.rect(win,purple,pygame.Rect(x*10,y*10,10,10))
             if grid[x][y] ==5:
                 pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
     if menuOpen:
