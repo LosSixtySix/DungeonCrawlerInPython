@@ -1,11 +1,13 @@
 import items
+import random
 
 class PlayerClass():
     def __init__(self):
         self.hp = 0
         self.ac = 0
         self.itemIncrement = 0
-        self.wallDamage = 1 
+        self.wallDamage = 1
+        self.MaxDamage = 6
         self.inventory = {"Inventory":[4]}
         self.inventoryLimit = 10
         self.equipment = {"Head":"None","Chest":"None","Gloves":"None","Left Hand":"None","Right Hand":"None","Legs":"None","Feet":"None"}
@@ -18,3 +20,5 @@ class PlayerClass():
             self.inventory["Inventory"].append(item)
             return True
         return False
+    def DealDamage(self):
+        return random.randint(0,6)

@@ -1,8 +1,9 @@
 class Enemy():
-    def __init__(self,hp,ac,speed,wallDamage,damage):
+    def __init__(self,hp,ac,speed,wallDamage,damage,name):
         self.hp = hp
         self.ac = ac
         self.speed = speed
+        self.name = name
         self.wallDamage = wallDamage
         self.damage = damage
         self.dig = self.CanDig()
@@ -14,6 +15,6 @@ class Enemy():
         
 class Goblin(Enemy):
     def __init__(self):
-        super().__init__(5, 10, 1, 5,1)
+        super().__init__(5, 10, 1, 5,1,"Goblin")
         self.inventory = [5]
 

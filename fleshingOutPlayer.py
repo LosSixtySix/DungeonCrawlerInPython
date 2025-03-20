@@ -5,7 +5,7 @@ import random as rand
 import connectingEmptyRooms as CER
 import playerClass as pc
 import items
-import copy
+import enemies
 import wall
 
 pygame.init()
@@ -37,6 +37,9 @@ white = (255, 255, 255)
 green = (0, 255, 0) 
 blue = (0, 0, 128) 
 black = (0, 0, 0)
+red = (255,0,0)
+purple = (128, 0, 128)
+brown = (88,57,39)
 
 player = pc.PlayerClass()
 
@@ -132,7 +135,7 @@ playerDirection = 0
 grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-
+NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 
 def convertToItemGrid(itemsGrid):
     for x in range(len(itemsGrid)):
@@ -146,11 +149,20 @@ def convertToWallGrid(wallGrid,grid,rooms):
                 wall = CreateWall((x,y),grid,rooms)
                 wallGrid[x][y] = wall
 
-def addItem(itemsGrid, position, item):
+def convertToNPCGrid(NPCGrid,grid,rooms):
+    for x in range(len(NPCGrid)):
+        for y in range(len(NPCGrid[x])):
+            if grid[x][y] == 5:
+                NPC = CreateNPC((x,y),grid,rooms)
+                NPCGrid[x][y] = NPC
+
+def addItem(itemsGrid,grid, position, item):
     x = position[0]
     y = position[1]
 
     if itemsGrid[x][y][0] != 2:
+        grid[x][y] = 3
+
         itemsGrid[x][y][0] = 3
         itemsGrid[x][y].append(item)
 
@@ -286,6 +298,17 @@ def CreateWall(position,grid,rooms):
         newWall = wall.SandWall()
     return newWall
 
+def CreateNPC(position,grid,rooms):
+    roomType = getRoomType(getNearestEmptyTile(position,grid),rooms)
+    newNPC = None
+    if roomType == "Stone":
+        newNPC = enemies.Goblin()
+    elif roomType == "Wood":
+        newNPC = enemies.Goblin()
+    else:
+        newNPC = enemies.Goblin()
+    return newNPC
+
 def gameRunning(menuOpen,selectItem):
     if menuOpen:
         return False
@@ -322,11 +345,190 @@ def DrawMenu(selectItemIndex):
             win.blit(text, textRect)
             passes += 1
 
+def SetGridTile(grid,position,tileIndex):
+    x = position[0]
+    y = position[1]
+
+    grid[x][y] = tileIndex
+def PlaceRandomEnemies(grid,amount):
+    placed = 0
+    placedPositions = []
+    while placed < amount:
+        gettingPosition = True
+        placed +=1
+        x = 0
+        y = 0
+        while gettingPosition:
+            x = rand.randint(0,len(grid) -1)
+            y = rand.randint(0,len(grid[0]) -1)
+            if (x,y) in placedPositions:
+                pass
+            else:
+                placedPositions.append((x,y))
+                gettingPosition = False
+        grid[x][y] = 5
+    return placedPositions
+def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
+    listOfMovedEnemies = []
+    listOfNewPositions = []
+    newPositionAdded = False
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            if grid[x][y] == 5 and NPCGrid[x][y].move:
+                NPCGrid[x][y].move = False
+                listOfMovedEnemies.append(NPCGrid[x][y])
+                moving = True
+                passes = 0
+                while moving:
+                    passes += 1
+                    randomDirection = rand.randint(0,3)
+                    if randomDirection == 0 and y -1 > 0:
+                        if grid[x][y-1] == 0:
+                            grid[x][y] = 0
+                            grid[x][y-1] = 5
+
+                            NPCGrid[x][y-1]=NPCGrid[x][y]
+                            NPCGrid[x][y] = 0
+                            listOfNewPositions.append((x,y-1))
+                            newPositionAdded = True
+                            moving = False
+                        elif NPCGrid[x][y].dig and grid[x][y-1] == 2:
+                            wallGrid[x][y-1].hp -= NPCGrid[x][y].wallDamage
+                            moving = False
+                            if WallGrid[x][y-1].hp <= 0:
+                                WallGrid[x][y-1] = 0
+                                grid[x][y-1] = 0
+                        elif grid[x][y-1] == 1:
+                            player.hp -= NPCGrid[x][y].damage
+                            moving = False
+                            print(player.hp)
+                        if newPositionAdded == False:
+                            listOfNewPositions.append((x,y))
+                    if randomDirection == 1 and y+1 < len(grid[x]):
+                        if grid[x][y+1] == 0:
+                            grid[x][y] = 0
+                            grid[x][y+1] = 5
+
+                            NPCGrid[x][y+1] = NPCGrid[x][y]
+                            NPCGrid[x][y] = 0
+                            listOfNewPositions.append((x,y+1))
+                            newPositionAdded = True
+                            moving = False
+                        elif NPCGrid[x][y].dig and grid[x][y+1] == 2:
+                            wallGrid[x][y+1].hp -= NPCGrid[x][y].wallDamage
+                            moving = False
+                            if WallGrid[x][y+1].hp <= 0:
+                                WallGrid[x][y+1] = 0
+                                grid[x][y+1] = 0
+                        elif grid[x][y+1] == 1:
+                            player.hp -= NPCGrid[x][y].damage
+                            moving = False
+                            print(player.hp)
+                        if newPositionAdded == False:
+                            listOfNewPositions.append((x,y))
+                    if randomDirection == 2 and x -1 > 0:
+                        if grid[x-1][y] == 0:
+                            grid[x][y] = 0
+                            grid[x-1][y] = 5
+
+                            NPCGrid[x-1][y] = NPCGrid[x][y]
+                            NPCGrid[x][y] = 0
+                            listOfNewPositions.append((x-1,y))
+                            newPositionAdded = True
+                            moving = False
+                        elif NPCGrid[x][y].dig and grid[x-1][y] == 2:
+                            wallGrid[x-1][y].hp -= NPCGrid[x][y].wallDamage
+                            moving = False
+                            if WallGrid[x -1][y].hp <= 0:
+                                WallGrid[x -1][y] = 0
+                                grid[x - 1][y] = 0
+                        elif grid[x-1][y] == 1:
+                            player.hp -= NPCGrid[x][y].damage
+                            moving = False
+                            print(player.hp)
+                        if newPositionAdded == False:
+                            listOfNewPositions.append((x,y))
+                    if randomDirection == 3 and x+1 < len(grid):
+                        if grid[x+1][y] == 0:
+                            grid[x][y] = 0
+                            grid[x+1][y] = 5
+
+                            NPCGrid[x+1][y] = NPCGrid[x][y]
+                            NPCGrid[x][y] = 0
+                            listOfNewPositions.append((x+1,y))
+                            newPositionAdded = True
+                            moving = False
+                        elif NPCGrid[x][y].dig and grid[x+1][y] == 2:
+                            wallGrid[x+1][y].hp -= NPCGrid[x][y].wallDamage
+                            moving = False
+                            if WallGrid[x +1][y].hp <= 0:
+                                WallGrid[x +1][y] = 0
+                                grid[x +1][y] = 0
+                        elif grid[x+1][y] == 1:
+                            player.hp -= NPCGrid[x][y].damage
+                            moving = False
+                            print(player.hp)
+                        if newPositionAdded == False:
+                            listOfNewPositions.append((x,y))
+                    if passes == 4:
+                        moving = False
+                newPositionAdded = False
+    for NPC in listOfMovedEnemies:
+        NPC.move = True
+    return listOfNewPositions
+
+def CheckForItem(grid,itemGrid):
+    for x in range(len(itemGrid)):
+        for y in range(len(itemGrid[x])):
+            if itemGrid[x][y][0] == 3:
+                grid[x][y] = 3
+
+
+def CheckIfMovedMoreThanOne(current,last,lastDir):
+    current_x = current[0]
+    current_y = current[1]
+
+    last_x = last[0]
+    last_y = last[1]
+
+    if current_x -2 == last_x or current_x +2 == last_x:
+        print(f"x moved more than two lastDir: {lastDir}\nC: {current}\nL: {last}\n")
+
+    elif current_y -2 == last_y or current_y +2 == last_y:
+        print(f"y moved more than two lastDir: {lastDir}\nC: {current}\nL: {last}\n")
+
+    return current
+
+def RemoveDeadNPCs(listOfPositions):
+    stillAlivePositions = []
+    while(len(listOfPositions) > 0):
+        position = listOfPositions.pop()
+        x = position[0]
+        y = position[1]
+        if NPCGrid[x][y].hp <= 0:
+            print(f"{NPCGrid[x][y].name} is dead")
+            grid[x][y] = 0
+        else:
+            stillAlivePositions.append(position)
+    return stillAlivePositions
+
+def PlaceNextLevelDoor(grid):
+    gettingRandomPosition = True
+    DoorPosition = ()
+    while(gettingRandomPosition):
+        x = rand.randint(0,len(grid) - 1)
+        y = rand.randint(0,len(grid[x]) - 1)
+        if(grid[x][y] == 0 or grid[x][y] == 2):
+            gettingRandomPosition = False
+            DoorPosition = (x,y)
+            grid[x][y] = 4
+    return DoorPosition
 
 loadMenuOptions("menuOpts.txt",menuOptions)
 
 
 if menuOptions["Load Room"]:
+    print("Loaded Room")
     openMapFile = open("savedMaps.txt",'r')
     MapListFromTxt = openMapFile.readlines()
     openMapFile.close()
@@ -341,6 +543,7 @@ if menuOptions["Load Room"]:
             grid[x][y]=int(MapListFromTxt[startIndexForMapText])
             startIndexForMapText += 1
 elif menuOptions["Generate Room"]:
+    print("Generated Room")
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             isWall = rand.randint(0,1)
@@ -365,14 +568,19 @@ playerpos = (playerposx, playerposy)
 emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
-convertToItemGrid(ItemsGrid)
 
+ListOfEnemyPositions = PlaceRandomEnemies(grid,1)
+
+convertToItemGrid(ItemsGrid)
+convertToNPCGrid(NPCGrid,grid,rooms)
 convertToWallGrid(WallGrid,grid,rooms)
 
-addItem(ItemsGrid,playerpos,5)
-addItem(ItemsGrid,playerpos,5)
-addItem(ItemsGrid,playerpos,5)
-addItem(ItemsGrid,playerpos,5)
+addItem(ItemsGrid,grid,playerpos,15)
+addItem(ItemsGrid,grid,playerpos,15)
+addItem(ItemsGrid,grid,playerpos,15)
+addItem(ItemsGrid,grid,playerpos,15)
+
+enemyMove = False
 
 playerTurn = True
 
@@ -380,6 +588,7 @@ menuOpen = False
 selectItem = False
 selectItemIndex = 1
 runing = True
+NewLevelDoorNotAdded = True
 while runing:
     
     grid[playerposx][playerposy] = 1
@@ -454,62 +663,96 @@ while runing:
                                 if WallGrid[playerposx -1][playerposy].hp > 0:
                                     WallGrid[playerposx -1][playerposy].hp -= player.wallDamage
                                     print("You damaged the wall")
+                                    enemyMove = True
                                 if WallGrid[playerposx -1][playerposy].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx -1][playerposy] = 0
                                     grid[playerposx - 1][playerposy] = 0
+                            elif grid[playerposx-1][playerposy] == 5:
+                                damage = player.DealDamage()
+                                print(f"I dealt {damage} damage")
+                                NPCGrid[playerposx -1][playerposy].hp -= damage
+                                enemyMove = True
+                                
                     elif playerDirection == 1:
                         if playerposx + 1 < int(WIDTH/10):
                             if grid[playerposx + 1][playerposy] == 2:
                                 if WallGrid[playerposx + 1][playerposy].hp > 0:
                                     WallGrid[playerposx + 1][playerposy].hp -= player.wallDamage
                                     print("You damaged the wall")
+                                    enemyMove = True
                                 if WallGrid[playerposx + 1][playerposy].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx + 1][playerposy] = 0
                                     grid[playerposx + 1][playerposy] = 0
+                            elif grid[playerposx+1][playerposy] == 5:
+                                damage = player.DealDamage()
+                                print(f"I dealt {damage} damage")
+                                NPCGrid[playerposx+1][playerposy].hp -= damage
+                                enemyMove = True
                     elif playerDirection == 2:
                         if playerposy - 1 >= 0:
                             if grid[playerposx][playerposy - 1] == 2:
                                 if WallGrid[playerposx][playerposy -1].hp > 0:
                                     WallGrid[playerposx][playerposy -1].hp -= player.wallDamage
                                     print("You damaged the wall")
+                                    enemyMove = True
                                 if WallGrid[playerposx][playerposy -1].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx][playerposy -1] = 0
                                     grid[playerposx][playerposy - 1] = 0
+                            elif grid[playerposx][playerposy-1] == 5:
+                                damage = player.DealDamage()
+                                print(f"I dealt {damage} damage")
+                                NPCGrid[playerposx][playerposy-1].hp -= damage
+                                enemyMove = True
                     elif playerDirection == 3:
                         if playerposy + 1 < int(HEIGHT/10):
                             if grid[playerposx][playerposy + 1] == 2:
                                 if WallGrid[playerposx][playerposy + 1].hp > 0:
                                     WallGrid[playerposx][playerposy + 1].hp -= player.wallDamage
                                     print("You damaged the wall")
+                                    enemyMove = True
                                 if WallGrid[playerposx][playerposy + 1].hp <= 0:
                                     print("wall destroyed")
                                     WallGrid[playerposx][playerposy + 1] = 0
                                     grid[playerposx][playerposy + 1] = 0
+                            elif grid[playerposx][playerposy+1] == 5:
+                                damage = player.DealDamage()
+                                print(f"I dealt {damage} damage")
+                                NPCGrid[playerposx][playerposy+1].hp -= damage
+                                enemyMove = True
             if event.key == pygame.K_LEFT:
                 if gameRunning(selectItem,menuOpen):
                     playerDirection = 0
                     if playerposx - 1 >= 0:
-                        if grid[playerposx - playervel][playerposy] != 2:
+                        if grid[playerposx - playervel][playerposy] != 2 and grid[playerposx - playervel][playerposy] != 5:
                             grid[playerposx][playerposy] = 0
                             playerposx -= playervel
+                            enemyMove = True
+                            CheckForItem(grid,ItemsGrid)
+                            
         
             if event.key == pygame.K_RIGHT:
                 if gameRunning(selectItem,menuOpen):
                     playerDirection = 1
                     if playerposx + 1 < int(WIDTH/10):
-                        if grid[playerposx + playervel][playerposy] != 2:
+                        if grid[playerposx + playervel][playerposy] != 2 and grid[playerposx + playervel][playerposy] != 5:
                             grid[playerposx][playerposy] = 0
                             playerposx += playervel
+                            enemyMove = True
+                            CheckForItem(grid,ItemsGrid)
+                            
             if event.key == pygame.K_UP:
                 if gameRunning(selectItem,menuOpen):
                     playerDirection = 2
                     if playerposy - 1 >= 0:
-                        if grid[playerposx][playerposy- playervel] != 2:
+                        if grid[playerposx][playerposy- playervel] != 2 and grid[playerposx][playerposy- playervel] != 5:
                             grid[playerposx][playerposy] = 0
                             playerposy -= playervel
+                            enemyMove = True
+                            CheckForItem(grid,ItemsGrid)
+                            
                 else:
                     if selectItem:
                         if selectItemIndex - 1 > 0:
@@ -521,9 +764,12 @@ while runing:
                 if gameRunning(selectItem,menuOpen):
                     playerDirection = 3
                     if playerposy + 1 < int(HEIGHT/10):
-                        if grid[playerposx][playerposy+ playervel] != 2:
+                        if grid[playerposx][playerposy+ playervel] != 2 and grid[playerposx][playerposy+ playervel] != 5:
                             grid[playerposx][playerposy] = 0
                             playerposy += playervel
+                            enemyMove = True
+                            CheckForItem(grid,ItemsGrid)
+                            
                 else:
                     if selectItem:
                         if selectItemIndex + 1 < len(roomItems):
@@ -534,11 +780,16 @@ while runing:
 
     playerpos = (playerposx,playerposy)
     grid[playerposx][playerposy] = 1
-
+    if enemyMove:
+        ListOfEnemyPositions = MoveEnemiesRandomly(grid,NPCGrid,WallGrid)
+        enemyMove = False
     
     win.fill((black))
 
-
+    ListOfEnemyPositions = RemoveDeadNPCs(ListOfEnemyPositions)
+    if(len(ListOfEnemyPositions) == 0 and NewLevelDoorNotAdded):
+        NewLevelDoorNotAdded = False
+        PlaceNextLevelDoor(grid)
     
 
     TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT,selectItem,selectItemIndex)
@@ -552,6 +803,12 @@ while runing:
                 pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
             if grid[x][y] == 1:
                 pygame.draw.rect(win,green,pygame.Rect(x*10,y*10,10,10))
+            if grid[x][y] == 3:
+                pygame.draw.rect(win,purple,pygame.Rect(x*10,y*10,10,10))
+            if grid[x][y] == 4:
+                pygame.draw.rect(win,brown,pygame.Rect(x*10,y*10,10,10))
+            if grid[x][y] ==5:
+                pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
     if menuOpen:
         DrawMenu(selectItemIndex)
     
