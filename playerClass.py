@@ -6,7 +6,7 @@ class PlayerClass():
         self.hp = 0
         self.ac = 0
         self.itemIncrement = 0
-        self.wallDamage = 1
+        self.wallDamage = 100
         self.MaxDamage = 6
         self.inventory = {"Inventory":[4]}
         self.inventoryLimit = 10

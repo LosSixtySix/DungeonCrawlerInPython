@@ -30,7 +30,7 @@ saveMap = False
 
 menuOptions = {"Load Room":True,"Generate Room":True, "Save on Exit":True}
 
-
+level = 0
 
 
 white = (255, 255, 255) 
@@ -371,13 +371,13 @@ def PlaceRandomEnemies(grid,amount):
 def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
     listOfMovedEnemies = []
     listOfNewPositions = []
-    newPositionAdded = False
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if grid[x][y] == 5 and NPCGrid[x][y].move:
                 NPCGrid[x][y].move = False
                 listOfMovedEnemies.append(NPCGrid[x][y])
                 moving = True
+                newPositionAdded = False
                 passes = 0
                 while moving:
                     passes += 1
@@ -402,8 +402,6 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             player.hp -= NPCGrid[x][y].damage
                             moving = False
                             print(player.hp)
-                        if newPositionAdded == False:
-                            listOfNewPositions.append((x,y))
                     if randomDirection == 1 and y+1 < len(grid[x]):
                         if grid[x][y+1] == 0:
                             grid[x][y] = 0
@@ -424,8 +422,6 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             player.hp -= NPCGrid[x][y].damage
                             moving = False
                             print(player.hp)
-                        if newPositionAdded == False:
-                            listOfNewPositions.append((x,y))
                     if randomDirection == 2 and x -1 > 0:
                         if grid[x-1][y] == 0:
                             grid[x][y] = 0
@@ -446,8 +442,6 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             player.hp -= NPCGrid[x][y].damage
                             moving = False
                             print(player.hp)
-                        if newPositionAdded == False:
-                            listOfNewPositions.append((x,y))
                     if randomDirection == 3 and x+1 < len(grid):
                         if grid[x+1][y] == 0:
                             grid[x][y] = 0
@@ -468,11 +462,11 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             player.hp -= NPCGrid[x][y].damage
                             moving = False
                             print(player.hp)
-                        if newPositionAdded == False:
-                            listOfNewPositions.append((x,y))
                     if passes == 4:
                         moving = False
-                newPositionAdded = False
+                        if newPositionAdded == False:
+                            listOfNewPositions.append((x,y))
+                
     for NPC in listOfMovedEnemies:
         NPC.move = True
     return listOfNewPositions
@@ -511,6 +505,11 @@ def RemoveDeadNPCs(listOfPositions):
         else:
             stillAlivePositions.append(position)
     return stillAlivePositions
+def PlacePreviousLevelDoor(grid,position):
+    x = position[0]
+    y = position[1]
+
+    grid[x][y] = 6
 
 def PlaceNextLevelDoor(grid):
     gettingRandomPosition = True
@@ -527,12 +526,12 @@ def PlaceNextLevelDoor(grid):
 loadMenuOptions("menuOpts.txt",menuOptions)
 
 
-if menuOptions["Load Room"]:
+def LoadLevel(grid,txtFile,level):
     print("Loaded Room")
-    openMapFile = open("savedMaps.txt",'r')
+    openMapFile = open(txtFile,'r')
     MapListFromTxt = openMapFile.readlines()
     openMapFile.close()
-    MapListFromTxt = MapListFromTxt[0].split(',')
+    MapListFromTxt = MapListFromTxt[level].split(',')
 
     startIndexForMapText = 0
 
@@ -542,14 +541,20 @@ if menuOptions["Load Room"]:
             WallGrid[x][y]=int(MapListFromTxt[startIndexForMapText])
             grid[x][y]=int(MapListFromTxt[startIndexForMapText])
             startIndexForMapText += 1
-elif menuOptions["Generate Room"]:
-    print("Generated Room")
+
+def GenerateRandomLevel(grid):
+    print("Generated Level")
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             isWall = rand.randint(0,1)
             if isWall == 1:
                 grid[x][y] = 2
                 WallGrid[x][y] = 2
+
+if menuOptions["Load Room"]:
+    LoadLevel(grid,"savedMaps.txt")
+elif menuOptions["Generate Room"]:
+    GenerateRandomLevel(grid)
 else:
     wallStartx = 30
     wallstarty = 30
@@ -569,7 +574,7 @@ emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
 
-ListOfEnemyPositions = PlaceRandomEnemies(grid,1)
+ListOfEnemyPositions = PlaceRandomEnemies(grid,00)
 
 convertToItemGrid(ItemsGrid)
 convertToNPCGrid(NPCGrid,grid,rooms)
@@ -582,8 +587,11 @@ addItem(ItemsGrid,grid,playerpos,15)
 
 enemyMove = False
 
-playerTurn = True
+newLevelDoorPosition = ()
 
+playerTurn = True
+generateNewLevel = False
+EnemyCount = 3
 menuOpen = False
 selectItem = False
 selectItemIndex = 1
@@ -657,7 +665,10 @@ while runing:
                     selectItemIndex = 1
             if gameRunning(selectItem,menuOpen):
                 if event.key == pygame.K_e:
-                    if playerDirection == 0:
+
+                    if playerpos == newLevelDoorPosition:
+                        generateNewLevel = True
+                    elif playerDirection == 0:
                         if playerposx - 1 >= 0:
                             if grid[playerposx - 1][playerposy] == 2:
                                 if WallGrid[playerposx -1][playerposy].hp > 0:
@@ -787,10 +798,38 @@ while runing:
     win.fill((black))
 
     ListOfEnemyPositions = RemoveDeadNPCs(ListOfEnemyPositions)
+
     if(len(ListOfEnemyPositions) == 0 and NewLevelDoorNotAdded):
         NewLevelDoorNotAdded = False
-        PlaceNextLevelDoor(grid)
+        newLevelDoorPosition = PlaceNextLevelDoor(grid)
     
+    if len(newLevelDoorPosition) > 0:
+        if grid[newLevelDoorPosition[0]][newLevelDoorPosition[1]] != 1:
+            grid[newLevelDoorPosition[0]][newLevelDoorPosition[1]] = 4
+    if generateNewLevel:
+        grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        GenerateRandomLevel(grid)
+
+        level +=1
+        
+        oldWallGrid = WallGrid
+        
+
+        emptyNodes = CER.createNodes(grid)
+        rooms = CreateRooms(emptyNodes)
+
+        ListOfEnemyPositions = PlaceRandomEnemies(grid,EnemyCount*level)
+
+        convertToItemGrid(ItemsGrid)
+        convertToNPCGrid(NPCGrid,grid,rooms)
+        convertToWallGrid(WallGrid,grid,rooms)
+
+        PlacePreviousLevelDoor(newLevelDoorPosition)
+        newLevelDoorPosition = ()
+        generateNewLevel = False
 
     TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT,selectItem,selectItemIndex)
     TextHeightIncrement += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
@@ -806,6 +845,8 @@ while runing:
             if grid[x][y] == 3:
                 pygame.draw.rect(win,purple,pygame.Rect(x*10,y*10,10,10))
             if grid[x][y] == 4:
+                pygame.draw.rect(win,brown,pygame.Rect(x*10,y*10,10,10))
+            if grid[x][y] == 6:
                 pygame.draw.rect(win,brown,pygame.Rect(x*10,y*10,10,10))
             if grid[x][y] ==5:
                 pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
