@@ -587,7 +587,7 @@ addItem(ItemsGrid,grid,playerpos,15)
 
 enemyMove = False
 
-newLevelDoorPosition = ()
+newLevelDoorPosition = []
 
 playerTurn = True
 generateNewLevel = False
@@ -666,7 +666,7 @@ while runing:
             if gameRunning(selectItem,menuOpen):
                 if event.key == pygame.K_e:
 
-                    if playerpos == newLevelDoorPosition:
+                    if playerpos == newLevelDoorPosition[-1]:
                         generateNewLevel = True
                     elif playerDirection == 0:
                         if playerposx - 1 >= 0:
@@ -799,13 +799,21 @@ while runing:
 
     ListOfEnemyPositions = RemoveDeadNPCs(ListOfEnemyPositions)
 
-    if(len(ListOfEnemyPositions) == 0 and NewLevelDoorNotAdded):
+    if NewLevelDoorNotAdded:
         NewLevelDoorNotAdded = False
-        newLevelDoorPosition = PlaceNextLevelDoor(grid)
+        newLevelDoorPosition.append(PlaceNextLevelDoor(grid))
     
     if len(newLevelDoorPosition) > 0:
-        if grid[newLevelDoorPosition[0]][newLevelDoorPosition[1]] != 1:
-            grid[newLevelDoorPosition[0]][newLevelDoorPosition[1]] = 4
+        currentDoor_x =newLevelDoorPosition[level][0]
+        currentDoor_y =  newLevelDoorPosition[level][1]
+        if grid[currentDoor_x][currentDoor_y] != 1:
+            grid[currentDoor_x][currentDoor_y] = 4
+        if len(newLevelDoorPosition) > 1:
+            previousDoor_x = newLevelDoorPosition[level -1][0]
+            previousDoor_y = newLevelDoorPosition[level -1][1]
+            if grid[previousDoor_x][previousDoor_y] !=1:
+                grid[previousDoor_x][previousDoor_y] = 6
+        
     if generateNewLevel:
         grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
         ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
@@ -827,8 +835,8 @@ while runing:
         convertToNPCGrid(NPCGrid,grid,rooms)
         convertToWallGrid(WallGrid,grid,rooms)
 
-        PlacePreviousLevelDoor(newLevelDoorPosition)
-        newLevelDoorPosition = ()
+        PlacePreviousLevelDoor(grid,newLevelDoorPosition[-1])
+        NewLevelDoorNotAdded = True
         generateNewLevel = False
 
     TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT,selectItem,selectItemIndex)
