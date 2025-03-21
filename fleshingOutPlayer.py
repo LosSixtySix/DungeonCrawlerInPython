@@ -477,7 +477,33 @@ def CheckForItem(grid,itemGrid):
             if itemGrid[x][y][0] == 3:
                 grid[x][y] = 3
 
-
+def saveLevel(txtFile,grid,level):
+    openMapFile = open(txtFile,'w+')
+    MapListFromTxt = openMapFile.readlines()
+    
+    if len(MapListFromTxt) == 0:
+        for x in range(len(grid)):
+            for y in range(len(grid[x])):
+                if x == 0 and y == 0:
+                    openMapFile.write(f"{grid[x][y]}")
+                elif x == len(grid) -1 and y == len(grid[0]) -1:
+                    openMapFile.write(f",{grid[x][y]}\n")
+                else:
+                    openMapFile.write(f",{grid[x][y]}")
+    else:
+        newTxtRow = ""
+        for x in range(len(grid)):
+            for y in range(len(grid[x])):
+                if x == 0 and y == 0:
+                    newTxtRow += (f"{grid[x][y]}")
+                else:
+                    newTxtRow += (f",,{grid[x][y]}")
+        MapListFromTxt[level] = newTxtRow
+        for row in MapListFromTxt:
+            openMapFile.write(f"{row}\n")
+                
+    openMapFile.close()
+    print("Level Saved")
 def CheckIfMovedMoreThanOne(current,last,lastDir):
     current_x = current[0]
     current_y = current[1]
@@ -527,7 +553,7 @@ loadMenuOptions("menuOpts.txt",menuOptions)
 
 
 def LoadLevel(grid,txtFile,level):
-    print("Loaded Room")
+    print("Loaded Level")
     openMapFile = open(txtFile,'r')
     MapListFromTxt = openMapFile.readlines()
     openMapFile.close()
@@ -541,6 +567,15 @@ def LoadLevel(grid,txtFile,level):
             WallGrid[x][y]=int(MapListFromTxt[startIndexForMapText])
             grid[x][y]=int(MapListFromTxt[startIndexForMapText])
             startIndexForMapText += 1
+
+def GetEnemyPositions(grid):
+    enemyPositions = []
+
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            if grid[x][y] == 4:
+                enemyPositions.append((x,y))
+    return enemyPositions
 
 def GenerateRandomLevel(grid):
     print("Generated Level")
@@ -590,7 +625,11 @@ enemyMove = False
 newLevelDoorPosition = []
 
 playerTurn = True
+
 generateNewLevel = False
+generatePreviousLevel = False
+generateNextLevel = False
+
 EnemyCount = 3
 menuOpen = False
 selectItem = False
@@ -621,15 +660,7 @@ while runing:
         if event.type == pygame.QUIT:
             saveMenuOptions("menuOpts.txt",menuOptions)
             if menuOptions["Save on Exit"]:
-                f = open("savedMaps.txt","a")   
-                for x in range(len(grid)):
-                    for y in range(len(grid[x])):
-                        if x == 0 and y == 0:
-                            f.write(f"{grid[x][y]}")
-                        elif x == len(grid) -1 and y == len(grid[0]) -1:
-                            f.write(f",{grid[x][y]}\n")
-                        else:
-                            f.write(f",{grid[x][y]}")
+                saveLevel("savedMaps.txt",grid,level)
             runing = False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_RETURN:
@@ -665,9 +696,14 @@ while runing:
                     selectItemIndex = 1
             if gameRunning(selectItem,menuOpen):
                 if event.key == pygame.K_e:
-
-                    if playerpos == newLevelDoorPosition[-1]:
-                        generateNewLevel = True
+                    
+                    if playerpos == newLevelDoorPosition[level]:
+                        if level < len(newLevelDoorPosition) -1:
+                            generateNextLevel = True
+                        else:
+                            generateNewLevel = True
+                    elif playerpos == newLevelDoorPosition[level -1]:
+                        generatePreviousLevel = True
                     elif playerDirection == 0:
                         if playerposx - 1 >= 0:
                             if grid[playerposx - 1][playerposy] == 2:
@@ -813,7 +849,44 @@ while runing:
             previousDoor_y = newLevelDoorPosition[level -1][1]
             if grid[previousDoor_x][previousDoor_y] !=1:
                 grid[previousDoor_x][previousDoor_y] = 6
-        
+
+    if generateNextLevel and level+1 < len(newLevelDoorPosition):
+        saveLevel("dungeonLevels.txt",grid,level)
+        grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+
+        level +=1
+
+        LoadLevel(grid,"dungeonLevels.txt",level)
+
+        convertToItemGrid(ItemsGrid)
+        convertToNPCGrid(NPCGrid,grid,rooms)
+        convertToWallGrid(WallGrid,grid,rooms)
+
+        ListOfEnemyPositions = GetEnemyPositions(grid)
+
+        generateNextLevel = False
+    if generatePreviousLevel and level -1 >=0:
+        saveLevel("dungeonLevels.txt",grid,level)
+        grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        print(level)
+        level -= 1
+        print(level)
+        LoadLevel(grid,"dungeonLevels.txt",level)
+
+        convertToItemGrid(ItemsGrid)
+        convertToNPCGrid(NPCGrid,grid,rooms)
+        convertToWallGrid(WallGrid,grid,rooms)
+
+        ListOfEnemyPositions = GetEnemyPositions(grid)
+        print(newLevelDoorPosition)
+
+        generatePreviousLevel = False
     if generateNewLevel:
         grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
         ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
@@ -822,8 +895,6 @@ while runing:
         GenerateRandomLevel(grid)
 
         level +=1
-        
-        oldWallGrid = WallGrid
         
 
         emptyNodes = CER.createNodes(grid)
@@ -836,6 +907,8 @@ while runing:
         convertToWallGrid(WallGrid,grid,rooms)
 
         PlacePreviousLevelDoor(grid,newLevelDoorPosition[-1])
+
+        saveLevel("dungeonLevels.txt",grid,level)
         NewLevelDoorNotAdded = True
         generateNewLevel = False
 
