@@ -558,7 +558,7 @@ def GetEnemyPositions(grid):
 
     for x in range(len(grid)):
         for y in range(len(grid[x])):
-            if grid[x][y] == 4:
+            if grid[x][y] == 5:
                 enemyPositions.append((x,y))
     return enemyPositions
 
@@ -607,7 +607,7 @@ addItem(ItemsGrid,grid,playerpos,15)
 
 enemyMove = False
 
-newLevelDoorPosition = []
+doorPostions = []
 
 playerTurn = True
 
@@ -639,7 +639,7 @@ while runing:
             selectItemIndex -=1
 
     CharacterStatistics = {"Health":player.hp,"AC":player.ac,"Player Direction":cardinalDirection,"Wall Damage":player.wallDamage,"Player X":playerposx,"Player Y":playerposy}
-    RoomStatistics = {"Room Type":roomType, "Items in Room":roomItems}
+    RoomStatistics = {"Room Type":roomType, "Items in Room":roomItems,"Level":level}
     pygame.time.delay(100)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -649,12 +649,12 @@ while runing:
             runing = False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_RETURN:
-                if playerpos == newLevelDoorPosition[level]:
-                    if level < len(newLevelDoorPosition) -1:
+                if playerpos == doorPostions[level]:
+                    if level < len(doorPostions) -1:
                         generateNextLevel = True
                     else:
                         generateNewLevel = True
-                elif playerpos == newLevelDoorPosition[level -1]:
+                elif playerpos == doorPostions[level -1]:
                     generatePreviousLevel = True
                 elif selectItem == False and menuOpen == False:
                     if areItemsInTile(roomItems[0]):
@@ -823,28 +823,22 @@ while runing:
 
     if NewLevelDoorNotAdded:
         NewLevelDoorNotAdded = False
-        newLevelDoorPosition.append(PlaceNextLevelDoor(grid))
+        doorPostions.append(PlaceNextLevelDoor(grid))
     
-    if len(newLevelDoorPosition) > 0:
-        currentDoor_x =newLevelDoorPosition[level][0]
-        currentDoor_y =  newLevelDoorPosition[level][1]
+    if len(doorPostions) > 0:
+        currentDoor_x = doorPostions[level][0]
+        currentDoor_y =  doorPostions[level][1]
         if grid[currentDoor_x][currentDoor_y] != 1:
             grid[currentDoor_x][currentDoor_y] = 4
-        if len(newLevelDoorPosition) > 1:
-            previousDoor_x = newLevelDoorPosition[level -1][0]
-            previousDoor_y = newLevelDoorPosition[level -1][1]
+        if level > 0:
+            previousDoor_x = doorPostions[level -1][0]
+            previousDoor_y = doorPostions[level -1][1]
             if grid[previousDoor_x][previousDoor_y] !=1:
                 grid[previousDoor_x][previousDoor_y] = 6
 
-    if generateNextLevel and level+1 < len(newLevelDoorPosition):
+    if generateNextLevel:
         saveLevel(grid,level)
-        grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-
         level = level + 1
-
         grid = LoadLevel(level)
 
         convertToItemGrid(ItemsGrid)
@@ -852,15 +846,11 @@ while runing:
         convertToWallGrid(WallGrid,grid,rooms)
 
         ListOfEnemyPositions = GetEnemyPositions(grid)
-        print(ListOfEnemyPositions)
 
         generateNextLevel = False
     if generatePreviousLevel and level -1 >=0:
         saveLevel(grid,level)
-        grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        grid = LoadLevel(level)
 
         level = level - 1
 
@@ -871,20 +861,17 @@ while runing:
         convertToWallGrid(WallGrid,grid,rooms)
 
         ListOfEnemyPositions = GetEnemyPositions(grid)
-        print(ListOfEnemyPositions)
+
 
         generatePreviousLevel = False
     if generateNewLevel:
         saveLevel(grid,level)
         grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        
         GenerateRandomLevel(grid)
 
         level +=1
         
-
         emptyNodes = CER.createNodes(grid)
         rooms = CreateRooms(emptyNodes)
 
@@ -894,7 +881,7 @@ while runing:
         convertToNPCGrid(NPCGrid,grid,rooms)
         convertToWallGrid(WallGrid,grid,rooms)
 
-        PlacePreviousLevelDoor(grid,newLevelDoorPosition[-1])
+        PlacePreviousLevelDoor(grid,doorPostions[-1])
 
         NewLevelDoorNotAdded = True
         generateNewLevel = False
