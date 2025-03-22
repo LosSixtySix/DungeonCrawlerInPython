@@ -10,6 +10,7 @@ class PlayerClass():
         self.MaxDamage = 6
         self.inventory = {"Inventory":[4]}
         self.inventoryLimit = 10
+        self.visionRange = 3
         self.equipment = {"Head":"None","Chest":"None","Gloves":"None","Left Hand":"None","Right Hand":"None","Legs":"None","Feet":"None"}
 
     def equipItem(self,item,place):
