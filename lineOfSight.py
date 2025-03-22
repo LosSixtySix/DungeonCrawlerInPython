@@ -542,6 +542,17 @@ def getVisiblePositions(grid,playerPosition,player):
             visiblePositions.append((x,y-passes))
         if y + passes < len(grid[x]):
             visiblePositions.append((x,y+passes))
+    for passes in range(player.visionRange):
+        if x -passes > 0:
+            if y -passes > 0:
+                visiblePositions.append((x-passes,y-passes))
+            if y + passes < len(grid[x]):
+                visiblePositions.append((x-passes,y+passes))
+        if x + passes < len(grid):
+            if y -passes > 0:
+                visiblePositions.append((x+passes,y-passes))
+            if y + passes < len(grid[x]):
+                visiblePositions.append((x+passes,y+passes))
     for passes in range(int(player.visionRange/2)):
         if x -passes > 0:
             if y -passes > 0:
@@ -629,7 +640,7 @@ emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
 
-ListOfEnemyPositions = PlaceRandomEnemies(grid,00)
+ListOfEnemyPositions = PlaceRandomEnemies(grid,5)
 
 convertToItemGrid(ItemsGrid)
 convertToNPCGrid(NPCGrid,grid,rooms)
@@ -943,6 +954,7 @@ while runing:
                 if grid[x][y] == 6:
                     pygame.draw.rect(win,brown,pygame.Rect(x*10,y*10,10,10))
                 if grid[x][y] ==5:
+                    VisibleGrid[x][y] = 0
                     pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
     if menuOpen:
         DrawMenu(selectItemIndex)
