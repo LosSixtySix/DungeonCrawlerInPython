@@ -7,6 +7,7 @@ import playerClass as pc
 import items
 import enemies
 import wall
+import math
 
 pygame.init()
 pygame.font.init()
@@ -533,37 +534,9 @@ def getVisiblePositions(grid,playerPosition,player):
     visiblePositions = []
     x = playerPosition[0]
     y = playerPosition[1]
-    for passes in range(player.visionRange):
-        if x - passes > 0:
-            visiblePositions.append((x-passes,y))
-        if x + passes < len(grid):
-            visiblePositions.append((x+passes,y))
-        if y - passes > 0:
-            visiblePositions.append((x,y-passes))
-        if y + passes < len(grid[x]):
-            visiblePositions.append((x,y+passes))
-    for passes in range(player.visionRange):
-        if x -passes > 0:
-            if y -passes > 0:
-                visiblePositions.append((x-passes,y-passes))
-            if y + passes < len(grid[x]):
-                visiblePositions.append((x-passes,y+passes))
-        if x + passes < len(grid):
-            if y -passes > 0:
-                visiblePositions.append((x+passes,y-passes))
-            if y + passes < len(grid[x]):
-                visiblePositions.append((x+passes,y+passes))
-    for passes in range(int(player.visionRange/2)):
-        if x -passes > 0:
-            if y -passes > 0:
-                visiblePositions.append((x-passes,y-passes))
-            if y + passes < len(grid[x]):
-                visiblePositions.append((x-passes,y+passes))
-        if x + passes < len(grid):
-            if y -passes > 0:
-                visiblePositions.append((x+passes,y-passes))
-            if y + passes < len(grid[x]):
-                visiblePositions.append((x+passes,y+passes))
+    radius = player.visionRange
+    
+        
     return visiblePositions
 
 def setPositionsVisible(visibleGrid,visiblePositions):
@@ -640,7 +613,7 @@ emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
 
-ListOfEnemyPositions = PlaceRandomEnemies(grid,5)
+ListOfEnemyPositions = PlaceRandomEnemies(grid,0)
 
 convertToItemGrid(ItemsGrid)
 convertToNPCGrid(NPCGrid,grid,rooms)
@@ -943,8 +916,9 @@ while runing:
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if VisibleGrid[x][y] == 1:
-                if grid[x][y] == 2:
-                    pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+                pygame.draw.rect(win,red,pygame.Rect((x*10,y*10,10,10)))
+                #if grid[x][y] == 2:
+                #    pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
                 if grid[x][y] == 1:
                     pygame.draw.rect(win,green,pygame.Rect(x*10,y*10,10,10))
                 if grid[x][y] == 3:
