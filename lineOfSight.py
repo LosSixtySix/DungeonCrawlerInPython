@@ -535,8 +535,30 @@ def getVisiblePositions(grid,playerPosition,player):
     x = playerPosition[0]
     y = playerPosition[1]
     radius = player.visionRange
-    
-        
+    gettingPositions = True
+    sides = 0
+    while(gettingPositions):
+        if(sides >= radius):
+            gettingPositions = False
+        startY = radius - sides
+        if y - startY >= 0:
+            visiblePositions.append((x,y - startY))
+        if y + startY < len(grid):
+            visiblePositions.append((x,y + startY))
+
+        for index in range(sides):
+            if y - startY >=0:
+                if x - index >=0:
+                    visiblePositions.append((x-index, y-startY))
+                if x + index < len(grid):
+                    visiblePositions.append((x+index,y-startY))
+
+            if y + startY < len(grid):
+                if x + index < len(grid):
+                    visiblePositions.append((x+index,y+startY))
+                if x - index >= 0:
+                    visiblePositions.append((x-index,y+startY))
+        sides +=1
     return visiblePositions
 
 def setPositionsVisible(visibleGrid,visiblePositions):
@@ -613,7 +635,7 @@ emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
 
-ListOfEnemyPositions = PlaceRandomEnemies(grid,0)
+ListOfEnemyPositions = PlaceRandomEnemies(grid,25)
 
 convertToItemGrid(ItemsGrid)
 convertToNPCGrid(NPCGrid,grid,rooms)
@@ -644,8 +666,7 @@ while runing:
     
     grid[playerposx][playerposy] = 1
 
-    visiblePositions = getVisiblePositions(grid,playerpos,player)
-    setPositionsVisible(VisibleGrid,visiblePositions)
+    
 
     roomType = getRoomType(playerpos,rooms)
     roomItems = getItemsFromGrid(ItemsGrid,playerpos)
@@ -913,12 +934,16 @@ while runing:
     TextHeightIncrement += displayStatistics(player.equipment,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
     TextHeightIncrement += displayStatistics(player.inventory,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
 
+    visiblePositions = getVisiblePositions(grid,playerpos,player)
+    setPositionsVisible(VisibleGrid,visiblePositions)
+
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if VisibleGrid[x][y] == 1:
-                pygame.draw.rect(win,red,pygame.Rect((x*10,y*10,10,10)))
-                #if grid[x][y] == 2:
-                #    pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+                if grid[x][y] == 0:
+                    VisibleGrid[x][y] = 0
+                if grid[x][y] == 2:
+                    pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
                 if grid[x][y] == 1:
                     pygame.draw.rect(win,green,pygame.Rect(x*10,y*10,10,10))
                 if grid[x][y] == 3:
