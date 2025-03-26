@@ -133,6 +133,13 @@ playervel = 1
 
 playerDirection = 0
 levelGrids = []
+visibleGrids = []
+roomsList = []
+
+itemGridsList = []
+NPCGridList = []
+WallGridsList = []
+
 grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
@@ -146,18 +153,26 @@ def convertToItemGrid(itemsGrid):
             itemsGrid[x][y] = [itemsGrid[x][y]]
 
 def convertToWallGrid(wallGrid,grid,rooms):
-    for x in range(len(wallGrid)):
-        for y in range(len(wallGrid[x])):
-            if wallGrid[x][y] == 2:
+    returnValue = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            if grid[x][y] == 2:
                 wall = CreateWall((x,y),grid,rooms)
-                wallGrid[x][y] = wall
+                returnValue[x][y] = wall
+    if returnValue == wallGrid:
+        print("Error At Wall generation, returnValue and Wallgrid are equal")
+    return returnValue
 
 def convertToNPCGrid(NPCGrid,grid,rooms):
-    for x in range(len(NPCGrid)):
-        for y in range(len(NPCGrid[x])):
+    returnValue = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
             if grid[x][y] == 5:
                 NPC = CreateNPC((x,y),grid,rooms)
-                NPCGrid[x][y] = NPC
+                returnValue[x][y] = NPC
+    if returnValue == NPCGrid:
+        print("Error At Wall generation, returnValue and Wallgrid are equal")
+    return returnValue
 
 def addItem(itemsGrid,grid, position, item):
     x = position[0]
@@ -385,7 +400,7 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                 while moving:
                     passes += 1
                     randomDirection = rand.randint(0,3)
-                    if randomDirection == 0 and y -1 > 0:
+                    if randomDirection == 0 and y -1 >= 0:
                         if grid[x][y-1] == 0:
                             grid[x][y] = 0
                             grid[x][y-1] = 5
@@ -425,7 +440,7 @@ def MoveEnemiesRandomly(grid,NPCGrid,wallGrid):
                             player.hp -= NPCGrid[x][y].damage
                             moving = False
                             print(player.hp)
-                    if randomDirection == 2 and x -1 > 0:
+                    if randomDirection == 2 and x -1 >= 0:
                         if grid[x-1][y] == 0:
                             grid[x][y] = 0
                             grid[x-1][y] = 5
@@ -491,11 +506,12 @@ def saveToTxt(txtFile):
             else:
                 openMapFile.write(f",{row[y]}")
 
-def saveLevel(grid,level):
-    if level < len(levelGrids):
-        levelGrids[level] = grid
+def saveLevel(grid,level,listOfGrids):
+    
+    if level < len(listOfGrids):
+        listOfGrids[level] = grid
     else:
-        levelGrids.append(grid)
+        listOfGrids.append(grid)
     
 def CheckIfMovedMoreThanOne(current,last,lastDir):
     current_x = current[0]
@@ -521,6 +537,7 @@ def RemoveDeadNPCs(listOfPositions):
         if NPCGrid[x][y].hp <= 0:
             print(f"{NPCGrid[x][y].name} is dead")
             grid[x][y] = 0
+            NPCGrid[x][y] = 0
         else:
             stillAlivePositions.append(position)
     return stillAlivePositions
@@ -590,8 +607,9 @@ def LoadTxtFile(txtFile):
     for row in MapListFromTxt:
         levelGrids.append(row.split(','))
 
-def LoadLevel(level):
-    return levelGrids[level]
+def LoadLevel(level,listOfGrids):
+    print(f"Loading level {level}")
+    return listOfGrids[level]
     
 
 def GetEnemyPositions(grid):
@@ -610,7 +628,6 @@ def GenerateRandomLevel(grid):
             isWall = rand.randint(0,1)
             if isWall == 1:
                 grid[x][y] = 2
-                WallGrid[x][y] = 2
 
 if menuOptions["Load Room"]:
     LoadTxtFile("dungeonLevels.txt")
@@ -635,11 +652,11 @@ emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
 
-ListOfEnemyPositions = PlaceRandomEnemies(grid,25)
+ListOfEnemyPositions = PlaceRandomEnemies(grid,75)
 
 convertToItemGrid(ItemsGrid)
-convertToNPCGrid(NPCGrid,grid,rooms)
-convertToWallGrid(WallGrid,grid,rooms)
+NPCGrid = convertToNPCGrid(NPCGrid,grid,rooms)
+WallGrid = convertToWallGrid(WallGrid,grid,rooms)
 
 addItem(ItemsGrid,grid,playerpos,15)
 addItem(ItemsGrid,grid,playerpos,15)
@@ -741,7 +758,6 @@ while runing:
                                     print("You damaged the wall")
                                     enemyMove = True
                                 if WallGrid[playerposx -1][playerposy].hp <= 0:
-                                    print("wall destroyed")
                                     WallGrid[playerposx -1][playerposy] = 0
                                     grid[playerposx - 1][playerposy] = 0
                             elif grid[playerposx-1][playerposy] == 5:
@@ -758,7 +774,7 @@ while runing:
                                     print("You damaged the wall")
                                     enemyMove = True
                                 if WallGrid[playerposx + 1][playerposy].hp <= 0:
-                                    print("wall destroyed")
+                                    print((playerposx +1,playerposy))
                                     WallGrid[playerposx + 1][playerposy] = 0
                                     grid[playerposx + 1][playerposy] = 0
                             elif grid[playerposx+1][playerposy] == 5:
@@ -774,7 +790,7 @@ while runing:
                                     print("You damaged the wall")
                                     enemyMove = True
                                 if WallGrid[playerposx][playerposy -1].hp <= 0:
-                                    print("wall destroyed")
+                                    print((playerposx,playerposy-1))
                                     WallGrid[playerposx][playerposy -1] = 0
                                     grid[playerposx][playerposy - 1] = 0
                             elif grid[playerposx][playerposy-1] == 5:
@@ -790,7 +806,7 @@ while runing:
                                     print("You damaged the wall")
                                     enemyMove = True
                                 if WallGrid[playerposx][playerposy + 1].hp <= 0:
-                                    print("wall destroyed")
+                                    print((playerposx,playerposy+1))
                                     WallGrid[playerposx][playerposy + 1] = 0
                                     grid[playerposx][playerposy + 1] = 0
                             elif grid[playerposx][playerposy+1] == 5:
@@ -880,35 +896,59 @@ while runing:
                 grid[previousDoor_x][previousDoor_y] = 6
 
     if generateNextLevel:
-        saveLevel(grid,level)
-        level = level + 1
-        grid = LoadLevel(level)
+        print("Generating Next Level")
+        saveLevel(grid,level,levelGrids)
+        saveLevel(VisibleGrid,level,visibleGrids)
+        saveLevel(ItemsGrid,level,itemGridsList)
+        saveLevel(NPCGrid,level,NPCGridList)
+        saveLevel(WallGrid,level,WallGridsList)
 
-        convertToItemGrid(ItemsGrid)
-        convertToNPCGrid(NPCGrid,grid,rooms)
-        convertToWallGrid(WallGrid,grid,rooms)
+        level = level + 1
+        VisibleGrid = LoadLevel(level,visibleGrids)
+        grid = LoadLevel(level,levelGrids)
+        ItemsGrid = LoadLevel(level,itemGridsList)
+        NPCGrid = LoadLevel(level,NPCGridList)
+        WallGrid = LoadLevel(level, WallGridsList)
+        
 
         ListOfEnemyPositions = GetEnemyPositions(grid)
 
         generateNextLevel = False
     if generatePreviousLevel and level -1 >=0:
-        saveLevel(grid,level)
-        grid = LoadLevel(level)
+
+        print("Generating Previous Level")
+        saveLevel(grid,level,levelGrids)
+        saveLevel(VisibleGrid,level,visibleGrids)
+        saveLevel(ItemsGrid,level,itemGridsList)
+        saveLevel(NPCGrid,level,NPCGridList)
+        saveLevel(WallGrid,level,WallGridsList)
 
         level = level - 1
 
-        grid = LoadLevel(level)
+        VisibleGrid = LoadLevel(level,visibleGrids)
+        grid = LoadLevel(level,levelGrids)
+        ItemsGrid = LoadLevel(level,itemGridsList)
+        NPCGrid = LoadLevel(level,NPCGridList)
+        WallGrid = LoadLevel(level, WallGridsList)
 
-        convertToItemGrid(ItemsGrid)
-        convertToNPCGrid(NPCGrid,grid,rooms)
-        convertToWallGrid(WallGrid,grid,rooms)
+
+        
 
         ListOfEnemyPositions = GetEnemyPositions(grid)
 
 
         generatePreviousLevel = False
     if generateNewLevel:
-        saveLevel(grid,level)
+        print("Generating New Level")
+        saveLevel(grid,level,levelGrids)
+        saveLevel(VisibleGrid,level,visibleGrids)
+        saveLevel(ItemsGrid,level,itemGridsList)
+        saveLevel(NPCGrid,level,NPCGridList)
+        saveLevel(WallGrid,level,WallGridsList)
+
+        roomsList.append(rooms)
+
+        VisibleGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
         grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
         
         GenerateRandomLevel(grid)
@@ -917,13 +957,21 @@ while runing:
         
         emptyNodes = CER.createNodes(grid)
         rooms = CreateRooms(emptyNodes)
-
+        roomsList.append(rooms)
         ListOfEnemyPositions = PlaceRandomEnemies(grid,EnemyCount*level)
 
         convertToItemGrid(ItemsGrid)
-        convertToNPCGrid(NPCGrid,grid,rooms)
-        convertToWallGrid(WallGrid,grid,rooms)
+        NPCGrid = convertToNPCGrid(NPCGrid,grid,rooms)
+        WallGrid = convertToWallGrid(WallGrid,grid,rooms)
 
+
+
+        for x in range(len(WallGridsList)):
+            if x == level:
+                pass
+            else:
+                if WallGridsList[x] == WallGrid:
+                    print(f"Error Wall Grid equals index {x} in wall grid list")
         PlacePreviousLevelDoor(grid,doorPostions[-1])
 
         NewLevelDoorNotAdded = True
