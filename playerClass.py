@@ -8,9 +8,9 @@ class PlayerClass():
         self.itemIncrement = 0
         self.wallDamage = 100
         self.MaxDamage = 6
-        self.inventory = {"Inventory":[4]}
+        self.inventory = []
         self.inventoryLimit = 10
-        self.visionRange = 50
+        self.visionRange = 4
         self.equipment = {"Head":"None","Chest":"None","Gloves":"None","Left Hand":"None","Right Hand":"None","Legs":"None","Feet":"None"}
 
     def equipItem(self,item,place):
@@ -18,7 +18,7 @@ class PlayerClass():
 
     def addItemToInventory(self,item):
         if len(self.inventory) < self.inventoryLimit:
-            self.inventory["Inventory"].append(item)
+            self.inventory.append(item)
             return True
         return False
     def DealDamage(self):
