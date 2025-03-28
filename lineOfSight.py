@@ -86,15 +86,70 @@ def displayEquipment(equipment,selectItem,selectItemIndex):
         equipmentName = ""
         if selectItem:
             if selectItemIndex == passes:
-                if equipment[key] != "None":
-                    equipment = equipment[key].name
-                equipmentText = FONT.render(f">{key}:[{equipmentName}]",True,blue,black)
-                equipmentTextRect = equipmentText.get_rect()
-                equipmentTextWidth = equipmentText.get_width()
-                equipmentTextHeight = equipmentText.get_height()
-                equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
-                win.blit(equipmentText,equipmentTextRect)
-                equipmentStartWidth += equipmentTextWidth + gapBetweenText
+                if key == "Hands":
+                    firstSlot = ""
+                    secondSlot = ""
+                    if equipment[key][0] != "None":
+                        firstSlot = equipment[key][0].name
+                    if equipment[key][1] != "None":
+                        secondSlot = equipment[key][1].name
+                    equipmentText = FONT.render(f">{key}:[Left:{firstSlot}, Right:{secondSlot}]",True,blue,black)
+                    equipmentTextRect = equipmentText.get_rect()
+                    equipmentTextWidth = equipmentText.get_width()
+                    equipmentTextHeight = equipmentText.get_height()
+                    equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
+                    win.blit(equipmentText,equipmentTextRect)
+                    equipmentStartWidth += equipmentTextWidth + gapBetweenText
+                else:   
+                    if equipment[key] != "None":
+                        equipment = equipment[key].name
+                    equipmentText = FONT.render(f">{key}:[{equipmentName}]",True,blue,black)
+                    equipmentTextRect = equipmentText.get_rect()
+                    equipmentTextWidth = equipmentText.get_width()
+                    equipmentTextHeight = equipmentText.get_height()
+                    equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
+                    win.blit(equipmentText,equipmentTextRect)
+                    equipmentStartWidth += equipmentTextWidth + gapBetweenText
+            else:
+                if key == "Hands":
+                    firstSlot = ""
+                    secondSlot = ""
+                    if equipment[key][0] != "None":
+                        firstSlot = equipment[key][0].name
+                    if equipment[key][1] != "None":
+                        secondSlot = equipment[key][1].name
+                    equipmentText = FONT.render(f"{key}:[Left:{firstSlot}, Right:{secondSlot}]",True,blue,black)
+                    equipmentTextRect = equipmentText.get_rect()
+                    equipmentTextWidth = equipmentText.get_width()
+                    equipmentTextHeight = equipmentText.get_height()
+                    equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
+                    win.blit(equipmentText,equipmentTextRect)
+                    equipmentStartWidth += equipmentTextWidth + gapBetweenText
+                else:
+                    if equipment[key] != "None":
+                        equipment = equipment[key].name
+                    equipmentText = FONT.render(f"{key}:[{equipmentName}]",True,blue,black)
+                    equipmentTextRect = equipmentText.get_rect()
+                    equipmentTextWidth = equipmentText.get_width()
+                    equipmentTextHeight = equipmentText.get_height()
+                    equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
+                    win.blit(equipmentText,equipmentTextRect)
+                    equipmentStartWidth += equipmentTextWidth + gapBetweenText
+        else:
+            if key == "Hands":
+                    firstSlot = ""
+                    secondSlot = ""
+                    if equipment[key][0] != "None":
+                        firstSlot = equipment[key][0].name
+                    if equipment[key][1] != "None":
+                        secondSlot = equipment[key][1].name
+                    equipmentText = FONT.render(f"{key}:[Left:{firstSlot}, Right:{secondSlot}]",True,blue,black)
+                    equipmentTextRect = equipmentText.get_rect()
+                    equipmentTextWidth = equipmentText.get_width()
+                    equipmentTextHeight = equipmentText.get_height()
+                    equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
+                    win.blit(equipmentText,equipmentTextRect)
+                    equipmentStartWidth += equipmentTextWidth + gapBetweenText
             else:
                 if equipment[key] != "None":
                     equipment = equipment[key].name
@@ -105,16 +160,6 @@ def displayEquipment(equipment,selectItem,selectItemIndex):
                 equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
                 win.blit(equipmentText,equipmentTextRect)
                 equipmentStartWidth += equipmentTextWidth + gapBetweenText
-        else:
-            if equipment[key] != "None":
-                equipment = equipment[key].name
-            equipmentText = FONT.render(f"{key}:[{equipmentName}]",True,blue,black)
-            equipmentTextRect = equipmentText.get_rect()
-            equipmentTextWidth = equipmentText.get_width()
-            equipmentTextHeight = equipmentText.get_height()
-            equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
-            win.blit(equipmentText,equipmentTextRect)
-            equipmentStartWidth += equipmentTextWidth + gapBetweenText
         passes += 1
 
 def displayInventory(inventory,selectItem,selectItemIndex):
@@ -162,8 +207,7 @@ def displayInventory(inventory,selectItem,selectItemIndex):
 def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
     keys = stats.keys()
 
-    
-    selectItemIndex += 1
+
     passes = 0
     
     if len(keys) > 0:
@@ -172,6 +216,7 @@ def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
                 if stats[key][0] == 3: #number 3 in a list for the grid means a list of items.
                     for item in stats[key]:
                         if item == 3:
+                            selectItemIndex += 1
                             text = FONT.render("Items in Room:",True,blue,black)
                             textRect = text.get_rect()
                             textWidth = text.get_width()
@@ -221,10 +266,14 @@ NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 VisibleGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
 
 
-def convertToItemGrid(itemsGrid):
-    for x in range(len(itemsGrid)):
-        for y in range(len(itemsGrid[x])):
-            itemsGrid[x][y] = [itemsGrid[x][y]]
+def convertToItemGrid(itemsGrid,grid,rooms):
+    returnValue = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+    for x in range(len(grid)):
+        for y in range(len(grid[x])):
+            returnValue[x][y] = [returnValue[x][y]]
+    if returnValue == itemsGrid:
+        print("error at itemsGrid generation, returnvalue and itemsgrid are equal")
+    return returnValue
 
 def convertToWallGrid(wallGrid,grid,rooms):
     returnValue = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
@@ -247,6 +296,9 @@ def convertToNPCGrid(NPCGrid,grid,rooms):
     if returnValue == NPCGrid:
         print("Error At Wall generation, returnValue and Wallgrid are equal")
     return returnValue
+def randomItemGenerator(listOfItems):
+    randomInt = rand.randint(0,len(listOfItems)-1)
+    return listOfItems[randomInt]
 
 def addItem(itemsGrid,grid, position, item):
     x = position[0]
@@ -257,6 +309,16 @@ def addItem(itemsGrid,grid, position, item):
 
         itemsGrid[x][y][0] = 3
         itemsGrid[x][y].append(item)
+def placeRandomItems(itemsGird,grid,listOfItems,NumOfitems):
+
+    while(NumOfitems != 0):
+        randX = rand.randint(0,len(grid)-1)
+        randY = rand.randint(0,len(grid)-1)
+
+        if grid[randX][randY] == 0:
+            addItem(itemsGird,grid,(randX,randY),randomItemGenerator(listOfItems))
+            NumOfitems -=1
+
 
 def getItemsFromGrid(itemsGrid,position):
     x = position[0]
@@ -279,7 +341,8 @@ def pickUpItem(player,itemGrid,position,selectItemIndex):
 
     if itemGrid[x][y][0] == 3:
         itemId = itemGrid[x][y].pop(selectItemIndex)
-        player.addItemToInventory(itemId)
+        if itemId != 3:
+            player.addItemToInventory(itemId)
 
 
 def CreateRooms(emptyNodes):
@@ -732,12 +795,12 @@ rooms = CreateRooms(emptyNodes)
 
 ListOfEnemyPositions = PlaceRandomEnemies(grid,75)
 
-convertToItemGrid(ItemsGrid)
+ItemsGrid = convertToItemGrid(ItemsGrid,grid,rooms)
 NPCGrid = convertToNPCGrid(NPCGrid,grid,rooms)
 WallGrid = convertToWallGrid(WallGrid,grid,rooms)
+ListOfItems = [items.sword]
 
-addItem(ItemsGrid,grid,playerpos,items.sword)
-addItem(ItemsGrid,grid,playerpos,items.sword)
+placeRandomItems(ItemsGrid,grid,ListOfItems,5)
 
 
 enemyMove = False
@@ -767,17 +830,9 @@ while runing:
     roomType = getRoomType(playerpos,rooms)
     roomItems = getItemsFromGrid(ItemsGrid,playerpos)
     cardinalDirection = getDirection(playerDirection)
-    if selectItem:
-        if len(roomItems) == 1:
-                ItemsGrid[playerposx][playerposy][0] = 0
-                selectItem = False
-                selectItemIndex = 1
-        if selectItemIndex > len(roomItems):
-            selectItemIndex -=2
-        if selectItemIndex == len(roomItems):
-            selectItemIndex -=1
+    
 
-    CharacterStatistics = {"Health":player.hp,"AC":player.ac,"Player Direction":cardinalDirection,"Wall Damage":player.wallDamage,"Player X":playerposx,"Player Y":playerposy}
+    CharacterStatistics = {"Health":player.hp,"AC":player.ac,"Player Direction":cardinalDirection,"Wall Damage":player.wallDamage,"Player Max Damage":player.MaxDamage,"Player X":playerposx,"Player Y":playerposy}
     RoomStatistics = {"Room Type":roomType, "Items in Room":roomItems,"Level":level}
     pygame.time.delay(100)
     for event in pygame.event.get():
@@ -812,9 +867,20 @@ while runing:
                         passes += 1
                 elif selectItem:
                     pickUpItem(player,ItemsGrid,playerpos,selectItemIndex)
+                    if len(roomItems) == 1:
+                            ItemsGrid[playerposx][playerposy][0] = 0
+                            selectItem = False
+                            selectItemIndex = 0
+                    if selectItemIndex > len(roomItems):
+                        selectItemIndex -=1
+                    if selectItemIndex == len(roomItems):
+                        selectItemIndex -=1
                 elif inventoryOpen:
                     print("Equipping ...")
-                    player.equipItem(player.inventory[selectItemIndex])
+                    player.equipItem(selectItemIndex)
+                    if len(player.inventory) == 0:
+                        inventoryOpen = False
+                        selectItemIndex = 1
                 elif unEquip:
                     print("Unequipping ...")
                     keys = player.equipment.keys()
@@ -913,7 +979,7 @@ while runing:
                     selectItemIndex = 0
                 elif inventoryOpen:
                     inventoryOpen = False
-                    selectItemIndex = 0
+                    selectItemIndex = 1
 
             if event.key == pygame.K_u:
                 if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
@@ -921,7 +987,7 @@ while runing:
                     selectItemIndex = 0
                 elif unEquip:
                     unEquip = False
-                    selectItemIndex = 0
+                    selectItemIndex = 1
 
             if event.key == pygame.K_LEFT:
                 if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
@@ -1078,10 +1144,10 @@ while runing:
         roomsList.append(rooms)
         ListOfEnemyPositions = PlaceRandomEnemies(grid,EnemyCount*level)
 
-        convertToItemGrid(ItemsGrid)
+        ItemsGrid = convertToItemGrid(ItemsGrid,grid,rooms)
         NPCGrid = convertToNPCGrid(NPCGrid,grid,rooms)
         WallGrid = convertToWallGrid(WallGrid,grid,rooms)
-
+        placeRandomItems(ItemsGrid,grid,ListOfItems,5)
 
 
         for x in range(len(WallGridsList)):
@@ -1097,7 +1163,6 @@ while runing:
 
     TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT,selectItem,selectItemIndex)
     TextHeightIncrement += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
-    TextHeightIncrement += displayStatistics(player.equipment,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
     displayInventory(player.inventory,inventoryOpen,selectItemIndex)
     displayEquipment(player.equipment,unEquip,selectItemIndex)
 
@@ -1124,7 +1189,7 @@ while runing:
                     pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
     if menuOpen:
         DrawMenu(selectItemIndex)
-    
+
     pygame.display.flip()
 
 
