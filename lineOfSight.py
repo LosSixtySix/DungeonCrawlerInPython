@@ -81,10 +81,30 @@ def displayEquipment(equipment,selectItem,selectItemIndex):
     equipmentStartHeight = HEIGHT + textHeight*3 +5
     equipmentStartWidth = 0
 
+    passes = 0
     for key in keys:
         equipmentName = ""
         if selectItem:
-            pass
+            if selectItemIndex == passes:
+                if equipment[key] != "None":
+                    equipment = equipment[key].name
+                equipmentText = FONT.render(f">{key}:[{equipmentName}]",True,blue,black)
+                equipmentTextRect = equipmentText.get_rect()
+                equipmentTextWidth = equipmentText.get_width()
+                equipmentTextHeight = equipmentText.get_height()
+                equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
+                win.blit(equipmentText,equipmentTextRect)
+                equipmentStartWidth += equipmentTextWidth + gapBetweenText
+            else:
+                if equipment[key] != "None":
+                    equipment = equipment[key].name
+                equipmentText = FONT.render(f"{key}:[{equipmentName}]",True,blue,black)
+                equipmentTextRect = equipmentText.get_rect()
+                equipmentTextWidth = equipmentText.get_width()
+                equipmentTextHeight = equipmentText.get_height()
+                equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
+                win.blit(equipmentText,equipmentTextRect)
+                equipmentStartWidth += equipmentTextWidth + gapBetweenText
         else:
             if equipment[key] != "None":
                 equipment = equipment[key].name
@@ -95,6 +115,7 @@ def displayEquipment(equipment,selectItem,selectItemIndex):
             equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
             win.blit(equipmentText,equipmentTextRect)
             equipmentStartWidth += equipmentTextWidth + gapBetweenText
+        passes += 1
 
 def displayInventory(inventory,selectItem,selectItemIndex):
     passes = 0
@@ -774,10 +795,11 @@ while runing:
                         generateNewLevel = True
                 elif playerpos == doorPostions[level -1]:
                     generatePreviousLevel = True
-                elif selectItem == False and menuOpen == False:
-                    if areItemsInTile(roomItems[0]):
-                        print("There are items in this room")
-                        selectItem = True
+                elif gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
+                    if selectItem == False:
+                        if areItemsInTile(roomItems[0]):
+                            print("There are items in this room")
+                            selectItem = True
                 elif menuOpen:
                     keys = menuOptions.keys()
                     passes = 0
@@ -790,6 +812,20 @@ while runing:
                         passes += 1
                 elif selectItem:
                     pickUpItem(player,ItemsGrid,playerpos,selectItemIndex)
+                elif inventoryOpen:
+                    print("Equipping ...")
+                    player.equipItem(player.inventory[selectItemIndex])
+                elif unEquip:
+                    print("Unequipping ...")
+                    keys = player.equipment.keys()
+                    equpmentSlot = None
+                    passes = 0
+                    for key in keys:
+                        if passes == selectItemIndex:
+                            equpmentSlot = key
+                            break
+                        passes +=1
+                    player.unEquipItem(equpmentSlot)
             if event.key == pygame.K_ESCAPE:
                 if menuOpen:
                     menuOpen = False
@@ -872,7 +908,7 @@ while runing:
                                 enemyMove = True
 
             if event.key == pygame.K_i:
-                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
+                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip) and len(player.inventory) > 0:
                     inventoryOpen = True
                     selectItemIndex = 0
                 elif inventoryOpen:
@@ -925,7 +961,9 @@ while runing:
                     elif inventoryOpen:
                         if selectItemIndex -1 >=0:
                             selectItemIndex -=1
-                            print(selectItemIndex)
+                    elif unEquip:
+                        if selectItemIndex -1 >=0:
+                            selectItemIndex -=1
             if event.key == pygame.K_DOWN:
                 if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
                     playerDirection = 3
@@ -946,7 +984,9 @@ while runing:
                     elif inventoryOpen:
                         if selectItemIndex +1 < len(player.inventory):
                             selectItemIndex +=1
-                            print(selectItemIndex)
+                    elif unEquip:
+                        if selectItemIndex +1 < len(player.equipment.keys()):
+                            selectItemIndex +=1
 
     playerpos = (playerposx,playerposy)
     grid[playerposx][playerposy] = 1

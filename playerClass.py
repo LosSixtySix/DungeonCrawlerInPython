@@ -13,13 +13,15 @@ class PlayerClass():
         self.visionRange = 4
         self.equipment = {"Head":"None","Chest":"None","Gloves":"None","Left Hand":"None","Right Hand":"None","Legs":"None","Feet":"None"}
 
-    def equipItem(self,item,place):
-        self.equipment[place] = item
-
+    def equipItem(self,item):
+        pass
+    def unEquipItem(self,slot):
+        pass
     def addItemToInventory(self,item):
         if len(self.inventory) < self.inventoryLimit:
             self.inventory.append(item)
             return True
         return False
+    
     def DealDamage(self):
         return random.randint(0,6)
