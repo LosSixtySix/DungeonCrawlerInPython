@@ -67,13 +67,39 @@ def loadMenuOptions(fileName,menuOptions):
             menuOptions[item[0]] = False
 
 def displayEquipment(equipment,selectItem,selectItemIndex):
-    pass
+    keys = equipment.keys()
+    
+    gapBetweenText = 10
+    
+    text = FONT.render("Equipment",True,blue,black)
+    textRect = text.get_rect()
+    textWidth = text.get_width()
+    textHeight = text.get_height()
+    textRect.center = (int(textWidth/2),HEIGHT + textHeight*3 +5)
+    win.blit(text,textRect)
+
+    equipmentStartHeight = HEIGHT + textHeight*3 +5
+    equipmentStartWidth = 0
+
+    for key in keys:
+        equipmentName = ""
+        if selectItem:
+            pass
+        else:
+            if equipment[key] != "None":
+                equipment = equipment[key].name
+            equipmentText = FONT.render(f"{key}:[{equipmentName}]",True,blue,black)
+            equipmentTextRect = equipmentText.get_rect()
+            equipmentTextWidth = equipmentText.get_width()
+            equipmentTextHeight = equipmentText.get_height()
+            equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
+            win.blit(equipmentText,equipmentTextRect)
+            equipmentStartWidth += equipmentTextWidth + gapBetweenText
 
 def displayInventory(inventory,selectItem,selectItemIndex):
-
-
-
     passes = 0
+
+    gapBetweenText = 10
 
     text = FONT.render("Inventory",True,blue,black)
     textRect = text.get_rect()
@@ -83,7 +109,7 @@ def displayInventory(inventory,selectItem,selectItemIndex):
     win.blit(text,textRect)
 
     inventoryStartHeight = HEIGHT + int(textHeight/2) + 5 
-
+    inventoryStartWidth = 0
     if len(inventory) > 0:
         for index in range(len(inventory)):
             if selectItem:
@@ -92,23 +118,25 @@ def displayInventory(inventory,selectItem,selectItemIndex):
                     inventoryTextRect = inventoryText.get_rect()
                     inventoryTextWidth = inventoryText.get_width()
                     inventoryTextHeight = inventoryText.get_height()
-                    inventoryTextRect.center = (inventoryTextWidth*passes + (inventoryTextWidth/2) + 15*passes,inventoryStartHeight + inventoryTextHeight )
+                    inventoryTextRect.center = (inventoryStartWidth + int(inventoryTextWidth/2), inventoryStartHeight + inventoryTextHeight )
                     win.blit(inventoryText,inventoryTextRect)
+                    inventoryStartWidth += inventoryTextWidth + gapBetweenText
                 else:
                     inventoryText = FONT.render(f"{inventory[index].name}",True,blue,black)
                     inventoryTextRect = inventoryText.get_rect()
                     inventoryTextWidth = inventoryText.get_width()
                     inventoryTextHeight = inventoryText.get_height()
-                    inventoryTextRect.center = (inventoryTextWidth*passes + (inventoryTextWidth/2)+15*passes,inventoryStartHeight + inventoryTextHeight )
+                    inventoryTextRect.center = (inventoryStartWidth + int(inventoryTextWidth/2),inventoryStartHeight + inventoryTextHeight )
                     win.blit(inventoryText,inventoryTextRect)
+                    inventoryStartWidth += inventoryTextWidth + gapBetweenText
             else:
                 inventoryText = FONT.render(f"{inventory[index].name}",True,blue,black)
                 inventoryTextRect = inventoryText.get_rect()
                 inventoryTextWidth = inventoryText.get_width()
                 inventoryTextHeight = inventoryText.get_height()
-                inventoryTextRect.center = (inventoryTextWidth *passes + (inventoryTextWidth/2)+15*passes,inventoryStartHeight + inventoryTextHeight )
+                inventoryTextRect.center = (inventoryStartWidth + int(inventoryTextWidth/2),inventoryStartHeight + inventoryTextHeight )
                 win.blit(inventoryText,inventoryTextRect)
-            passes += 1
+                inventoryStartWidth += inventoryTextWidth + gapBetweenText
 
 def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
     keys = stats.keys()
@@ -352,12 +380,14 @@ def CreateNPC(position,grid,rooms):
         newNPC = enemies.Goblin()
     return newNPC
 
-def gameRunning(menuOpen,selectItem,inventoryOpen):
+def gameRunning(menuOpen,selectItem,inventoryOpen,unEquip):
     if menuOpen:
         return False
     if selectItem:
         return False
     if inventoryOpen:
+        return False
+    if unEquip:
         return False
     return True
 
@@ -703,6 +733,7 @@ EnemyCount = 3
 menuOpen = False
 selectItem = False
 inventoryOpen = False
+unEquip = False
 selectItemIndex = 1
 runing = True
 NewLevelDoorNotAdded = True
@@ -773,7 +804,7 @@ while runing:
                 if menuOpen:
                     menuOpen = False
                     selectItemIndex = 1
-            if gameRunning(selectItem,menuOpen,inventoryOpen):
+            if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
                 if event.key == pygame.K_e:
                     if playerDirection == 0:
                         if playerposx - 1 >= 0:
@@ -841,15 +872,23 @@ while runing:
                                 enemyMove = True
 
             if event.key == pygame.K_i:
-                if gameRunning(selectItem,menuOpen,inventoryOpen):
+                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
                     inventoryOpen = True
                     selectItemIndex = 0
                 elif inventoryOpen:
                     inventoryOpen = False
                     selectItemIndex = 0
 
+            if event.key == pygame.K_u:
+                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
+                    unEquip = True
+                    selectItemIndex = 0
+                elif unEquip:
+                    unEquip = False
+                    selectItemIndex = 0
+
             if event.key == pygame.K_LEFT:
-                if gameRunning(selectItem,menuOpen,inventoryOpen):
+                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
                     playerDirection = 0
                     if playerposx - 1 >= 0:
                         if grid[playerposx - playervel][playerposy] != 2 and grid[playerposx - playervel][playerposy] != 5:
@@ -858,7 +897,7 @@ while runing:
                             enemyMove = True
                             CheckForItem(grid,ItemsGrid)
             if event.key == pygame.K_RIGHT:
-                if gameRunning(selectItem,menuOpen,inventoryOpen):
+                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
                     playerDirection = 1
                     if playerposx + 1 < int(WIDTH/10):
                         if grid[playerposx + playervel][playerposy] != 2 and grid[playerposx + playervel][playerposy] != 5:
@@ -868,7 +907,7 @@ while runing:
                             CheckForItem(grid,ItemsGrid)
                             
             if event.key == pygame.K_UP:
-                if gameRunning(selectItem,menuOpen,inventoryOpen):
+                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
                     playerDirection = 2
                     if playerposy - 1 >= 0:
                         if grid[playerposx][playerposy- playervel] != 2 and grid[playerposx][playerposy- playervel] != 5:
@@ -888,7 +927,7 @@ while runing:
                             selectItemIndex -=1
                             print(selectItemIndex)
             if event.key == pygame.K_DOWN:
-                if gameRunning(selectItem,menuOpen,inventoryOpen):
+                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
                     playerDirection = 3
                     if playerposy + 1 < int(HEIGHT/10):
                         if grid[playerposx][playerposy+ playervel] != 2 and grid[playerposx][playerposy+ playervel] != 5:
@@ -1020,7 +1059,7 @@ while runing:
     TextHeightIncrement += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
     TextHeightIncrement += displayStatistics(player.equipment,TEXTSTARTHEIGHT + TextHeightIncrement,selectItem,selectItemIndex)
     displayInventory(player.inventory,inventoryOpen,selectItemIndex)
-    displayEquipment(player.equipment,inventoryOpen,selectItemIndex)
+    displayEquipment(player.equipment,unEquip,selectItemIndex)
 
     visiblePositions = getVisiblePositions(grid,playerpos,player)
     setPositionsVisible(VisibleGrid,visiblePositions)
