@@ -50,6 +50,9 @@ floorGray = (65,65,65)
 gold = (239,191,4)
 swampFloor = (108,148,108)
 
+crimson = (75,0,0)
+ratBrown = (86,75,73)
+
 shadowyGray = (108,108,108)
 shadowyTan = (193,154,121)
 shadowywoodBrown = (56,19,2)
@@ -1173,7 +1176,13 @@ while runing:
                     case 4: #NextDoor
                         pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
                     case 5:#Enemy
-                        pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
+                        match NPCGrid[x][y].name:
+                            case "Goblin":
+                                pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
+                            case "Goblin Chieftan":
+                                pygame.draw.rect(win,crimson,pygame.Rect(x*10,y*10,10,10))
+                            case "Dire Rat":
+                                pygame.draw.rect(win,ratBrown,pygame.Rect(x*10,y*10,10,10))
                     case 6: #PreviousDoor
                         pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
             elif VisibleGrid[x][y] == 2:
