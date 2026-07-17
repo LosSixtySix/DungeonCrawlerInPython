@@ -5,8 +5,13 @@ class equipment():
         self.slot = slot
         self.damageBonus = damageBounus
 
-sword = equipment("Weapon","Sword","Hands",2)
+RustySword = equipment("Weapon","Rusty Sword","Hands",1)
+Pick = equipment("Tool","Pick-Axe","Hands",1)
+SimpleShield = equipment("Armor","Simple Shield","Hands",1)
 
+goblinEquipmentList = [RustySword,Pick]
+
+equipmentList = [RustySword,Pick,SimpleShield]
 
 def getItemName(item):
     return item.name

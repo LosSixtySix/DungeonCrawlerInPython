@@ -12,30 +12,47 @@ class PlayerClass():
         self.inventory = []
         self.inventoryLimit = 10
         self.visionRange = 5
-        self.equipment = {"Head":"None","Chest":"None","Gloves":"None","Hands":["None","None"],"Legs":"None","Feet":"None"}
+        self.equipment = {"Head":"None","Chest":"None","Gloves":"None","Right Hand":"None","Left Hand":"None","Legs":"None","Feet":"None"}
+        self.gold = 0
 
     def equipItem(self,inventoryIndex):
-        item = self.inventory.pop(inventoryIndex)
-        if item.type == "Weapon":
-            self.MaxDamage += item.damageBonus
-
-        if item.slot == "Hands":
-            if self.equipment["Hands"][0] == "None":
-                self.equipment["Hands"][0] = item
-                return
-            elif self.equipment["Hands"][1] == "None":
-                self.equipment["Hands"][1] = item
-            else:
-                self.inventory.append(self.equipment["Hands"][0])
-                self.equipment["Hands"][0] = item
-
-        else:
-            if self.equipment[item.slot] != "None":
-                self.inventory.append(self.equipment[item.slot])
-            self.equipment[item.slot] = item
+        item = self.inventory[inventoryIndex]
+        match item.type:
+            case "Weapon":
+                self.MaxDamage += item.damageBonus
+            case "Tool":
+                self.wallDamage += item.damageBonus
+            case "Armor":
+                self.ac += item.damageBonus
+        match item.slot:
+            case "Hands":
+                if self.equipment["Right Hand"] == "None":
+                    self.equipment["Right Hand"] = item
+                    self.inventory.pop(inventoryIndex)
+                elif self.equipment["Left Hand"] == "None":
+                    self.equipment["Left Hand"] = item
+                    self.inventory.pop(inventoryIndex)
+            case _:
+                if self.equipment[item.slot] == "None":
+                    self.equipment[item.slot] = item
+                    self.inventory.pop(inventoryIndex)
 
     def unEquipItem(self,slot):
-        pass
+        item = self.equipment[slot]
+        if item != "None":
+            match item.type:
+                case "Weapon":
+                    self.MaxDamage -= item.damageBonus
+                case "Tool":
+                    self.wallDamage -= item.damageBonus
+                case "Armor":
+                    self.ac -= item.damageBonus
+            self.addItemToInventory(item)
+            self.equipment[slot] = "None"
+
+    def alterGold(self,amount):
+        self.gold += amount 
+
     def addItemToInventory(self,item):
         if len(self.inventory) < self.inventoryLimit:
             self.inventory.append(item)

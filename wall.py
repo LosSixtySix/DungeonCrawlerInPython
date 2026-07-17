@@ -24,3 +24,10 @@ class SandWall(Wall):
         self.name = "Sand Wall"
         self.hp = 5
         self.hardness = 1
+
+class GoldWall(Wall):
+    def __init__(self):
+        super().__init__()
+        self.name = "Gold Wall"
+        self.hp = 7
+        self.hardness = 2
