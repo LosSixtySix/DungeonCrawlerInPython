@@ -439,14 +439,8 @@ def CreateNPC(position,grid,rooms):
                 newNPC = enemies.lowerFloorEnemies[rand.randint(0,len(enemies.lowerFloorEnemies)-1)]()
     return newNPC
 
-def gameRunning(menuOpen,selectItem,inventoryOpen,unEquip):
-    if menuOpen:
-        return False
-    if selectItem:
-        return False
-    if inventoryOpen:
-        return False
-    if unEquip:
+def gameRunning(menuDict:dict) -> bool:
+    if True in menuDict.values():
         return False
     return True
 
@@ -800,13 +794,10 @@ generatePreviousLevel = False
 generateNextLevel = False
 
 EnemyCount = 3
-menuOpen = False
-selectItem = False
-inventoryOpen = False
-unEquip = False
 selectItemIndex = 1
 runing = True
 NewLevelDoorNotAdded = True
+menuDict = {"selectItem":False,"menuOpen":False,"inventoryOpen":False,"unEquip":False}
 while runing:
     
     grid[playerposx][playerposy] = 1
@@ -839,12 +830,12 @@ while runing:
                         generateNewLevel = True
                 elif playerpos == doorPostions[level -1]:
                     generatePreviousLevel = True
-                elif gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
-                    if selectItem == False:
+                elif gameRunning(menuDict):
+                    if menuDict["selectItem"] == False:
                         if areItemsInTile(roomItems[0]):
                             print("There are items in this room")
-                            selectItem = True
-                elif menuOpen:
+                            menuDict["selectItem"] = True
+                elif menuDict["menuOpen"]:
                     keys = menuOptions.keys()
                     passes = 0
                     for key in keys:
@@ -854,23 +845,23 @@ while runing:
                             else:
                                 menuOptions[key] = True
                         passes += 1
-                elif selectItem:
+                elif menuDict["selectItem"]:
                     pickUpItem(player,ItemsGrid,playerpos,selectItemIndex)
                     if len(roomItems) == 1:
                             ItemsGrid[playerposx][playerposy][0] = 0
-                            selectItem = False
+                            menuDict["selectItem"] = False
                             selectItemIndex = 0
                     if selectItemIndex > len(roomItems):
                         selectItemIndex -=1
                     if selectItemIndex == len(roomItems):
                         selectItemIndex -=1
-                elif inventoryOpen:
+                elif menuDict["inventoryOpen"]:
                     print("Equipping ...")
                     player.equipItem(selectItemIndex)
                     if len(player.inventory) == 0:
-                        inventoryOpen = False
+                        menuDict["inventoryOpen"] = False
                         selectItemIndex = 1
-                elif unEquip:
+                elif menuDict["unEquip"]:
                     print("Unequipping ...")
                     keys = player.equipment.keys()
                     equipmentSlot = None
@@ -882,20 +873,20 @@ while runing:
                         passes +=1
                     player.unEquipItem(equipmentSlot)
             if event.key == pygame.K_ESCAPE:
-                if menuOpen:
-                    menuOpen = False
+                if menuDict["menuOpen"]:
+                    menuDict["menuOpen"] = False
                     selectItemIndex = 1
                 else:
-                    menuOpen = True
+                    menuDict["menuOpen"] = True
                     selectItemIndex =1
             if event.key == pygame.K_q:
-                if selectItem:
-                    selectItem = False
+                if menuDict["selectItem"]:
+                    menuDict["selectItem"] = False
                     selectItemIndex = 1
-                if menuOpen:
-                    menuOpen = False
+                if menuDict["menuOpen"]:
+                    menuDict["menuOpen"] = False
                     selectItemIndex = 1
-            if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
+            if gameRunning(menuDict):
                 targetPos:tuple = ()
                 validMove:bool = False
                 if event.key == pygame.K_e:
@@ -934,19 +925,19 @@ while runing:
                                 enemyMove = True
 
             if event.key == pygame.K_i:
-                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip) and len(player.inventory) > 0:
-                    inventoryOpen = True
+                if gameRunning(menuDict) and len(player.inventory) > 0:
+                    menuDict["inventoryOpen"] = True
                     selectItemIndex = 0
-                elif inventoryOpen:
-                    inventoryOpen = False
+                elif menuDict["inventoryOpen"]:
+                    menuDict["inventoryOpen"] = False
                     selectItemIndex = 1
 
             if event.key == pygame.K_u:
-                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
-                    unEquip = True
+                if gameRunning(menuDict):
+                    menuDict["unEquip"] = True
                     selectItemIndex = 0
-                elif unEquip:
-                    unEquip = False
+                elif menuDict["unEquip"]:
+                    menuDict["unEquip"] = False
                     selectItemIndex = 1
 
             moveMade:bool = False
@@ -971,7 +962,7 @@ while runing:
                     newDirection = 3
                     yvelocity += 1
             if enemyMove == False:
-                if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
+                if gameRunning(menuDict):
                     playerDirection = newDirection
                     try:
                         targetLocation = grid[playerposx + (1*xvelocity)][playerposy + (1*yvelocity)]
@@ -984,16 +975,16 @@ while runing:
                         enemyMove = True
                         CheckForItem(grid,ItemsGrid)
                 else:
-                    if selectItem:
+                    if menuDict["selectItem"]:
                         if selectItemIndex + indexMove < len(roomItems) and selectItemIndex + indexMove > 0:
                             selectItemIndex +=indexMove
-                    elif menuOpen:
+                    elif menuDict["menuOpen"]:
                         if selectItemIndex +indexMove <= len(menuOptions.keys()) and selectItemIndex + indexMove >= 0:
                             selectItemIndex +=indexMove
-                    elif inventoryOpen:
+                    elif menuDict["inventoryOpen"]:
                         if selectItemIndex +indexMove < len(player.inventory) and selectItemIndex + indexMove >= 0:
                             selectItemIndex +=indexMove
-                    elif unEquip:
+                    elif menuDict["unEquip"]:
                         if selectItemIndex +indexMove < len(player.equipment.keys()) and selectItemIndex + indexMove >=0:
                             selectItemIndex +=indexMove
             
@@ -1130,10 +1121,10 @@ while runing:
         NewLevelDoorNotAdded = True
         generateNewLevel = False
 
-    TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT +35,selectItem,selectItemIndex)
-    TextHeightIncrement += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement +35,selectItem,selectItemIndex)
-    displayInventory(player.inventory,inventoryOpen,selectItemIndex)
-    displayEquipment(player.equipment,unEquip,selectItemIndex)
+    TextHeightIncrement = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT +35,menuDict["selectItem"],selectItemIndex)
+    TextHeightIncrement += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT + TextHeightIncrement +35,menuDict["selectItem"],selectItemIndex)
+    displayInventory(player.inventory,menuDict["inventoryOpen"],selectItemIndex)
+    displayEquipment(player.equipment,menuDict["unEquip"],selectItemIndex)
 
     visiblePositions = getVisiblePositions(grid,playerpos,player)
     setPositionsVisible(VisibleGrid,visiblePositions)
@@ -1197,7 +1188,7 @@ while runing:
                     case _: #floor
                         pygame.draw.rect(win,shadowyFloorColor,pygame.Rect(x*10,y*10,10,10))
 
-    if menuOpen:
+    if menuDict["menuOpen"]:
         DrawMenu(selectItemIndex)
 
     pygame.display.flip()
