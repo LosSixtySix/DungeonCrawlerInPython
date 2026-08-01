@@ -18,12 +18,15 @@ class PlayerClass():
     def equipItem(self,inventoryIndex):
         item = self.inventory[inventoryIndex]
         match item.type:
-            case "Weapon":
-                self.MaxDamage += item.damageBonus
-            case "Tool":
-                self.wallDamage += item.damageBonus
-            case "Armor":
-                self.ac += item.damageBonus
+            case "Damage":
+                self.MaxDamage += item.bonus
+            case "WallDamage":
+                self.wallDamage += item.bonus
+            case "Defense":
+                self.ac += item.bonus
+            case "DaWa":
+                self.MaxDamage += item.b1
+                self.wallDamage += item.b2
         match item.slot:
             case "Hands":
                 if self.equipment["Right Hand"] == "None":
@@ -41,12 +44,15 @@ class PlayerClass():
         item = self.equipment[slot]
         if item != "None":
             match item.type:
-                case "Weapon":
-                    self.MaxDamage -= item.damageBonus
-                case "Tool":
-                    self.wallDamage -= item.damageBonus
-                case "Armor":
-                    self.ac -= item.damageBonus
+                case "Damage":
+                    self.MaxDamage -= item.bonus
+                case "WallDamage":
+                    self.wallDamage -= item.bonus
+                case "Defense":
+                    self.ac -= item.bonus
+                case "DaWa":
+                    self.MaxDamage -= item.b1
+                    self.wallDamage -= item.b2
             self.addItemToInventory(item)
             self.equipment[slot] = "None"
 

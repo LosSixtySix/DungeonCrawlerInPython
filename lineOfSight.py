@@ -67,8 +67,8 @@ shadowyFloorColor = None
 
 FONTCOLOR = gray
 
-player:pc = pc.PlayerClass()
-
+player:pc.PlayerClass = pc.PlayerClass()
+player.addItemToInventory(items.WarPick)
 FONT = pygame.font.Font('freesansbold.ttf',15)
 
 def saveMenuOptions(fileName,menuOptions):
@@ -220,8 +220,6 @@ win = pygame.display.set_mode((SCREENWIDTH,SCREENHEIGHT))
 
 playerposx = 35
 playerposy = 25
-
-playervel = 1
 
 playerDirection = 0
 levelGrids = []
@@ -781,12 +779,8 @@ ListOfEnemyPositions = PlaceRandomEnemies(grid,75)
 ItemsGrid = convertToItemGrid(ItemsGrid,grid,rooms)
 NPCGrid = convertToNPCGrid(NPCGrid,grid,rooms)
 WallGrid = convertToWallGrid(WallGrid,grid,rooms)
-ListOfItems = items.equipmentList
-
-placeRandomItems(ItemsGrid,grid,ListOfItems,5)
-
+placeRandomItems(ItemsGrid,grid,items.createRandomStatItems(10),5)
 floorRandInt:int = rand.randint(0,1)
-
 if floorRandInt == 0:
     floorColor = swampFloor
     shadowyFloorColor = shadowySwampFloor
@@ -960,35 +954,29 @@ while runing:
             xvelocity = 0
             yvelocity = 0
             indexMove = 0
+            newDirection = playerDirection
             match event.key:
                 case pygame.K_LEFT | pygame.K_a:
-                    playerDirection = 0
-                    if playerposx -1 >= 0:
-                        moveMade = True
-                        targetLocation = grid[playerposx-playervel][playerposy]
-                        xvelocity -= playervel
+                    newDirection = 0
+                    xvelocity -= 1
                 case pygame.K_RIGHT | pygame.K_d:
-                    playerDirection = 1
-                    if playerposx + 1 < int(WIDTH/10):
-                        moveMade = True
-                        targetLocation = grid[playerposx + playervel][playerposy]
-                        xvelocity += playervel
+                    newDirection = 1
+                    xvelocity += 1
                 case pygame.K_UP | pygame.K_w:
-                    playerDirection = 2
                     indexMove -= 1
-                    if playerposy - 1 >= 0:
-                        moveMade = True
-                        targetLocation = grid[playerposx][playerposy- playervel]
-                        yvelocity -= playervel
+                    newDirection = 2
+                    yvelocity -= 1
                 case pygame.K_DOWN | pygame.K_s:
-                    playerDirection = 3
                     indexMove += 1
-                    if playerposy + 1 < int(HEIGHT/10):
-                        moveMade = True
-                        targetLocation = grid[playerposx][playerposy+ playervel]
-                        yvelocity += playervel
-            if moveMade:
+                    newDirection = 3
+                    yvelocity += 1
+            if enemyMove == False:
                 if gameRunning(selectItem,menuOpen,inventoryOpen,unEquip):
+                    playerDirection = newDirection
+                    try:
+                        targetLocation = grid[playerposx + (1*xvelocity)][playerposy + (1*yvelocity)]
+                    except:
+                        pass
                     if targetLocation != 2 and targetLocation != 5:
                         grid[playerposx][playerposy] = 0
                         playerposy += yvelocity
@@ -1128,7 +1116,7 @@ while runing:
         ItemsGrid = convertToItemGrid(ItemsGrid,grid,rooms)
         NPCGrid = convertToNPCGrid(NPCGrid,grid,rooms)
         WallGrid = convertToWallGrid(WallGrid,grid,rooms)
-        placeRandomItems(ItemsGrid,grid,ListOfItems,5)
+        placeRandomItems(ItemsGrid,grid,items.createRandomStatItems(10 * level),5)
 
 
         for x in range(len(WallGridsList)):
