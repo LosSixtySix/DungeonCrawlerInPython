@@ -965,9 +965,14 @@ while runing:
                 if gameRunning(menuDict):
                     playerDirection = newDirection
                     try:
-                        targetLocation = grid[playerposx + (1*xvelocity)][playerposy + (1*yvelocity)]
+                        if(playerposx + (1*xvelocity)) >= 0 and (playerposy + (1*yvelocity)) >=0:
+                            targetLocation = grid[playerposx + (1*xvelocity)][playerposy + (1*yvelocity)]
+                        else:
+                            xvelocity = 0
+                            yvelocity = 0
                     except:
-                        pass
+                        xvelocity = 0
+                        yvelocity = 0
                     if targetLocation != 2 and targetLocation != 5:
                         grid[playerposx][playerposy] = 0
                         playerposy += yvelocity
