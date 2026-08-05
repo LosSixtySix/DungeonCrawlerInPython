@@ -8,6 +8,7 @@ import items
 import enemies
 import wall
 import math
+from spritesheet import spriteSheet
 
 pygame.init()
 pygame.font.init()
@@ -213,7 +214,16 @@ def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
                 win.blit(text, textRect)
                 passes += 1
     return TEXTROWGAPDISTANCE * passes
+
+
+
+canvas = pygame.Surface((SCREENWIDTH,SCREENHEIGHT))
 win = pygame.display.set_mode((SCREENWIDTH,SCREENHEIGHT))
+
+spritesheet = spriteSheet("spritesheet.png")
+
+stoneWallSprite = spritesheet.get_sprite(0,0,10,10)
+tileFloorSprite = spritesheet.get_sprite(10,0,10,10)
 
 
 
@@ -686,7 +696,69 @@ def getVisiblePositions(grid,playerPosition,player):
                 if x - index >= 0:
                     visiblePositions.append((x-index,y+startY))
         sides +=1
-    return visiblePositions
+
+    rays = 8
+    listOfRays = []
+
+    for ray in range(rays):
+        rayList = []
+        for position in visiblePositions:
+            posX = position[0]
+            posY = position[1]
+            add = False
+            match ray:
+                case 0:
+                    add = posX == x and posY < y
+                    pos = 1
+                    r = True
+                case 1:
+                    add = posX == x and posY > y
+                    pos = 1
+                    r = False
+                case 2:
+                    add = posX < x and posY == y
+                    pos = 0
+                    r = True
+                case 3:
+                    add = posX > x and posY == y
+                    pos = 0
+                    r = False
+                case 4:
+                    add = (x - posX) < 0 and (y - posY) < 0 and (x-posX) == (y-posY)
+                    pos = 0
+                    r = False
+                case 5:
+                    add = (x - posX) > 0 and (y - posY) > 0 and (x-posX) == (y-posY)
+                    pos = 0
+                    r = True
+                case 6:
+                    add = (posX - x) > 0 and (y - posY) > 0 and (posX-x) == (y-posY)
+                    pos = 0
+                    r = False
+                case 7:
+                    add = (x -posX ) > 0 and (posY-y) > 0 and (x - posX) == (posY -y)
+                    pos = 0
+                    r = True
+            if add:
+                rayList.append(position)
+        rayList.sort(key=lambda x: x[pos],reverse=r)
+        listOfRays.append(rayList)
+
+    
+    truePositions = set()
+    for ray in listOfRays:
+        for position in ray:
+            posX = position[0]
+            posY = position[1]
+            if grid[posX][posY] != 0:
+                truePositions.add(position)
+                break
+            truePositions.add(position)
+
+                            
+    return truePositions
+
+
 
 def setPositionsVisible(visibleGrid,visiblePositions):
 
@@ -1133,20 +1205,23 @@ while runing:
 
     visiblePositions = getVisiblePositions(grid,playerpos,player)
     setPositionsVisible(VisibleGrid,visiblePositions)
-
+    canvas.fill((0,0,0))
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if VisibleGrid[x][y] == 1:
                 match grid[x][y]:
                     case 0: #Empty space
+                        canvas.blit(tileFloorSprite,(x*10,y*10))
                         pygame.draw.rect(win,floorColor,pygame.Rect(x*10,y*10,10,10))
                     case 1: #Player
                         pygame.draw.rect(win,green,pygame.Rect(x*10,y*10,10,10))
                     case 2: #Wall
                         w = WallGrid[x][y]
+                        canvas.blit(stoneWallSprite,(x*10,y*10))
                         match w.name:
                             case "Stone Wall":
-                                pygame.draw.rect(win,gray,pygame.Rect(x*10,y*10,10,10))
+                                canvas.blit(stoneWallSprite,(x*10,y*10))
+                                # pygame.draw.rect(win,gray,pygame.Rect(x*10,y*10,10,10))
                             case "Wood Wall":
                                 pygame.draw.rect(win,woodBrown,pygame.Rect(x*10,y*10,10,10))
                             case "Sand Wall":
@@ -1173,6 +1248,7 @@ while runing:
                 match grid[x][y]:
                     case 2: #wall
                         w = WallGrid[x][y]
+                        canvas.blit(stoneWallSprite,(x*10,y*10))
                         match w.name:
                             case "Stone Wall":
                                 pygame.draw.rect(win,shadowyGray,pygame.Rect(x*10,y*10,10,10))
@@ -1192,7 +1268,9 @@ while runing:
                         pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
                     case _: #floor
                         pygame.draw.rect(win,shadowyFloorColor,pygame.Rect(x*10,y*10,10,10))
-
+    
+    
+    win.blit(canvas,(0,0))
     if menuDict["menuOpen"]:
         DrawMenu(selectItemIndex)
 
