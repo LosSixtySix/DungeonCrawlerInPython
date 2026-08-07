@@ -8,7 +8,6 @@ import items
 import enemies
 import wall
 import math
-from spritesheet import spriteSheet
 import numpy
 
 pygame.init()
