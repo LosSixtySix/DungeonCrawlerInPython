@@ -9,6 +9,7 @@ import enemies
 import wall
 import math
 from spritesheet import spriteSheet
+import numpy
 
 pygame.init()
 pygame.font.init()
@@ -25,7 +26,7 @@ TEXTSTARTWIDTH = 732
 TEXTSTARTHEIGHT = 15
 
 TEXTROWGAPDISTANCE = 20
-
+tileSize = 12
 
 
 loadRoom = True
@@ -64,6 +65,7 @@ shadowySwampFloor = (88,108,88)
 
 floorColor = None
 shadowyFloorColor = None
+
 
 
 FONTCOLOR = gray
@@ -216,20 +218,19 @@ def displayStatistics(stats,startHeight,selectItem,selectItemIndex):
     return TEXTROWGAPDISTANCE * passes
 
 
-
-canvas = pygame.Surface((SCREENWIDTH,SCREENHEIGHT))
 win = pygame.display.set_mode((SCREENWIDTH,SCREENHEIGHT))
+# canvas = pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA)
+# backGroundCanvas = pygame.Surface((WIDTH,HEIGHT))
+# spritesheet = spriteSheet("spritesheet.png")
+# stoneWallSprite = spritesheet.get_sprite(0,0,tileSize,tileSize)
+# tileFloorSprite = spritesheet.get_sprite(30,0,tileSize,tileSize)
+# FloorSwampSprite = spritesheet.get_sprite(150,0,tileSize,tileSize)
+# enemySprite = spritesheet.get_sprite(60,0,tileSize,tileSize)
+# playerSprite = spritesheet.get_sprite(90,0,tileSize,tileSize)
+# playerSpriteTopDown = spritesheet.get_sprite(120,0,tileSize,tileSize)
 
-spritesheet = spriteSheet("spritesheet.png")
-
-stoneWallSprite = spritesheet.get_sprite(0,0,10,10)
-tileFloorSprite = spritesheet.get_sprite(10,0,10,10)
-
-
-
-
-playerposx = 35
-playerposy = 25
+playerposx = int(tileSize/2)
+playerposy = int(tileSize/2)
 
 playerDirection = 0
 levelGrids = []
@@ -240,15 +241,15 @@ itemGridsList = []
 NPCGridList = []
 WallGridsList = []
 
-grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-ItemsGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-WallGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-NPCGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-VisibleGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+grid = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
+ItemsGrid = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
+WallGrid = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
+NPCGrid = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
+VisibleGrid = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
 
 
 def convertToItemGrid(itemsGrid,grid,rooms):
-    returnValue = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+    returnValue = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             returnValue[x][y] = [returnValue[x][y]]
@@ -257,7 +258,7 @@ def convertToItemGrid(itemsGrid,grid,rooms):
     return returnValue
 
 def convertToWallGrid(wallGrid,grid,rooms):
-    returnValue = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+    returnValue = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if grid[x][y] == 2:
@@ -268,7 +269,7 @@ def convertToWallGrid(wallGrid,grid,rooms):
     return returnValue
 
 def convertToNPCGrid(NPCGrid,grid,rooms):
-    returnValue = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+    returnValue = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if grid[x][y] == 5:
@@ -667,11 +668,33 @@ def PlacePreviousLevelDoor(grid,position):
 
     grid[x][y] = 6
 
-def getVisiblePositions(grid,playerPosition,player):
+def getNeighbors(point):
+    t = [-1,0,1]
+    shifter = [[x,y] for x in t for y in t]
+
+    for x in range(len(shifter)):
+        shifter[x][0] = shifter[x][0] + point[0]
+        shifter[x][1] = shifter[x][1] + point[1]
+    return shifter
+
+def getVisiblePositions(grid,playerPosition,radius) -> set:
+    visiblePositions = set()
+
+    neighbors = getNeighbors(playerPosition)
+
+    for point in neighbors:
+        try:
+            if grid[point[0]][point[1]] == 0:
+                visiblePositions = visiblePositions.union(getVisibleHelper(grid,point,radius))
+        except:
+            pass
+        
+    return visiblePositions
+
+def getVisibleHelper(grid,playerPosition,radius) -> set:
     visiblePositions = []
     x = playerPosition[0]
     y = playerPosition[1]
-    radius = player.visionRange
     gettingPositions = True
     sides = 0
     while(gettingPositions):
@@ -840,7 +863,7 @@ playerpos = (playerposx, playerposy)
 emptyNodes = CER.createNodes(grid)
 rooms = CreateRooms(emptyNodes)
 
-ListOfEnemyPositions = PlaceRandomEnemies(grid,75)
+ListOfEnemyPositions = PlaceRandomEnemies(grid,1)
 
 ItemsGrid = convertToItemGrid(ItemsGrid,grid,rooms)
 NPCGrid = convertToNPCGrid(NPCGrid,grid,rooms)
@@ -865,7 +888,7 @@ generateNewLevel = False
 generatePreviousLevel = False
 generateNextLevel = False
 
-EnemyCount = 3
+EnemyCount = 1
 selectItemIndex = 1
 runing = True
 NewLevelDoorNotAdded = True
@@ -968,7 +991,7 @@ while runing:
                             validMove = True       
                     elif playerDirection == 1:
                         targetPos = (playerposx + 1,playerposy)
-                        if playerposx + 1 < int(WIDTH/10):
+                        if playerposx + 1 < int(WIDTH/tileSize):
                             validMove = True
                     elif playerDirection == 2:
                         targetPos = (playerposx,playerposy - 1)
@@ -976,7 +999,7 @@ while runing:
                             validMove = True
                     elif playerDirection == 3:
                         targetPos = (playerposx,playerposy + 1)
-                        if playerposy + 1 < int(HEIGHT/10):
+                        if playerposy + 1 < int(HEIGHT/tileSize):
                             validMove = True
 
                     if validMove:
@@ -1070,7 +1093,7 @@ while runing:
     playerpos = (playerposx,playerposy)
     grid[playerposx][playerposy] = 1
     if enemyMove:
-        ListOfEnemyPositions = MoveEnemiesRandomly(grid,NPCGrid,WallGrid)
+        #ListOfEnemyPositions = MoveEnemiesRandomly(grid,NPCGrid,WallGrid)
         enemyMove = False
     
     win.fill((black))
@@ -1169,8 +1192,8 @@ while runing:
 
         roomsList.append(rooms)
 
-        VisibleGrid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
-        grid = [[0 for i in range(int(WIDTH/10))] for j in range(int(HEIGHT/10))]
+        VisibleGrid = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
+        grid = [[0 for i in range(int(WIDTH/tileSize))] for j in range(int(HEIGHT/tileSize))]
         
         GenerateRandomLevel(grid)
 
@@ -1203,74 +1226,78 @@ while runing:
     displayInventory(player.inventory,menuDict["inventoryOpen"],selectItemIndex)
     displayEquipment(player.equipment,menuDict["unEquip"],selectItemIndex)
 
-    visiblePositions = getVisiblePositions(grid,playerpos,player)
+    visiblePositions = getVisiblePositions(grid,playerpos,player.visionRange)
     setPositionsVisible(VisibleGrid,visiblePositions)
-    canvas.fill((0,0,0))
+    # canvas.fill((0,0,0,0))
+    # backGroundCanvas.fill((0,0,0))
     for x in range(len(grid)):
         for y in range(len(grid[x])):
             if VisibleGrid[x][y] == 1:
+                # backGroundCanvas.blit(FloorSwampSprite,(x*tileSize,y*tileSize))
                 match grid[x][y]:
                     case 0: #Empty space
-                        canvas.blit(tileFloorSprite,(x*10,y*10))
-                        pygame.draw.rect(win,floorColor,pygame.Rect(x*10,y*10,10,10))
+                        pygame.draw.rect(win,floorColor,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 1: #Player
-                        pygame.draw.rect(win,green,pygame.Rect(x*10,y*10,10,10))
+                        # canvas.blit(playerSpriteTopDown,(x*tileSize,y*tileSize))
+                        pygame.draw.rect(win,green,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 2: #Wall
                         w = WallGrid[x][y]
-                        canvas.blit(stoneWallSprite,(x*10,y*10))
+                        # canvas.blit(stoneWallSprite,(x*tileSize,y*tileSize))
                         match w.name:
                             case "Stone Wall":
-                                canvas.blit(stoneWallSprite,(x*10,y*10))
-                                # pygame.draw.rect(win,gray,pygame.Rect(x*10,y*10,10,10))
+                                # canvas.blit(stoneWallSprite,(x*tileSize,y*tileSize))
+                                pygame.draw.rect(win,gray,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case "Wood Wall":
-                                pygame.draw.rect(win,woodBrown,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,woodBrown,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case "Sand Wall":
-                                pygame.draw.rect(win,tan,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,tan,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case "Gold Wall":
-                                pygame.draw.rect(win,gold,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,gold,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case _:
-                                pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,blue,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 3: #Chest
-                        pygame.draw.rect(win,purple,pygame.Rect(x*10,y*10,10,10))
+                        pygame.draw.rect(win,purple,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 4: #NextDoor
-                        pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+                        pygame.draw.rect(win,blue,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 5:#Enemy
+                        # canvas.blit(enemySprite,(x*tileSize,y*tileSize))
                         match NPCGrid[x][y].name:
                             case "Goblin":
-                                pygame.draw.rect(win,red,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,red,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case "Goblin Chieftan":
-                                pygame.draw.rect(win,crimson,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,crimson,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case "Dire Rat":
-                                pygame.draw.rect(win,ratBrown,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,ratBrown,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 6: #PreviousDoor
-                        pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+                        pygame.draw.rect(win,blue,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
             elif VisibleGrid[x][y] == 2:
+                # backGroundCanvas.blit(FloorSwampSprite,(x*tileSize,y*tileSize))
                 match grid[x][y]:
                     case 2: #wall
                         w = WallGrid[x][y]
-                        canvas.blit(stoneWallSprite,(x*10,y*10))
+                        # canvas.blit(stoneWallSprite,(x*tileSize,y*tileSize))
                         match w.name:
                             case "Stone Wall":
-                                pygame.draw.rect(win,shadowyGray,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,shadowyGray,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case "Wood Wall":
-                                pygame.draw.rect(win,shadowywoodBrown,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,shadowywoodBrown,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case "Sand Wall":
-                                pygame.draw.rect(win,shadowyTan,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,shadowyTan,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case "Gold Wall":
-                                pygame.draw.rect(win,shadowyGold,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,shadowyGold,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                             case _:
-                                pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+                                pygame.draw.rect(win,blue,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 3: #Chest
-                        pygame.draw.rect(win,shadowyPurple,pygame.Rect(x*10,y*10,10,10))
+                        pygame.draw.rect(win,shadowyPurple,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 4: #NextDoor
-                        pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+                        pygame.draw.rect(win,blue,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case 6: #PreviousDoor
-                        pygame.draw.rect(win,blue,pygame.Rect(x*10,y*10,10,10))
+                        pygame.draw.rect(win,blue,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
                     case _: #floor
-                        pygame.draw.rect(win,shadowyFloorColor,pygame.Rect(x*10,y*10,10,10))
+                        pygame.draw.rect(win,shadowyFloorColor,pygame.Rect(x*tileSize,y*tileSize,tileSize,tileSize))
     
-    
-    win.blit(canvas,(0,0))
+    #win.blit(backGroundCanvas,(0,0))
+    #win.blit(canvas,(0,0))
     if menuDict["menuOpen"]:
         DrawMenu(selectItemIndex)
 
