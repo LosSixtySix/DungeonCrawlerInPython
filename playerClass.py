@@ -11,7 +11,7 @@ class PlayerClass():
         self.MaxDamage = 6
         self.inventory = []
         self.inventoryLimit = 10
-        self.visionRange = 5
+        self.visionRange = 2
         self.equipment = {"Head":"None","Chest":"None","Gloves":"None","Right Hand":"None","Left Hand":"None","Legs":"None","Feet":"None"}
         self.gold = 0
 

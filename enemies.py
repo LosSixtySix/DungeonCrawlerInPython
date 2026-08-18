@@ -11,21 +11,27 @@ class Enemy():
         self.damage = damage
         self.dig = self.CanDig()
         self.move = True
+        self.lastpositions = []
 
     def CanDig(self):
         if self.wallDamage > 0:
             return True
+    
+    def isStuck(self):
+        if len(self.lastpositions) >3:
+            if self.lastpositions[-1] == self.lastpositions[-2] and self.lastpositions[-1] == self.lastpositions[-3] and self.lastpositions[-1] == self.lastpositions[-4]:
+                return True
         
 class Goblin(Enemy):
     def __init__(self):
-        super().__init__(5, 10, 1, 2,1,"Goblin")
+        super().__init__(5, 10, 1, 100,1,"Goblin")
         self.inventory = [items.goblinEquipmentList[rand.randint(0,len(items.goblinEquipmentList)-1)]]
 class GoblinChief(Enemy):
     def __init__(self):
-        super().__init__(10,12,2,2,3,"Goblin Chieftan")
+        super().__init__(10,12,2,100,3,"Goblin Chieftan")
 class DireRat(Enemy):
     def __init__(self):
-        super().__init__(3,2,2,0,2,"Dire Rat")
+        super().__init__(3,2,2,100,2,"Dire Rat")
 
 lowerFloorEnemies = [Goblin,GoblinChief,DireRat]
 
