@@ -60,7 +60,9 @@ class PlayerClass():
         self.gold += amount 
 
     def addItemToInventory(self,item):
+        print(len(self.inventory))
         if len(self.inventory) < self.inventoryLimit:
+            print(item.name)
             self.inventory.append(item)
             return True
         return False

@@ -1,4 +1,5 @@
 import pygame
+import pygame.ftfont
 import random as rand
 import connectingEmptyRooms as CER
 import playerClass as pc
@@ -153,7 +154,7 @@ FONTCOLOR = (196,137,18)
 
 player:pc.PlayerClass = pc.PlayerClass()
 player.addItemToInventory(items.WarPick)
-FONT = pygame.font.Font('Forgore.otf',25)
+FONT = pygame.ftfont.Font('Forgore.otf',25)
 
 playerposx = int((WIDTH/tileSize)/2)
 playerposy = int((HEIGHT/tileSize)/2)
@@ -185,124 +186,22 @@ def loadMenuOptions(fileName,menuOptions):
         elif item[1] == 'False\n' or item[1] == 'False':
             menuOptions[item[0]] = False
 
-
-
-def displayEquipmentHelper(key,startWidth,equipmentName=None,selectItem = False):
-    gapBetweenText = 10
-    text = FONT.render("Equipment",True,FONTCOLOR)
-    textHeight = text.get_height()
-    equipmentStartHeight = HEIGHT + textHeight*3
-
-    textRect = text.get_rect()
-    textWidth = text.get_width()
-    
-    textRect.center = (int(textWidth/2)+15,HEIGHT + textHeight*3)
-    win.blit(text,textRect)
-
-    equipmentStartWidth = startWidth
-
-    if selectItem:
-        equipmentText = FONT.render(f">{key}:[{equipmentName}]",True,FONTCOLOR)
-    else:
-        equipmentText = FONT.render(f"{key}:[{equipmentName}]",True,FONTCOLOR)
-
-    equipmentTextRect = equipmentText.get_rect()
-    equipmentTextWidth = equipmentText.get_width()
-    equipmentTextHeight = equipmentText.get_height()
-    equipmentTextRect.center = (int(equipmentTextWidth/2) + equipmentStartWidth, equipmentStartHeight + equipmentTextHeight)
-    win.blit(equipmentText,equipmentTextRect)
-    equipmentStartWidth += equipmentTextWidth + gapBetweenText
-
-    return equipmentStartWidth
-
-def displayEquipment(equipment,selectItem,selectItemIndex):
-    keys = list(equipment.keys())
-    equipmentStartWidth = 20
-    for x in range(len(keys)):
-        equipmentName = ""
-        key = keys[x]
-        selected = False
-        if x == selectItemIndex and selectItem:
-            selected = True  
-        if equipment[key] != "None":
-            equipmentName = equipment[key].name
-        equipmentStartWidth = displayEquipmentHelper(key,equipmentName=equipmentName,startWidth=equipmentStartWidth,selectItem=selected)
-
-def displayInventory(inventory,selectItem,selectItemIndex):
-    passes = 0
-
-
-    gapBetweenText = 10
-
-    text = FONT.render("Inventory",True,FONTCOLOR)
-    textRect = text.get_rect()
-    textWidth = text.get_width()
-    textHeight = text.get_height()
-    textRect.center = (int(textWidth/2)+15,HEIGHT + int(textHeight/2))
-    win.blit(text,textRect)
-
-    inventoryStartHeight = HEIGHT + int(textHeight/2) + 5 
-    inventoryStartWidth = 0
-    if len(inventory) > 0:
-        for index in range(len(inventory)):
-            if selectItem:
-                if index == selectItemIndex:
-                    inventoryText = FONT.render(f">{inventory[index].name}",True,FONTCOLOR)
-                    inventoryTextRect = inventoryText.get_rect()
-                    inventoryTextWidth = inventoryText.get_width()
-                    inventoryTextHeight = inventoryText.get_height()
-                    inventoryTextRect.center = (inventoryStartWidth + int(inventoryTextWidth/2)+20, inventoryStartHeight + inventoryTextHeight)
-                    win.blit(inventoryText,inventoryTextRect)
-                    inventoryStartWidth += inventoryTextWidth + gapBetweenText
-                else:
-                    inventoryText = FONT.render(f"{inventory[index].name}",True,FONTCOLOR)
-                    inventoryTextRect = inventoryText.get_rect()
-                    inventoryTextWidth = inventoryText.get_width()
-                    inventoryTextHeight = inventoryText.get_height()
-                    inventoryTextRect.center = (inventoryStartWidth + int(inventoryTextWidth/2)+20,inventoryStartHeight + inventoryTextHeight)
-                    win.blit(inventoryText,inventoryTextRect)
-                    inventoryStartWidth += inventoryTextWidth + gapBetweenText
-            else:
-                inventoryText = FONT.render(f"{inventory[index].name}",True,FONTCOLOR)
-                inventoryTextRect = inventoryText.get_rect()
-                inventoryTextWidth = inventoryText.get_width()
-                inventoryTextHeight = inventoryText.get_height()
-                inventoryTextRect.center = (inventoryStartWidth + int(inventoryTextWidth/2)+20,inventoryStartHeight + inventoryTextHeight)
-                win.blit(inventoryText,inventoryTextRect)
-                inventoryStartWidth += inventoryTextWidth + gapBetweenText
-
 def displayStatistics(stats,startHeight,startWidth,selectItem,selectItemIndex,win):
-    keys = stats.keys()
     passes = 0
     longestWidth = 0
-    if len(keys) > 0:
-        for key in keys:
-            if isinstance(stats[key], list):
-                if stats[key][0] == 3: #number 3 in a list for the grid means a list of items.
-                    for item in stats[key]:
-                        if item == 3:
-                            selectItemIndex += 1
-                            text = FONT.render("Items in Room:",True,FONTCOLOR)
-                            textRect = text.get_rect()
-                            textWidth = text.get_width()
-                            textRect.center = (startWidth + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
-                            win.blit(text, textRect)
-                            passes += 1
-                            if textWidth > longestWidth:
-                                longestWidth = textWidth
-                        else:
-                            text = FONT.render(f"{items.getItemName(item)}",True,FONTCOLOR)
-                            if passes == selectItemIndex and selectItem:
-                                text = FONT.render(f"> {items.getItemName(item)}",True,FONTCOLOR)
-                            textRect = text.get_rect()
-                            textWidth = text.get_width()
-                            textRect.center = (startWidth + int(textWidth/2) + 10, startHeight + (TEXTROWGAPDISTANCE * passes))
-                            win.blit(text, textRect)
-                            passes += 1
-                            if textWidth > longestWidth:
-                                longestWidth = textWidth
-            else:
-                text = FONT.render(f"{key}: {stats[key]}",True,FONTCOLOR)
+    if isinstance(stats,dict):
+        if selectItem:
+            selectItemIndex = 1
+        keys = list(stats.keys())
+        if len(keys) > 0:
+            for x in range(len(keys)-1):
+                arrow = ""
+                if selectItem and selectItemIndex == x:
+                    arrow = ">"
+                if isinstance(stats[keys[x]],items.equipment):
+                    text = FONT.render(f"{keys[x]}: {arrow} {stats[keys[x]].name}",True,FONTCOLOR)
+                else:
+                    text = FONT.render(f"{keys[x]}: {arrow} {stats[keys[x]]}",True,FONTCOLOR)
                 textRect = text.get_rect()
                 textWidth = text.get_width()
                 textRect.center = (startWidth + int(textWidth/2), startHeight + (TEXTROWGAPDISTANCE * passes))
@@ -310,7 +209,24 @@ def displayStatistics(stats,startHeight,startWidth,selectItem,selectItemIndex,wi
                 passes += 1
                 if textWidth > longestWidth:
                     longestWidth = textWidth
-    return startHeight + (TEXTROWGAPDISTANCE * passes)
+        return startHeight + (TEXTROWGAPDISTANCE * passes)
+    else:
+        for x in range(len(stats)):
+            arrow = ""
+            if selectItemIndex == x and selectItem:
+                arrow = ">"
+            if isinstance(stats[x],items.equipment):
+                text = FONT.render(f"Slot{[x]}: {arrow} {stats[x].name}",True,FONTCOLOR)
+            else:
+                text = FONT.render(f"Slot{[x]}:{arrow} {stats[x]}",True,FONTCOLOR)
+            textRect = text.get_rect()
+            textWidth = text.get_width()
+            textRect.center = (startWidth + int(textWidth/2), startHeight)
+            win.blit(text, textRect)
+            passes += 1
+            startWidth += textWidth + 10
+        return startWidth
+    
 
 def placeRandomItems(grid,listOfItems,NumOfitems):
 
@@ -332,9 +248,8 @@ def areItemsInTile(Id):
         return True
     return False
 
-def pickUpItem(items,selectItemIndex):
-    if len(items) > 0 and selectItemIndex >= 0 and selectItemIndex < len(items):
-        player.addItemToInventory(items.pop(selectItemIndex))
+def pickUpItem(items):
+    player.addItemToInventory(items.pop())
 
 def CreateRooms(emptyNodes):
     rooms = {"Stone":set(),"Wood":set(),"Sand":set(),"Gold":set()}
@@ -577,7 +492,6 @@ def MoveEnemiesRandomly(currentPositions,grid):
                     grid[i].append(currentEnemy)
                     listOfNewPositions.append(i)
                     moving = False
-    print(len(listOfNewPositions))
     return listOfNewPositions
 
 def CheckForItem(grid):
@@ -626,7 +540,7 @@ def getNeighbors(point):
 
 def getVisiblePositions(grid,playerPosition,radius) -> set:
     visiblePositions = set()
-
+    visiblePositions.add(playerPosition)
     neighbors = getNeighbors(playerPosition)
 
     for point in neighbors:
@@ -780,7 +694,7 @@ def generateNewLevel():
 
     GenerateRandomLevel(grid)
     rooms = CreateRooms(CER.createNodes(grid,ROWLENGHTH,50))
-    ListOfEnemyPositions = PlaceRandomEnemies(grid,250)
+    ListOfEnemyPositions = PlaceRandomEnemies(grid,10)
     placeRandomItems(grid,items.createRandomStatItems(10),100)
     createObjects(grid,rooms)
 
@@ -884,7 +798,7 @@ while runing:
                     generatePreviousLevel = True
                 elif gameRunning(menuDict):
                     if menuDict["selectItem"] == False:
-                        if len(roomItems) > 0 and currentLocation[0] ==3:
+                        if roomItems != None:
                             menuDict["selectItem"] = True
                 elif menuDict["menuOpen"]:
                     keys = menuOptions.keys()
@@ -897,15 +811,11 @@ while runing:
                                 menuOptions[key] = True
                         passes += 1
                 elif menuDict["selectItem"]:
-                    pickUpItem(roomItems,selectItemIndex)
-                    if len(roomItems) == 1:
+                    pickUpItem(roomItems)
+                    if len(roomItems) == 0:
                             currentLocation = [0,1]
                             menuDict["selectItem"] = False
                             selectItemIndex = 0
-                    if selectItemIndex > len(roomItems):
-                        selectItemIndex -=1
-                    if selectItemIndex == len(roomItems):
-                        selectItemIndex -=1
                 elif menuDict["inventoryOpen"]:
                     print("Equipping ...")
                     player.equipItem(selectItemIndex)
@@ -1041,7 +951,7 @@ while runing:
                         if selectItemIndex +indexMove < len(player.inventory) and selectItemIndex + indexMove >= 0:
                             selectItemIndex +=indexMove
                     elif menuDict["unEquip"]:
-                        if selectItemIndex +indexMove < len(player.equipment.keys()) and selectItemIndex + indexMove >=0:
+                        if selectItemIndex +indexMove < len(player.equipment.keys())-1 and selectItemIndex + indexMove >=0:
                             selectItemIndex +=indexMove
                     
 
@@ -1117,14 +1027,17 @@ while runing:
         generateNewLevelBool = False
 
     leftPanel.fill((black))
+    rightPanel.fill((black))
+    bottomPanel.fill((black))
     pygame.draw.rect(leftPanel,FONTCOLOR,pygame.Rect(0,0,LEFTPANELWIDTH,LEFTPANELHEIGHT),width=2)
     pygame.draw.rect(rightPanel,FONTCOLOR,pygame.Rect(0,0,RIGHTPANELWIDTH,RIGHTPANELHEIHGT),width=2)
     pygame.draw.rect(bottomPanel,FONTCOLOR,pygame.Rect(0,0,BOTTOMPANELWIDTH,BOTTOMPANELHEIGHT),width=2)
-    textStartHeight = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT + 35,TEXTSTARTWIDTH,menuDict["selectItem"],selectItemIndex,leftPanel)
+    pygame.draw.rect(gameWindow,FONTCOLOR,pygame.Rect(0,0,WIDTH,HEIGHT),width=2)
+    textStartHeight = displayStatistics(CharacterStatistics,TEXTSTARTHEIGHT + 35,TEXTSTARTWIDTH,False,selectItemIndex,leftPanel)
     textStartHeight += displayStatistics(RoomStatistics,TEXTSTARTHEIGHT +35 +textStartHeight,TEXTSTARTWIDTH,menuDict["selectItem"],selectItemIndex,leftPanel)
     
-    # displayInventory(player.inventory,menuDict["inventoryOpen"],selectItemIndex)
-    # displayEquipment(player.equipment,menuDict["unEquip"],selectItemIndex)
+    displayStatistics(player.inventory,TEXTSTARTHEIGHT + 35,TEXTSTARTWIDTH,menuDict["inventoryOpen"],selectItemIndex,bottomPanel)
+    displayStatistics(player.equipment,TEXTSTARTHEIGHT + 35,TEXTSTARTWIDTH,menuDict["unEquip"],selectItemIndex,rightPanel)
 
     visiblePositions = getVisiblePositions(grid,playerPosition,player.visionRange)
     setPositionsVisible(grid,visiblePositions)
