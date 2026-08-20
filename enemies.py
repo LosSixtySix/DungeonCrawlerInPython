@@ -11,16 +11,12 @@ class Enemy():
         self.damage = damage
         self.dig = self.CanDig()
         self.move = True
-        self.lastpositions = []
+        self.lastPlayerPosition = None
+        self.visionRange = 5
 
     def CanDig(self):
         if self.wallDamage > 0:
             return True
-    
-    def isStuck(self):
-        if len(self.lastpositions) >3:
-            if self.lastpositions[-1] == self.lastpositions[-2] and self.lastpositions[-1] == self.lastpositions[-3] and self.lastpositions[-1] == self.lastpositions[-4]:
-                return True
         
 class Goblin(Enemy):
     def __init__(self):
@@ -32,6 +28,7 @@ class GoblinChief(Enemy):
 class DireRat(Enemy):
     def __init__(self):
         super().__init__(3,2,2,100,2,"Dire Rat")
+        self.visionRange = 7
 
 lowerFloorEnemies = [Goblin,GoblinChief,DireRat]
 

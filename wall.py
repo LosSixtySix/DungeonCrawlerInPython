@@ -3,6 +3,7 @@ class Wall():
         self.name = "Wall"
         self.hp = 0
         self.hardness = 0
+        self.brokenPoints = []
 
 class StoneWall(Wall):
     def __init__(self):
