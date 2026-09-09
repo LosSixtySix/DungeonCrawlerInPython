@@ -1,0 +1,1 @@
+name 'roomItems' is not defined'int' object is not subscriptable'int' object is not subscriptable

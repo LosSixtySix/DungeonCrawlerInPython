@@ -1,5 +1,6 @@
 import random as rand
 import pygame as py
+import math
 def createNodes(grid,rowLength,radius):
     usedPoints = set()
     nodes = []
@@ -10,10 +11,29 @@ def createNodes(grid,rowLength,radius):
         point = points.pop(rand.randint(0,len(points)-1))
 
         if point not in usedPoints:
-            node = getNNeighbors(point,grid.keys(),radius,rowLength)
+            node = getCirclePoints(point,radius,grid,rowLength,usedPoints)
             usedPoints = node.union(usedPoints)
             nodes.append(node)
     return nodes
+
+def getCirclePoints(position,radius,grid,rowLength,usedPoints) -> set:
+    oPoints = set()
+    positions = set()
+    h = position%rowLength
+    k = int((position-h)/rowLength)
+    for r in range(0,radius+1):
+        t = 0
+        while t < 2*math.pi:
+            x = (r*math.cos(t) + h)
+            y = (r*math.sin(t) + k)
+            oPoints.add((round(x),round(y)))
+            t += .1
+    for p in oPoints:
+        flattened = (p[0]+(p[1]*rowLength))
+        if flattened in grid.keys() and flattened not in usedPoints:
+            positions.add(flattened)
+    return positions
+
 
 def getNNeighbors(point,keys,radius,rowlength) -> set:
     neighborsInRadius = set()

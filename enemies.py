@@ -2,7 +2,7 @@ import items
 import random as rand
 
 class Enemy():
-    def __init__(self,hp,ac,speed,wallDamage,damage,name):
+    def __init__(self,hp,ac,speed,wallDamage,damage,name,goldWorth):
         self.hp = hp
         self.ac = ac
         self.speed = speed
@@ -13,6 +13,10 @@ class Enemy():
         self.move = True
         self.lastPlayerPosition = None
         self.visionRange = 5
+        self.burrow = False
+        self.tremorSense = False
+        self.allSight = False
+        self.gold = goldWorth
 
     def CanDig(self):
         if self.wallDamage > 0:
@@ -20,17 +24,27 @@ class Enemy():
         
 class Goblin(Enemy):
     def __init__(self):
-        super().__init__(5, 10, 1, 100,1,"Goblin")
+        super().__init__(5, 10, 1, 1,1,"Goblin",5)
         self.inventory = [items.goblinEquipmentList[rand.randint(0,len(items.goblinEquipmentList)-1)]]
 class GoblinChief(Enemy):
     def __init__(self):
-        super().__init__(10,12,2,100,3,"Goblin Chieftan")
+        super().__init__(10,12,2,2,3,"Goblin Chieftan",15)
 class DireRat(Enemy):
     def __init__(self):
-        super().__init__(3,2,2,100,2,"Dire Rat")
+        super().__init__(3,2,2,0,2,"Dire Rat",5)
         self.visionRange = 7
+class DireMole(Enemy):
+    def __init__(self):
+        super().__init__(3,2,1,0,2,"Dire Mole",10)
+        self.burrow = True
+        self.tremorSense = True
+        self.visionRange = 3
+class Unsealed(Enemy):
+    def __init__(self):
+        super().__init__(10, 3, 2, 3, 3, "Unsealed", 25)
+        self.allSight = True
 
-lowerFloorEnemies = [Goblin,GoblinChief,DireRat]
+lowerFloorEnemies = [Goblin,GoblinChief,DireRat,DireMole]
 
 if __name__ == "__main__":
     for i in range(0,5):
