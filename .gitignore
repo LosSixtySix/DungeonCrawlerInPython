@@ -1,0 +1,4 @@
+# Files the game writes while you play
+savegame.pkl
+settings.json
+attempts.json

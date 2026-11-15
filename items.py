@@ -28,9 +28,13 @@ class equipment():
         self.description = description
         self.attributeScaling = attributeScaling
 
+
+
+        
+
 class consumable(equipment):
-    def __init__(self, Etype, name,bonus,effect, description="None", attributeScaling=None,slot = None):
-        super().__init__(Etype, name,slot,bonus,description, attributeScaling)
+    def __init__(self,name,bonus,effect, description="None", attributeScaling=None,slot = None,Etype= "Consume"):
+        super().__init__(Etype , name,slot,bonus,description, attributeScaling)
         self.effect = effect
 
         
@@ -48,7 +52,9 @@ RustySword = equipment("Damage","Rusty Sword","Hands",1,attributeScaling="streng
 Pick = equipment("WallDamage","Pick-Axe","Hands",1,attributeScaling="strength")
 BurrowersAmulet:uniqueEquipment = uniqueEquipment("Unique","Burrower's Amulet","Neck","An amulet that allows the user to burrow through soft material")
 startingPick = equipment("WallDamage","Worn Pick-Axe","Hands",rand.randint(1,2),attributeScaling="strength")
-HealingPotion:consumable = consumable("Consume","Healing Potion",rand.randint(1,5),"Heal",attributeScaling="wisdom")
+HealingPotion:consumable = consumable("Healing Potion",rand.randint(1,5),"Heal",attributeScaling="wisdom")
+LocateDoorPotion:consumable = consumable("Potion Of Door",0,"DoorLocate")
+
 def createRandomStatItems(ammount:int,quality:str = "V") -> list:
     itemList = []
     i:int = 0
@@ -67,7 +73,8 @@ def createRandomStatItems(ammount:int,quality:str = "V") -> list:
                 SteelPick:equipment = equipment("WallDamage","Steel Pick-Axe","Hands",rand.randint(3,5),attributeScaling="strength")
                 TearShield:equipment = equipment("Defense","Tear Sheild","Hands",rand.randint(3,5),attributeScaling="strength")
                 WarPick:dualEquipment = dualEquipment("DaWa","War Pick","Hands",rand.randint(3,5),rand.randint(1,3),attributeScaling="strength")
-                HealingPotion:consumable = consumable("Consume","Healing Potion",rand.randint(1,5),"Heal",attributeScaling="wisdom")
+                HealingPotion:consumable = consumable("Healing Potion",rand.randint(1,5),"Heal",attributeScaling="wisdom")
+                LocateDoorPotion:consumable = consumable("Potion Of Door",0,"DoorLocate")
                 itemList.append(Sword)
                 itemList.append(SteelPick)
                 itemList.append(TearShield)
@@ -76,6 +83,7 @@ def createRandomStatItems(ammount:int,quality:str = "V") -> list:
                 itemList.append(SimpleShield)
                 itemList.append(WarPick)
                 itemList.append(HealingPotion)
+                itemList.append(LocateDoorPotion)
                 i = i +1
         case "L":
             while i < ammount:

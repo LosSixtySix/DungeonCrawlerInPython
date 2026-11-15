@@ -21,6 +21,9 @@ class PlayerClass():
         self.level = 0
         self.nextLevelGold = int((1**5 - 1**(4.99999999)) +10)
         self.actionMade = False
+        self.InvalidMoveLocations = [2,3,5,None]
+        self.seeDoor = False
+        self.playerDirection = 0
 
     def levelUp(self,attribute):
         if self.gold >= self.nextLevelGold:
@@ -51,6 +54,10 @@ class PlayerClass():
                     self.damageTaken -= item.bonus + self.attributeBonuses[item.attributeScaling]
                     self.inventory.pop(inventorySlot)
                     self.actionMade = True
+                case "DoorLocate":
+                    self.inventory.pop(inventorySlot)
+                    self.actionMade = True
+                    self.seeDoor = True
     
     def equipItem(self,inventoryIndex):
         item = self.inventory[inventoryIndex]
@@ -130,6 +137,11 @@ class PlayerClass():
                 elif self.equipment[key].Etype == "DaWa":
                     wallDamage += self.attributeBonuses[self.equipment[key].attributeScaling] + self.equipment[key].b2
         return wallDamage
+
+    def checkValidMoveLocation(self,targetLocationType):
+        if targetLocationType not in self.InvalidMoveLocations:
+            return True
+        return False
 
 
     def DealDamage(self):
