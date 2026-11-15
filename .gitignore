@@ -2,3 +2,8 @@
 savegame.pkl
 settings.json
 attempts.json
+
+# Python cache and PyInstaller build output
+__pycache__/
+build/
+dist/
