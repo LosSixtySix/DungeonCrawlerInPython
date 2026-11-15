@@ -11,8 +11,8 @@ import os
 import EventDispatcher as ED
 import themes
 import attempts
-from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS
-from renderer import renderer as rend
+from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES
+from renderer import renderer as rend, SWAY_FPS
 import pickle
 
 """
@@ -47,7 +47,10 @@ MENU_OPTIONS_FILE = "menuOpts.txt"
 FPS = 60
 # Each message starts at 255 and loses this much every frame: 255 / step / FPS = seconds on screen
 FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage": 1.5}
-TITLE_FADE_STEP = 255 / (3 * FPS)  # the title takes 3 seconds to fade in
+# The title fades in as the exact reverse of the "Escape" message fading out: same speed (about 4 seconds)
+TITLE_FADE_STEP = FADE_STEPS["escapeMessage"]
+KEY_REPEAT_DELAY = 250     # ms before a held key starts repeating
+KEY_REPEAT_INTERVAL = 90   # ms between repeats (about 11 a second)
 SAVE_FILE = "savegame.pkl"
 SAVE_VERSION = 2  # 2: the map now fills the whole screen, so saves from the old smaller map can't load
 
@@ -60,7 +63,7 @@ WINDOW_HOTKEY = {"character": "character", "room": "room", "equipment": "equipme
 LIST_WINDOWS = {"equipment", "inventory", "levelup", "items"}  # windows with a selection; they take arrows/Enter
 
 PAUSE_ROWS = [("toggle", "Save on Exit"), ("toggle", "Generate Room"), ("toggle", "Mini HUD"),
-              ("page", "Hotkeys"), ("action", "Reset Windows"), ("action", "Quit to Title"),
+              ("toggle", "Animated Light"), ("choice", "Light Style"), ("page", "Hotkeys"), ("action", "Reset Windows"), ("action", "Quit to Title"),
               ("action", "Quit to Desktop")]
 HOTKEYS_PER_COLUMN = 8
 INVENTORY_COLUMNS = 5
@@ -80,9 +83,14 @@ class gameManager():
 
         self.numberOfSpots = self.painter.rowLength * self.painter.columnLength
 
-        self.menuOptions = {"Generate Room": True, "Save on Exit": False, "Mini HUD": True}
+        self.menuOptions = {"Generate Room": True, "Save on Exit": False, "Mini HUD": True, "Animated Light": True}
         self.loadMenuOptions(MENU_OPTIONS_FILE)
         self.settings = Settings()
+
+        # Holding a key repeats it (after KEY_REPEAT_DELAY ms, every KEY_REPEAT_INTERVAL ms), but only for keys
+        # where that makes sense: see isRepeatable. keysHeld tells a repeat apart from a fresh press.
+        pygame.key.set_repeat(KEY_REPEAT_DELAY, KEY_REPEAT_INTERVAL)
+        self.keysHeld = set()
 
         self.EventDispatcher = ED.EventDispatcher()
         self.SubscribeToEvents()
@@ -195,6 +203,9 @@ class gameManager():
         self.rebinding = None  # action waiting for a new key
         self.hotkeyMessage = ""
 
+        self.lightStep = -1       # which step of the swaying light was last drawn
+        self.lightChange = False  # True when the light moved but nothing else changed
+
         self.change = True
         self.setLookPosition()
 
@@ -206,6 +217,7 @@ class gameManager():
         self.EventDispatcher.subscribe(pygame.MOUSEBUTTONDOWN, self.onMouseDown)
         self.EventDispatcher.subscribe(pygame.MOUSEMOTION, self.onMouseMotion)
         self.EventDispatcher.subscribe(pygame.MOUSEBUTTONUP, self.onMouseUp)
+        self.EventDispatcher.subscribe(pygame.WINDOWFOCUSLOST, self.onFocusLost)
 
     # ------------------------------------------------------------------ keys
 
@@ -224,9 +236,21 @@ class gameManager():
             return 0, 1, 3
         return None
 
+    def isRepeatable(self, key):
+        """Keys that keep acting while held: moving (and moving through menus) and Interact (digging/attacking).
+        Toggles like Esc, Enter, Tab and the window hotkeys only act once per press."""
+        return self.direction(key) is not None or self.isAction(key, "interact")
+
+    def onFocusLost(self, event):
+        self.keysHeld.clear()  # we won't get the key-up events while the window is in the background
+
     def onKeyDown(self, event):
-        self.change = True
         key = event.key
+        repeat = key in self.keysHeld
+        self.keysHeld.add(key)
+        if repeat and (self.rebinding is not None or not self.isRepeatable(key)):
+            return  # a held key repeating: ignored unless it's one that should repeat
+        self.change = True
         if self.scene == "title":
             return self.onTitleKey(key)
         if self.scene == "attempts":
@@ -262,6 +286,7 @@ class gameManager():
             self.onDirectionKey(*move)
 
     def onKeyUp(self, event):
+        self.keysHeld.discard(event.key)
         if self.scene != "playing":
             return
         if self.isAction(event.key, "cycle"):
@@ -347,6 +372,10 @@ class gameManager():
         kind, label = row
         if kind == "toggle":
             self.menuOptions[label] = not self.menuOptions[label]
+        elif label == "Light Style":
+            styles = LIGHT_STYLES
+            self.settings.lightStyle = styles[(styles.index(self.settings.lightStyle) + 1) % len(styles)]
+            self.settings.save()
         elif label == "Hotkeys":
             self.pausePage = "hotkeys"
             self.hotkeySel = 0
@@ -380,11 +409,9 @@ class gameManager():
     def closeWindow(self, windowId):
         if windowId not in self.openWindows:
             return
-        index = self.openWindows.index(windowId)
         self.openWindows.remove(windowId)
         if self.focus == windowId:
-            # focus the window that took its place in the order, or the map if none are left
-            self.focus = self.openWindows[min(index, len(self.openWindows) - 1)] if self.openWindows else "map"
+            self.focus = "map"  # closing a window always hands control back to the game, not another window
 
     def onWindowHotkey(self, windowId):
         if windowId not in self.openWindows:
@@ -1057,17 +1084,34 @@ class gameManager():
             spec["capacity"] = player.inventoryLimit
         return spec
 
+    def pauseRowValue(self, label):
+        if label == "Light Style":
+            return self.settings.lightStyle.title()
+        return self.menuOptions.get(label)
+
+    def unsealedInView(self):
+        """True if an Unsealed is on screen (its seal shards circle it, so it needs redrawing)."""
+        for position in self.EnemyPositions:
+            tile = self.grid.get(position)
+            if tile and tile[1] == 1 and len(tile) > 2 and getattr(tile[2], "name", "") == "Unsealed":
+                return True
+        return False
+
+    def lightStyle(self):
+        """How the light animates right now, or None when Animated Light is off."""
+        return self.settings.lightStyle if self.menuOptions["Animated Light"] else None
+
     def pauseView(self):
         if self.pausePage is None:
             return None
         hotkeys = [(label, self.settings.nameFor(action)) for action, label, _ in HOTKEY_ACTIONS]
         hotkeys.append(("Reset to Defaults", ""))
         return {"page": self.pausePage, "level": self.level, "sel": self.pauseSel,
-                "rows": [(kind, label, self.menuOptions.get(label)) for kind, label in PAUSE_ROWS],
+                "rows": [(kind, label, self.pauseRowValue(label)) for kind, label in PAUSE_ROWS],
                 "hotkeys": hotkeys, "hotkeySel": self.hotkeySel, "perColumn": HOTKEYS_PER_COLUMN,
                 "rebinding": self.rebinding, "message": self.hotkeyMessage, "fixed": FIXED_KEYS}
 
-    def draw(self):
+    def draw(self, lightOnly=False):
         if self.scene == "title":
             self.painter.drawTitle(self.titleOptions(), self.titleSel, self.titleMessage, self.titleFade)
             return
@@ -1096,7 +1140,8 @@ class gameManager():
             grid=self.grid, rooms=self.rooms, player=self.player, playerPosition=self.playerPositionFlat,
             aimLine=self.aimLine, hud=hud,
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
-            message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0))
+            message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
+            lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly)
 
         if messageKey is not None and messageFinished:
             self.messageBools[messageKey] = False
@@ -1155,12 +1200,22 @@ class gameManager():
 
             self.updateDoors()
 
+            # Animation steps SWAY_FPS times a second: the light (unless it's turned off) and any Unsealed in view
+            step = pygame.time.get_ticks() * SWAY_FPS // 1000
+            if step != self.lightStep and (self.lightStyle() is not None or self.unsealedInView()):
+                self.lightStep = step
+                self.lightChange = True
+
             if self.change:
                 self.setLookPosition()
                 self.roomItems = self.getItemsFromGrid()
                 self.setPositionsVisible()
                 self.draw()
                 self.change = False
+                self.lightChange = False
+            elif self.lightChange:
+                self.draw(lightOnly=True)  # only the light moved: redraw just the lit tiles
+                self.lightChange = False
 
         pygame.quit()
 

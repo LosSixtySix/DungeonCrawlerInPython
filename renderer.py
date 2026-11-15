@@ -8,6 +8,14 @@ import sprites
 # Dithered light: tiles in view get a pattern of dark pixels the further they are from the player.
 # Each amount is the fraction of a tile's pixels darkened, used for the middle and outer part of the vision range.
 DITHER_AMOUNTS = (0.125, 0.25)  # "Soft" from the Dithered Light page
+# Sway: the light's center drifts slowly around the player, like a torch swinging in your hand.
+SWAY_FPS = 10       # how many times a second the light moves (a stepped, retro feel)
+SWAY_AMOUNT = 0.9   # how far the center can drift, in tiles (from -0.45 to +0.45)
+SWAY_SPEED = 1.2    # how fast it drifts
+# Flicker: the light's reach jumps in and out a little, like a flame in a draft.
+FLICKER_AMOUNT = 0.28  # how much the reach changes (from -14% to +14%)
+FLICKER_SPEED = 6      # how fast it changes
+
 # A 4x4 ordered-dither (Bayer) pattern: a pixel is darkened when its number is below amount * 16
 BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 
@@ -91,11 +99,34 @@ class renderer():
     def pitSprite(self, style, floor):
         cacheKey = (style, tuple(floor))
         if cacheKey not in self.pitCache:
-            self.pitCache[cacheKey] = sprites.makePit(style, floor, self.theme.colors["doorNext"], self.tileSize)
+            self.pitCache[cacheKey] = sprites.makePit(style, floor, self.tileSize)
         return self.pitCache[cacheKey]
 
+    @staticmethod
+    def wiggle(seed, time):
+        """A smooth random value between 0 and 1 that drifts over time (eased between random points)."""
+        i = math.floor(time)
+        f = time - i
+        u = f * f * (3 - 2 * f)
+
+        def point(n):
+            s = math.sin((n + seed * 101.3) * 127.1) * 43758.5453
+            return s - math.floor(s)
+        return point(i) * (1 - u) + point(i + 1) * u
+
+    def lightShape(self, lightTime, lightStyle):
+        """Where the light's center is (offset from the player, in tiles) and how far it reaches
+        (a multiplier on the vision range) at this moment. lightStyle: "sway", "flicker" or None (still)."""
+        if lightStyle == "sway":
+            t = lightTime * SWAY_SPEED
+            return (self.wiggle(2, t) - 0.5) * SWAY_AMOUNT, (self.wiggle(3, t) - 0.5) * SWAY_AMOUNT, 1.0
+        if lightStyle == "flicker":
+            return 0.0, 0.0, 1 + (self.wiggle(1, lightTime * FLICKER_SPEED) - 0.5) * FLICKER_AMOUNT
+        return 0.0, 0.0, 1.0
+
     def lightLevel(self, x, y, playerX, playerY, visionRange):
-        """Which dither tile a visible tile gets: None (full light near the player), 0 or 1."""
+        """Which dither tile a visible tile gets: None (full light near the light's center), 0 or 1.
+        playerX/playerY can be fractional because the light sways."""
         distance = math.hypot(x - playerX, y - playerY) / max(1, visionRange)
         if distance <= 0.45:
             return None
@@ -134,16 +165,24 @@ class renderer():
 
     # ------------------------------------------------------------- top level
 
-    def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0):
+    def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
+             lightTime=0.0, lightStyle=None, lightOnly=False):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
         pause: dict describing the pause menu, or None when it's closed.
+        lightTime: seconds, for the animated light. lightStyle: "sway", "flicker" or None (not animated).
+        lightOnly: only the light moved, so just redraw the lit tiles instead of the whole map.
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill(self.color("fog"))
-        self.mapSurface.fill(self.color("fog"))
-        self.renderScreen(grid, rooms, player.playerDirection, playerPosition, player.visionRange)
+        self.lightTime = lightTime  # also drives the Unsealed's circling shards
+        light = self.lightShape(lightTime, lightStyle)
+        if lightOnly:
+            self.redrawLitTiles(grid, rooms, player.playerDirection, playerPosition, player.visionRange, light)
+        else:
+            self.mapSurface.fill(self.color("fog"))
+            self.renderScreen(grid, rooms, player.playerDirection, playerPosition, player.visionRange, light)
         self.drawAimline(aimLine)
         self.win.blit(self.mapSurface, self.mapOffset)
 
@@ -176,14 +215,19 @@ class renderer():
     # ----------------------------------------------------------- title screen
 
     def drawTitle(self, options, selectedIndex, message="", fade=255):
-        """fade (0-255) is how far "CRUEL" has faded in. The rest of the screen only appears once it reaches 255."""
+        """fade (0-255) is how far "CRUEL" has faded in. It's drawn the same way as the splash messages
+        (drawMessage), run in reverse: a black veil and the title text both go from invisible to full together.
+        The menu only appears once the fade reaches 255, and the veil stays so nothing jumps when it does."""
         W, H = self.screenWidth, self.screenHeight
         font, muted, select, boxLine = self.color("font"), self.color("muted"), self.color("select"), self.color("boxLine")
+        alpha = max(0, min(255, int(fade)))
         self.win.fill(self.color("fog"))
+        self.overlay.fill((0, 0, 0, alpha))
+        self.win.blit(self.overlay, (0, 0))
 
         titleY = int(H * 0.33)
         title = self.titleFont.render("CRUEL", True, font)
-        title.set_alpha(int(fade))
+        title.set_alpha(alpha)
         self.win.blit(title, title.get_rect(center=(W // 2, titleY)))
         if fade < 255:
             pygame.display.flip()
@@ -388,6 +432,8 @@ class renderer():
                 self.blitText(win, "ON" if value else "OFF", self.menuValueFont, color, panelWidth - pad, y, align="right")
             elif kind == "page":
                 self.blitText(win, ">>", self.menuValueFont, select if active else muted, panelWidth - pad, y, align="right")
+            elif kind == "choice":
+                self.blitText(win, value, self.menuValueFont, select if active else font, panelWidth - pad, y, align="right")
 
         pygame.draw.rect(win, boxLine, pygame.Rect(pad, H - int(58 * k), panelWidth - pad * 2, 1))
         self.blitText(win, "Up/Down  choose", self.menuHintFont, muted, int(24 * k), H - int(40 * k))
@@ -458,26 +504,6 @@ class renderer():
         pygame.draw.rect(canvas, brokenColor, pygame.Rect(0, 0, self.tileSize, self.tileSize), width=2)
         return canvas
 
-    def drawPlayer(self, playerDirection) -> pygame.Surface:
-        canvas = pygame.Surface((self.tileSize, self.tileSize))
-        half = self.tileSize // 2
-        drawPoint = []
-        if self.tileSize % 2 == 0:
-            for x in range(0, half):
-                match playerDirection:
-                    case 0:  # left
-                        drawPoint += [(x, half), (x, half - 1)]
-                    case 1:  # right
-                        drawPoint += [(self.tileSize - (x + 1), half), (self.tileSize - (x + 1), half - 1)]
-                    case 2:  # up
-                        drawPoint += [(half, x), (half - 1, x)]
-                    case 3:  # down
-                        drawPoint += [(half, self.tileSize - (x + 1)), (half - 1, self.tileSize - (x + 1))]
-        canvas.fill(self.color("player"))
-        for point in drawPoint:
-            pygame.draw.rect(canvas, self.color("marker"), pygame.Rect(point[0], point[1], 1, 1))
-        return canvas
-
     def drawAimline(self, aimLine):
         if aimLine is None:
             return
@@ -500,37 +526,52 @@ class renderer():
         prefix = "memWall" if memorized else "wall"
         return self.theme.colors.get(prefix + room, self.color(prefix + "Stone"))
 
-    def renderScreen(self, grid: dict, rooms, playerDirection, playerPosition, visionRange):
-        ts = self.tileSize
-        playerX, playerY = playerPosition % self.rowLength, playerPosition // self.rowLength
+    def renderScreen(self, grid: dict, rooms, playerDirection, playerPosition, visionRange, light=(0, 0, 1)):
+        self.litTiles = []  # tiles in view, remembered so the swaying light can redraw just these
         for i in grid.keys():
             visibility = grid[i][1]
             if visibility == 0:
                 continue
-            memorized = visibility == 2
-            x = i % self.rowLength
-            y = i // self.rowLength
-            self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
-            # Dithered light only on tiles in view (remembered tiles stay as they are). Chests and the
-            # door back up are never dithered so they stand out; pits are part of the floor, so they are.
-            if not memorized and grid[i][0] not in (3, 6):
-                level = self.lightLevel(x, y, playerX, playerY, visionRange)
-                if level is not None and self.shades:
-                    self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
+            if visibility == 1:
+                self.litTiles.append(i)
+            self.drawLitTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+
+    def redrawLitTiles(self, grid, rooms, playerDirection, playerPosition, visionRange, light):
+        """Only the light moved: redraw the tiles in view (from the last full draw) with the new light."""
+        for i in getattr(self, "litTiles", []):
+            if grid[i][1] == 1:
+                self.drawLitTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+
+    def drawLitTile(self, grid, i, rooms, playerDirection, playerPosition, visionRange, light):
+        ts = self.tileSize
+        memorized = grid[i][1] == 2
+        x = i % self.rowLength
+        y = i // self.rowLength
+        self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
+        # Dithered light only on tiles in view (remembered tiles stay as they are). The player, enemies,
+        # chests and the door back up are never dithered so they stand out; pits are part of the floor, so they are.
+        if not memorized and grid[i][0] not in (1, 3, 5, 6):
+            offsetX, offsetY, reach = light
+            lightX = playerPosition % self.rowLength + offsetX
+            lightY = playerPosition // self.rowLength + offsetY
+            level = self.lightLevel(x, y, lightX, lightY, visionRange * reach)
+            if level is not None and self.shades:
+                self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
 
     def drawTile(self, grid, i, x, y, rooms, playerDirection, memorized):
         ts = self.tileSize
         match grid[i][0]:
-            case 1:  # Player
-                self.mapSurface.blit(self.drawPlayer(playerDirection), (x * ts, y * ts))
+            case 1:  # Player: the Torchbearer facing the way it last moved, on the floor it stands on
+                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
             case 2:  # Wall
                 w = grid[i][2]
                 self.mapSurface.blit(self.drawWall(w, self.wallColor(w.name, memorized)), (x * ts, y * ts))
             # Chests and doors: the floor first (it shows through the pictures' transparent pixels and
             # shadows), then the picture. They keep their full color even when remembered.
-            case 3:  # Chest
+            case 3:  # Chest: walnut, mahogany or burnt umber (the same on every floor)
                 self.fillTile(self.floorColor(i, rooms, memorized), x, y)
-                self.mapSurface.blit(self.sprites["chest"], (x * ts, y * ts))
+                self.mapSurface.blit(self.sprites["chests"][sprites.chestColorFor(i)], (x * ts, y * ts))
             case 4:  # Door to the next level: a pit in the floor, randomly an open pit or a collapsed grave
                 floor = self.floorColor(i, rooms, memorized)
                 self.fillTile(floor, x, y)
@@ -539,6 +580,14 @@ class renderer():
                 self.fillTile(self.floorColor(i, rooms, memorized), x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))
             case 5 if not memorized:  # Enemy (enemies are not remembered)
-                self.fillTile(self.color("enemy"), x, y)
+                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                name = grid[i][2].name if len(grid[i]) > 2 else ""
+                if name == "Unsealed":
+                    frame = sprites.shardFrameFor(getattr(self, "lightTime", 0.0))
+                    self.mapSurface.blit(self.sprites["unsealed"][frame], (x * ts, y * ts))
+                elif name in self.sprites["enemies"]:
+                    self.mapSurface.blit(self.sprites["enemies"][name], (x * ts, y * ts))
+                else:  # an enemy with no picture yet: a plain square
+                    self.fillTile(self.color("enemy"), x, y)
             case _:  # Floor
                 self.fillTile(self.floorColor(i, rooms, memorized), x, y)

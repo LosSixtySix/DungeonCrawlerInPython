@@ -31,6 +31,8 @@ ACTION_LABELS = {action: label for action, label, _ in HOTKEY_ACTIONS}
 
 # Keys that always do the same thing, so you can never lock yourself out of the menus.
 FIXED_KEYS = [("Enter", "Confirm"), ("Esc", "Back / Pause"), ("Arrow Keys", "Move"), ("Mouse", "Drag a window by its title")]
+LIGHT_STYLES = ["sway", "flicker"]  # the order the pause menu cycles through them
+
 RESERVED_KEYS = {pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE, pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT}
 
 
@@ -39,6 +41,7 @@ class Settings():
         self.fileName = fileName
         self.hotkeys = dict(DEFAULT_HOTKEYS)
         self.windowPositions = {}  # window id -> [x, y] of its top-left corner, only for windows the player moved
+        self.lightStyle = "sway"   # how the light animates: "sway" or "flicker"
         self.load()
 
     def load(self):
@@ -53,10 +56,12 @@ class Settings():
         for windowId, pos in data.get("windowPositions", {}).items():
             if isinstance(pos, list) and len(pos) == 2:
                 self.windowPositions[windowId] = pos
+        if data.get("lightStyle") in LIGHT_STYLES:
+            self.lightStyle = data["lightStyle"]
 
     def save(self):
         with open(self.fileName, "w") as f:
-            json.dump({"hotkeys": self.hotkeys, "windowPositions": self.windowPositions}, f, indent=2)
+            json.dump({"hotkeys": self.hotkeys, "windowPositions": self.windowPositions, "lightStyle": self.lightStyle}, f, indent=2)
 
     def keyName(self, key):
         name = pygame.key.name(key)
