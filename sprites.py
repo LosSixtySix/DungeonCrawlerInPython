@@ -191,6 +191,68 @@ MOONBEAM = [
 ]
 
 
+# ---------------------------------------------------------------- stations
+# Set-up crafting stations, top-down, with fixed colors (only the outline "k" follows the theme).
+SMELTER = [
+    "..........",
+    "..kkkkkk..",
+    ".kCccccCk.",
+    ".kcCkkCck.",
+    ".kckffkck.",
+    ".kckFfkck.",
+    ".kcckkcck.",
+    ".kCccccCk.",
+    "..kkkkkk..",
+    "..........",
+]
+SMELTER_COLORS = {"c": (150, 96, 64), "C": (108, 66, 44), "f": (255, 132, 40), "F": (255, 220, 120)}
+
+ANVIL = [
+    "..........",
+    "...kkkkkk.",
+    "kkkkiiiiik",
+    "kIIiiiiiik",
+    "kkkkiiiiik",
+    "...kIiiIk.",
+    "...kiIIik.",
+    "..kkkkkkkk",
+    "..knnnnnnk",
+    "..kkkkkkkk",
+]
+ANVIL_COLORS = {"i": (112, 116, 124), "I": (172, 178, 188), "n": (110, 74, 44)}
+
+SHRINE = [
+    "..........",
+    ".kkkkkkkk.",
+    ".kSssssSk.",
+    ".ksvvvvsk.",
+    ".ksvVVvsk.",
+    ".ksvVVvsk.",
+    ".ksvvvvsk.",
+    ".kSssssSk.",
+    ".kkkkkkkk.",
+    "..........",
+]
+SHRINE_COLORS = {"S": (170, 166, 160), "s": (106, 102, 100), "v": (84, 56, 124), "V": (196, 156, 244)}
+
+FORGE = [
+    "..........",
+    ".kkkkkkkk.",
+    ".kGggggGk.",
+    ".kgkkkkgk.",
+    ".kgkffkgk.",
+    ".kgkFfkgk.",
+    ".kgkkkkgk.",
+    ".kGggggGk.",
+    ".kkkkkkkk.",
+    "..........",
+]
+FORGE_COLORS = {"G": (240, 202, 96), "g": (184, 140, 50), "f": (255, 132, 40), "F": (255, 220, 120)}
+
+STATION_SPRITES = {"smelter": (SMELTER, SMELTER_COLORS), "anvil": (ANVIL, ANVIL_COLORS),
+                   "shrine": (SHRINE, SHRINE_COLORS), "forge": (FORGE, FORGE_COLORS)}
+
+
 def roles(colors, base):
     mix = themes.mix
     black, white = [0, 0, 0], [255, 255, 255]
@@ -298,6 +360,7 @@ def buildSprites(colors, tileSize):
         "enemies": {name: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for name, (rows, fixed) in ENEMY_SPRITES.items()},
         "unsealed": [makeShadowed(unsealedFrame(colors, f), enemyRoles(colors, UNSEALED_COLORS), tileSize) for f in range(SHARD_FRAMES)],
         "doorUp": makeSurface(MOONBEAM, roles(colors, colors["doorPrev"]), tileSize),
+        "stations": {sid: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for sid, (rows, fixed) in STATION_SPRITES.items()},
     }
 
 

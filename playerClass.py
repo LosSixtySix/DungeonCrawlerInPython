@@ -1,4 +1,5 @@
 import items
+import resources
 import random
 import math
 class PlayerClass():
@@ -24,6 +25,12 @@ class PlayerClass():
         self.InvalidMoveLocations = [2,3,5,None]
         self.seeDoor = False
         self.playerDirection = 0
+        self.materials = {}      # the materials pouch: material id -> count (see resources.py)
+        self.lootFound = set()   # what the Loot Table window has revealed (see loot.discoveryKey)
+        self.stations = set()    # crafting stations the player has made, e.g. {"workbench"} (see recipes.py)
+        self.stationPlaced = {}  # heavy stations that are set up: station id -> (floor, map position)
+        self.pouchLimit = resources.POUCH_LIMIT  # how many of each material fit (the Leather Pouch raises it)
+        self.wardReady = True    # Warded Chainmail: the first hit on each floor does nothing
 
     def levelUp(self,attribute):
         if self.gold >= self.nextLevelGold:
@@ -91,6 +98,61 @@ class PlayerClass():
             self.equipment[slot] = "None"
             self.actionMade = True
 
+    def addMaterial(self, materialId, amount):
+        """Puts materials in the pouch, up to resources.POUCH_LIMIT of each. Returns how many fit."""
+        have = self.materials.get(materialId, 0)
+        added = max(0, min(amount, self.pouchLimit - have))
+        if added:
+            self.materials[materialId] = have + added
+        return added
+
+    def have(self, materialId):
+        """How many of a material the player has ("gold" is their gold)."""
+        return self.gold if materialId == "gold" else self.materials.get(materialId, 0)
+
+    def hasMaterials(self, needs, times=1):
+        """True if the pouch (and gold) holds everything in needs ({material id: count}), times over."""
+        return all(self.have(materialId) >= count * times for materialId, count in needs.items())
+
+    def spendMaterials(self, needs):
+        for materialId, count in needs.items():
+            if materialId == "gold":
+                self.gold -= count
+                continue
+            self.materials[materialId] -= count
+            if self.materials[materialId] <= 0:
+                del self.materials[materialId]
+
+    def effects(self):
+        """Every effect tag on what's equipped: relic powers and enchantments (see relics.EFFECTS)."""
+        tags = []
+        for item in self.equipment.values():
+            if item == "None":
+                continue
+            if getattr(item, "relicPower", None):
+                tags.append(item.relicPower)
+            tags.extend(getattr(item, "enchants", []))
+        if self.burrow and "burrow" not in tags:
+            tags.append("burrow")
+        return tags
+
+    def hasEffect(self, tag):
+        return tag in self.effects()
+
+    def countEffect(self, tag):
+        return self.effects().count(tag)
+
+    def getVisionRange(self):
+        """How far the player sees: the base range, plus light in hand (a Torch), plus effects."""
+        return self.visionRange + self.getequipmentBonus("Light") + self.countEffect("bright") + 3 * self.countEffect("far_sight")
+
+    def hitDamage(self, damage):
+        """How much an enemy hit of this size really hurts: armor (Defense) takes some off, but a hit always
+        does at least 1."""
+        if damage <= 0:
+            return 0
+        return max(1, damage - self.damageReduction())
+
     def alterGold(self,amount):
         self.gold += amount 
 
@@ -115,7 +177,7 @@ class PlayerClass():
 
     def getMaxHealth(self):
         baseHealth = self.attributeBonuses["constitution"] + 10
-        baseHealth += self.getequipmentBonus("Health")
+        baseHealth += self.getequipmentBonus("Health") + 2 * self.countEffect("hardy")
         return baseHealth
 
     def getMinMaxDamage(self):

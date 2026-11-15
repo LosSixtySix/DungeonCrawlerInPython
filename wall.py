@@ -19,7 +19,8 @@ class Wall():
         self.brokenPoints = set()
 
     def takeDamage(self,damage,tilesize):
-        total = (damage%self.hardness) + 1
+        # hardness is the most damage a single hit can do, so a better pick helps up to that limit
+        total = min(damage, self.hardness)
         proportion = int(total/self.hp * (tilesize**2))
         self.brokenPoints = self.brokenPoints.union(getRandomPoints((1,tilesize-1),(1,tilesize-1),proportion))
         self.hp -= total
@@ -29,7 +30,7 @@ class StoneWall(Wall):
     def __init__(self):
         super().__init__()
         self.name = "Stone Wall"
-        self.hp = 50
+        self.hp = 40
         self.hardness = 5
         self.soft = False
 
@@ -37,7 +38,7 @@ class WoodWall(Wall):
     def __init__(self):
         super().__init__()
         self.name = "Wood Wall"
-        self.hp = 20
+        self.hp = 15
         self.hardness = 15
         self.soft = True
 
@@ -56,3 +57,51 @@ class GoldWall(Wall):
         self.hp = 7
         self.hardness = 2
         self.soft = False
+
+
+# ---------------------------------------------------------------- ore veins
+# Veins are walls with ore in them. They're drawn in the room's own wall color with flecks of a fixed ore
+# color. Any pick can mine any vein; harder veins just take more swings (hardness caps damage per hit).
+
+class OreVein(Wall):
+    def __init__(self, name, hp, hardness, ore, oreColor, oreHighlight):
+        super().__init__()
+        self.name = name
+        self.hp = hp
+        self.hardness = hardness
+        self.soft = False
+        self.ore = ore                      # material id it gives (see loot.WALL_LOOT for amounts)
+        self.oreColor = oreColor
+        self.oreHighlight = oreHighlight
+
+
+class CoalVein(OreVein):
+    def __init__(self):
+        super().__init__("Coal Vein", 20, 3, "coal", (30, 28, 28), (70, 64, 64))
+
+class CopperVein(OreVein):
+    def __init__(self):
+        super().__init__("Copper Vein", 30, 4, "copper_ore", (200, 122, 58), (232, 160, 96))
+
+class IronVein(OreVein):
+    def __init__(self):
+        super().__init__("Iron Vein", 45, 6, "iron_ore", (154, 90, 58), (192, 128, 96))
+
+class SilverVein(OreVein):
+    def __init__(self):
+        super().__init__("Silver Vein", 60, 8, "silver_ore", (216, 221, 228), (255, 255, 255))
+
+class GemVein(OreVein):
+    def __init__(self):
+        super().__init__("Gem Vein", 60, 8, "rough_gem", (58, 184, 176), (200, 255, 248))
+
+
+# Where veins appear. Each entry: (vein class, first floor it can appear on, {floor type: clusters per
+# 10,000 tiles}). A cluster is 2-5 vein tiles grown through neighboring walls. Floor types not listed get none.
+VEIN_SPAWNS = [
+    (CoalVein, 0, {"Mostly Wood": 8, "Mostly Stone": 5, "Mostly Sand": 4, "Mixed": 5, "All Gold": 2}),
+    (CopperVein, 0, {"Mostly Stone": 4, "Mixed": 3, "Mostly Wood": 1, "Mostly Sand": 1}),
+    (IronVein, 2, {"Mostly Stone": 3, "Mixed": 1.5, "Mostly Wood": 0.5}),
+    (SilverVein, 4, {"Mostly Stone": 1.5, "All Gold": 2, "Mixed": 0.5}),
+    (GemVein, 3, {"All Gold": 1.5, "Mixed": 0.5}),
+]

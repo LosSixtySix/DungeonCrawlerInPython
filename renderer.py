@@ -3,6 +3,7 @@ import pygame
 import pygame.ftfont
 import themes
 import sprites
+import wall as walls
 
 
 # Dithered light: tiles in view get a pattern of dark pixels the further they are from the player.
@@ -58,6 +59,7 @@ class renderer():
         self.windowFont = pygame.ftfont.Font(font, 21)
         self.windowSmallFont = pygame.ftfont.Font(font, 16)
         self.hudFont = pygame.ftfont.Font(font, 20)
+        self.popupFont = pygame.ftfont.Font(font, 18)
 
         # Field Journal menu. Its layout was designed in "k" units; k grows with the screen height.
         self.menuScale = self.screenHeight / 520
@@ -166,7 +168,7 @@ class renderer():
     # ------------------------------------------------------------- top level
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
-             lightTime=0.0, lightStyle=None, lightOnly=False):
+             lightTime=0.0, lightStyle=None, lightOnly=False, popups=()):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -179,13 +181,14 @@ class renderer():
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
         light = self.lightShape(lightTime, lightStyle)
         if lightOnly:
-            self.redrawLitTiles(grid, rooms, player.playerDirection, playerPosition, player.visionRange, light)
+            self.redrawLitTiles(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
         else:
             self.mapSurface.fill(self.color("fog"))
-            self.renderScreen(grid, rooms, player.playerDirection, playerPosition, player.visionRange, light)
+            self.renderScreen(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
         self.drawAimline(aimLine)
         self.win.blit(self.mapSurface, self.mapOffset)
 
+        self.drawPopups(popups)
         if hud is not None:
             self.drawHud(*hud)
 
@@ -300,6 +303,20 @@ class renderer():
 
     # -------------------------------------------------------------------- hud
 
+    def drawPopups(self, popups):
+        """Rising "+2 Wood" texts over the map: each floats up from its tile and fades out (age goes 0 to 1)."""
+        for text, position, age in popups:
+            x = self.mapOffset[0] + (position % self.rowLength) * self.tileSize + self.tileSize // 2
+            y = self.mapOffset[1] + (position // self.rowLength) * self.tileSize - int(age * 26) - 4
+            alpha = int(255 * (1 - age))
+            shadow = self.popupFont.render(text, True, (0, 0, 0))
+            label = self.popupFont.render(text, True, self.color("select"))
+            shadow.set_alpha(alpha // 2)
+            label.set_alpha(alpha)
+            rect = label.get_rect(midbottom=(x, y))
+            self.win.blit(shadow, rect.move(1, 1))
+            self.win.blit(label, rect)
+
     def drawHud(self, health, maxHealth, gold, floor):
         parts = [f"HP {health}/{maxHealth}", f"Gold {gold}", f"Floor {floor}"]
         gap = 26
@@ -318,6 +335,24 @@ class renderer():
     # ---------------------------------------------------------------- windows
 
     def windowSize(self, spec):
+        if spec["kind"] == "craft":
+            return self.CRAFT_W, self.WINDOW_HEAD + self.ROW + 4 + self.craftAreaHeight(spec) + self.ROW + 10
+        if spec["kind"] == "sections":
+            widest = self.windowTitleFont.size(spec["title"])[0] + 70
+            count = 1 if spec.get("tabs") else 0
+            if spec.get("tabs"):
+                widest = max(widest, sum(self.windowSmallFont.size(t)[0] + 28 for t in spec["tabs"]))
+            for section in spec["sections"]:
+                if section.get("title"):
+                    count += 1
+                    widest = max(widest, self.windowFont.size(section["title"])[0] + 10)
+                if section.get("note"):
+                    count += 1
+                    widest = max(widest, self.windowSmallFont.size(section["note"])[0] + 10)
+                for label, value, color in section["rows"]:
+                    count += 1
+                    widest = max(widest, 22 + self.windowFont.size(str(label))[0] + self.windowFont.size(str(value))[0] + 40)
+            return max(300, widest + self.PAD * 2), self.WINDOW_HEAD + max(1, count) * self.ROW + 14
         if spec["kind"] == "grid":
             rows = math.ceil(spec["capacity"] / 5)
             return self.PAD * 2 + 5 * self.BOX_W, self.WINDOW_HEAD + rows * self.BOX_H + 18
@@ -333,9 +368,10 @@ class renderer():
         """Where each window docks until the player drags it somewhere else."""
         W, H = self.screenWidth, self.screenHeight
         top, gap = 70, 12
-        characterHeight = self.WINDOW_HEAD + 6 * self.ROW + 14
+        characterHeight = self.WINDOW_HEAD + 8 * self.ROW + 14
         equipmentHeight = self.WINDOW_HEAD + 8 * self.ROW + 14
         inventoryWidth = self.PAD * 2 + 5 * self.BOX_W
+        sideColumn = 340  # room for the widest left/right column window (Character, Room, Equipment, Level Up)
         match windowId:
             case "character":
                 return 16, top
@@ -349,6 +385,14 @@ class renderer():
                 return (W - w) // 2, H - 16 - h
             case "items":
                 return (W - inventoryWidth) // 2 + inventoryWidth + gap, H - 16 - h
+            # Materials and Loot Table dock in the gaps beside the side columns (left of center and right of
+            # center), at the top, so they don't cover the player in the middle or the other windows
+            case "materials":
+                return 16 + sideColumn + gap, 16
+            case "loot":
+                return W - 16 - sideColumn - gap - w, 16
+            case "crafting":  # top middle, above the player
+                return (W - w) // 2, 16
         return (W - w) // 2, (H - h) // 2
 
     def drawWindow(self, spec, rect):
@@ -369,6 +413,12 @@ class renderer():
         self.blitText(win, f"[{spec['hotkey']}]", self.windowSmallFont, select if focused else muted, rect.right - self.PAD, rect.y + 24, align="right")
         pygame.draw.rect(win, boxLine, pygame.Rect(rect.x + self.PAD, rect.y + self.WINDOW_HEAD - 4, rect.w - self.PAD * 2, 1))
 
+        if spec["kind"] == "sections":
+            self.drawSections(spec, rect, focused, body)
+            return
+        if spec["kind"] == "craft":
+            self.drawCraft(spec, rect, focused, body)
+            return
         if spec["kind"] == "grid":
             gx, gy = rect.x + self.PAD, rect.y + self.WINDOW_HEAD + 4
             for i in range(spec["capacity"]):
@@ -377,8 +427,10 @@ class renderer():
                 if selected:
                     pygame.draw.rect(win, highlight, box)
                 pygame.draw.rect(win, select if selected else boxLine, box, width=2 if selected else 1)
-                if i < len(spec["items"]):
-                    self.blitText(win, spec["items"][i], self.windowSmallFont, select if selected else body, box.x + 8, box.bottom - 16)
+                if i < len(spec["items"]):  # long names ("Masterwork Wooden Shield") wrap onto lines above
+                    lines = self.wrapText(spec["items"][i], self.windowSmallFont, box.w - 14)[-3:]
+                    for n, line in enumerate(reversed(lines)):
+                        self.blitText(win, line, self.windowSmallFont, select if selected else body, box.x + 8, box.bottom - 16 - n * 18)
             return
 
         y = rect.y + self.WINDOW_HEAD + self.ROW // 2 + 2
@@ -395,6 +447,156 @@ class renderer():
             color = select if selected else body
             self.blitText(win, ("> " if selected else "") + str(label), self.windowFont, color, rect.x + self.PAD + 2, rowY)
             self.blitText(win, value, self.windowFont, muted if value == "None" else color, rect.right - self.PAD, rowY, align="right")
+
+    # Crafting window layout
+    CRAFT_W = 640        # whole window width
+    CRAFT_LIST_W = 220   # the recipe list on the left
+    DETAIL_ROW = 21      # line height in the details on the right
+    DETAIL_LINES = 11    # the details area is at least this tall, so the window doesn't jump around
+    LIST_ROW = 26        # row height in the recipe list (it scrolls when there are more than fit)
+
+    def craftAreaHeight(self, spec):
+        return max(self.DETAIL_LINES, len(self.craftDetailLines(spec))) * self.DETAIL_ROW
+
+    def wrapText(self, text, font, width):
+        """Splits text into lines that fit in width pixels."""
+        lines, line = [], ""
+        for word in str(text).split(" "):
+            attempt = word if not line else line + " " + word
+            if line and font.size(attempt)[0] > width:
+                lines.append(line)
+                line = word
+            else:
+                line = attempt
+        return lines + [line]
+
+    def craftDetailLines(self, spec):
+        """The details as drawn: (style, text, value) with long text already wrapped."""
+        width = self.CRAFT_W - self.PAD * 2 - self.CRAFT_LIST_W - 20
+        lines = []
+        for style, text, value in spec["detail"]:
+            if style in ("muted", "body", "warn", "ench"):
+                lines += [(style, part, "") for part in self.wrapText(text, self.windowSmallFont, width)]
+            else:
+                lines.append((style, text, value))
+        return lines
+
+    def drawCraft(self, spec, rect, focused, body):
+        """Station tabs along the top, the recipe list on the left, details on the right, a status line below."""
+        win = self.win
+        muted, select, boxLine, short = self.color("muted"), self.color("select"), self.color("boxLine"), self.color("enemy")
+        highlight = themes.mix(self.color("panel"), select, 0.14)
+        x = rect.x + self.PAD + 2
+        y = rect.y + self.WINDOW_HEAD + self.ROW // 2 + 2
+        tx = x
+        for i, name in enumerate(spec["tabs"]):
+            selected = i == spec["tab"]
+            locked = spec.get("tabsLocked", [False] * len(spec["tabs"]))[i]
+            w = self.windowSmallFont.size(name)[0] + 16
+            box = pygame.Rect(tx, y - 11, w, 22)
+            if locked and not selected:
+                pygame.draw.rect(win, themes.mix(self.color("panel"), boxLine, 0.5), box, width=1)
+                self.blitText(win, name, self.windowSmallFont, themes.mix(self.color("panel"), muted, 0.55), tx + 8, y)
+            else:
+                pygame.draw.rect(win, select if selected else boxLine, box, width=1)
+                self.blitText(win, name, self.windowSmallFont, select if selected else body, tx + 8, y)
+            tx += w + 6
+        top = y + self.ROW // 2 + 4
+
+        # recipe list
+        listRight = rect.x + self.PAD + self.CRAFT_LIST_W
+        areaHeight = self.craftAreaHeight(spec)
+        rows = spec["list"]
+        fit = areaHeight // self.LIST_ROW
+        start = max(0, min(spec["selected"] - fit // 2, len(rows) - fit))  # keep the selected row in view
+        if not rows:
+            self.blitText(win, "Nothing here yet", self.windowFont, muted, x, top + self.LIST_ROW // 2)
+        for i in range(start, min(len(rows), start + fit)):
+            name, value, ready = rows[i]
+            rowY = top + (i - start) * self.LIST_ROW + self.LIST_ROW // 2
+            selected = focused and i == spec["selected"]
+            if selected:
+                pygame.draw.rect(win, highlight, pygame.Rect(rect.x + 2, rowY - self.LIST_ROW // 2, listRight - rect.x - 2, self.LIST_ROW))
+            color = select if selected else (body if ready else muted)
+            label = ("> " if selected else "") + name
+            while self.windowFont.size(label)[0] > self.CRAFT_LIST_W - 46 and len(label) > 4:
+                label = label[:-2] + "."  # long names (a relic's) get cut short
+            self.blitText(win, label, self.windowFont, color, x, rowY)
+            self.blitText(win, value, self.windowSmallFont, color, listRight - 8, rowY, align="right")
+        arrowX = listRight - 4
+        if start > 0:  # more above / below: small arrows on the divider
+            pygame.draw.polygon(win, muted, [(arrowX - 4, top + 6), (arrowX + 4, top + 6), (arrowX, top + 1)])
+        if start + fit < len(rows):
+            bottom = top + areaHeight
+            pygame.draw.polygon(win, muted, [(arrowX - 4, bottom - 6), (arrowX + 4, bottom - 6), (arrowX, bottom - 1)])
+        pygame.draw.rect(win, boxLine, pygame.Rect(listRight + 6, top, 1, areaHeight))
+
+        # details
+        dx, right = listRight + 20, rect.right - self.PAD
+        for i, (style, text, value) in enumerate(self.craftDetailLines(spec)):
+            lineY = top + i * self.DETAIL_ROW + self.DETAIL_ROW // 2
+            if style == "title":
+                self.blitText(win, text, self.windowFont, body, dx, lineY)
+            elif style == "label":
+                self.blitText(win, text, self.windowSmallFont, select if focused else muted, dx, lineY)
+                if value:
+                    self.blitText(win, value, self.windowSmallFont, body, right, lineY, align="right")
+            elif style in ("need", "short"):
+                color = body if style == "need" else short
+                self.blitText(win, text, self.windowSmallFont, color, dx + 10, lineY)
+                self.blitText(win, value, self.windowSmallFont, color, right, lineY, align="right")
+            elif style == "hint":
+                self.blitText(win, text, self.windowSmallFont, muted, dx, lineY)
+            elif style == "warn":
+                self.blitText(win, text, self.windowSmallFont, short, dx, lineY)
+            elif style == "ench":
+                self.blitText(win, text, self.windowSmallFont, (200, 168, 255), dx, lineY)
+            else:
+                self.blitText(win, text, self.windowSmallFont, muted if style == "muted" else body, dx, lineY)
+
+        # status line, with a progress bar while crafting
+        statusY = top + areaHeight + self.ROW // 2 + 2
+        pygame.draw.rect(win, boxLine, pygame.Rect(rect.x + self.PAD, statusY - self.ROW // 2, rect.w - self.PAD * 2, 1))
+        if spec.get("progress") is not None:
+            barW = rect.w - self.PAD * 2
+            pygame.draw.rect(win, highlight, pygame.Rect(rect.x + self.PAD, statusY - 9, barW, 18))
+            pygame.draw.rect(win, themes.mix(self.color("panel"), select, 0.45), pygame.Rect(rect.x + self.PAD, statusY - 9, int(barW * spec["progress"]), 18))
+        if spec.get("status"):
+            self.blitText(win, spec["status"], self.windowSmallFont, body, x, statusY)
+
+    def drawSections(self, spec, rect, focused, body):
+        """A window made of titled groups of rows, each row with an optional color swatch (Materials, Loot Table)."""
+        win = self.win
+        muted, select, boxLine = self.color("muted"), self.color("select"), self.color("boxLine")
+        y = rect.y + self.WINDOW_HEAD + self.ROW // 2 + 2
+        x = rect.x + self.PAD + 2
+        if spec.get("tabs"):
+            tx = x
+            for i, name in enumerate(spec["tabs"]):
+                selected = i == spec["tab"]
+                w = self.windowSmallFont.size(name)[0] + 16
+                box = pygame.Rect(tx, y - 11, w, 22)
+                pygame.draw.rect(win, select if selected else boxLine, box, width=1)
+                self.blitText(win, name, self.windowSmallFont, (select if selected else muted), tx + 8, y)
+                tx += w + 8
+            y += self.ROW
+        for section in spec["sections"]:
+            if section.get("title"):
+                self.blitText(win, section["title"], self.windowFont, muted if section["title"] == "???" else body, x, y)
+                y += self.ROW
+            indent = x + (12 if section.get("title") else 0)
+            for label, value, color in section["rows"]:
+                textX = indent
+                if color is not None:
+                    pygame.draw.rect(win, color, pygame.Rect(indent, y - 5, 10, 10))
+                    textX = indent + 18
+                unknown = label == "???"
+                self.blitText(win, label, self.windowFont, muted if unknown else body, textX, y)
+                self.blitText(win, value, self.windowFont, muted if unknown else body, rect.right - self.PAD, y, align="right")
+                y += self.ROW
+            if section.get("note"):
+                self.blitText(win, section["note"], self.windowSmallFont, muted, indent, y)
+                y += self.ROW
 
     # ------------------------------------------------------------ pause menu
 
@@ -446,7 +648,9 @@ class renderer():
         k = self.menuScale
         win = self.win
         panel, font, muted, select, boxLine = (self.color(c) for c in ("panel", "font", "muted", "select", "boxLine"))
-        w, h = int(430 * k), int(446 * k)
+        perColumn = pause["perColumn"]
+        listBottom = 96 + perColumn * 30  # where the hotkey rows end (in k units); everything below follows it
+        w, h = int(430 * k), int((listBottom + 116) * k)
         pad = int(18 * k)
         rect = pygame.Rect(x0, y0, w, h)
         pygame.draw.rect(win, panel, rect)
@@ -457,7 +661,6 @@ class renderer():
         self.blitText(win, hint, self.menuHintFont, muted, x0 + pad, y0 + int(56 * k))
         pygame.draw.rect(win, boxLine, pygame.Rect(x0 + pad, y0 + int(72 * k), w - pad * 2, 1))
 
-        perColumn = pause["perColumn"]
         colW = (w - pad * 3) // 2
         highlight = themes.mix(panel, select, 0.16)
         rowH = int(30 * k)
@@ -474,14 +677,14 @@ class renderer():
                 keyName = "Press a key..."
             self.blitText(win, keyName, self.menuValueFont, color if keyName else muted, cx + colW, cy, align="right")
 
-        pygame.draw.rect(win, boxLine, pygame.Rect(x0 + pad, y0 + int(330 * k), w - pad * 2, 1))
+        pygame.draw.rect(win, boxLine, pygame.Rect(x0 + pad, y0 + int((listBottom - 6) * k), w - pad * 2, 1))
         if pause["message"]:
-            self.blitText(win, pause["message"], self.menuHintFont, select, x0 + pad, y0 + int(350 * k))
-        self.blitText(win, "Fixed keys", self.menuHintFont, muted, x0 + pad, y0 + int(378 * k))
+            self.blitText(win, pause["message"], self.menuHintFont, select, x0 + pad, y0 + int((listBottom + 14) * k))
+        self.blitText(win, "Fixed keys", self.menuHintFont, muted, x0 + pad, y0 + int((listBottom + 42) * k))
         for i, (keyName, label) in enumerate(pause["fixed"]):
             col, row = i % 2, i // 2
             cx = x0 + pad + col * (colW + pad)
-            cy = y0 + int((402 + row * 22) * k)
+            cy = y0 + int((listBottom + 66 + row * 22) * k)
             self.blitText(win, f"{keyName}  -  {label}", self.menuHintFont, font, cx, cy)
 
     def drawMessage(self, message):
@@ -495,9 +698,21 @@ class renderer():
 
     # ------------------------------------------------------------------ tiles
 
-    def drawWall(self, wall, color) -> pygame.Surface:
+    # where the ore flecks sit in a vein tile: (x, y, also draw the pixel to the right, highlight above)
+    VEIN_FLECKS = [(3, 3, True, True), (6, 4, False, True), (4, 6, True, True), (2, 5, False, False), (6, 7, True, False), (5, 2, False, False)]
+
+    def drawWall(self, wall, color, memorized=False) -> pygame.Surface:
         canvas = pygame.Surface((self.tileSize, self.tileSize))
         canvas.fill(color)
+        if isinstance(wall, walls.OreVein):
+            ore, shine = wall.oreColor, wall.oreHighlight
+            if memorized:  # out of sight: the flecks dim like everything else that's remembered
+                fog = self.theme.colors["fog"]
+                ore, shine = themes.remembered(list(ore), fog), themes.remembered(list(shine), fog)
+            for x, y, wide, lit in self.VEIN_FLECKS:
+                canvas.fill(ore, pygame.Rect(x, y, 2 if wide else 1, 1))
+                if lit:
+                    canvas.fill(shine, pygame.Rect(x, y - 1, 1, 1))
         brokenColor = [max(0, c - 100) for c in color]
         for point in wall.brokenPoints:
             pygame.draw.rect(canvas, brokenColor, pygame.Rect(point[0], point[1], 1, 1))
@@ -515,6 +730,14 @@ class renderer():
 
     def floorColor(self, i, rooms, memorized):
         prefix = "memFloor" if memorized else "floor"
+        for room in ("Stone", "Wood", "Gold"):
+            if i in rooms[room]:
+                return self.color(prefix + room)
+        return self.color(prefix + "Sand")
+
+    def roomWallColor(self, i, rooms, memorized):
+        """The wall color of the room a tile is in (veins are drawn in their room's wall color)."""
+        prefix = "memWall" if memorized else "wall"
         for room in ("Stone", "Wood", "Gold"):
             if i in rooms[room]:
                 return self.color(prefix + room)
@@ -550,7 +773,7 @@ class renderer():
         self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
         # Dithered light only on tiles in view (remembered tiles stay as they are). The player, enemies,
         # chests and the door back up are never dithered so they stand out; pits are part of the floor, so they are.
-        if not memorized and grid[i][0] not in (1, 3, 5, 6):
+        if not memorized and grid[i][0] not in (1, 3, 5, 6, 7):
             offsetX, offsetY, reach = light
             lightX = playerPosition % self.rowLength + offsetX
             lightY = playerPosition // self.rowLength + offsetY
@@ -566,7 +789,8 @@ class renderer():
                 self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
             case 2:  # Wall
                 w = grid[i][2]
-                self.mapSurface.blit(self.drawWall(w, self.wallColor(w.name, memorized)), (x * ts, y * ts))
+                color = self.roomWallColor(i, rooms, memorized) if isinstance(w, walls.OreVein) else self.wallColor(w.name, memorized)
+                self.mapSurface.blit(self.drawWall(w, color, memorized), (x * ts, y * ts))
             # Chests and doors: the floor first (it shows through the pictures' transparent pixels and
             # shadows), then the picture. They keep their full color even when remembered.
             case 3:  # Chest: walnut, mahogany or burnt umber (the same on every floor)
@@ -576,6 +800,15 @@ class renderer():
                 floor = self.floorColor(i, rooms, memorized)
                 self.fillTile(floor, x, y)
                 self.mapSurface.blit(self.pitSprite(sprites.pitStyleFor(i), floor), (x * ts, y * ts))
+            case 7:  # A set-up crafting station (kept in full color when remembered, like chests)
+                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                station = grid[i][2]
+                picture = self.sprites["stations"].get(station.id)
+                if picture is not None:
+                    self.mapSurface.blit(picture, (x * ts, y * ts))
+                if station.claimed and station.hp < station.maxHp:  # a damage bar along the bottom
+                    pygame.draw.rect(self.mapSurface, (40, 10, 10), pygame.Rect(x * ts + 1, y * ts + ts - 2, ts - 2, 1))
+                    pygame.draw.rect(self.mapSurface, self.color("enemy"), pygame.Rect(x * ts + 1, y * ts + ts - 2, max(1, (ts - 2) * station.hp // station.maxHp), 1))
             case 6:  # Door back to the previous level
                 self.fillTile(self.floorColor(i, rooms, memorized), x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))
