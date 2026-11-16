@@ -22,7 +22,7 @@ HOTKEY_ACTIONS = [
     ("equipment", "Equipment", pygame.K_u),
     ("inventory", "Inventory", pygame.K_i),
     ("level_up", "Level Up", pygame.K_l),
-    ("materials", "Materials", pygame.K_m),
+    ("materials", "Pouch", pygame.K_m),
     ("loot_table", "Loot Table", pygame.K_t),
     ("crafting", "Crafting", pygame.K_k),
     ("aim", "Aim (hold)", pygame.K_LCTRL),

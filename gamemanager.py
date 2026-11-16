@@ -61,7 +61,7 @@ SAVE_VERSION = 2  # 2: the map now fills the whole screen, so saves from the old
 
 # Windows, in the order Tab cycles through them (after the "map" stop)
 WINDOW_ORDER = ["character", "room", "equipment", "inventory", "materials", "crafting", "levelup", "items", "loot"]
-WINDOW_TITLES = {"character": "Character", "room": "Room", "equipment": "Equipment", "materials": "Materials", "loot": "Loot Table",
+WINDOW_TITLES = {"character": "Character", "room": "Room", "equipment": "Equipment", "materials": "Pouch", "loot": "Loot Table",
                  "inventory": "Inventory", "levelup": "Level Up", "items": "Items Here", "crafting": "Crafting"}
 WINDOW_HOTKEY = {"character": "character", "room": "room", "equipment": "equipment", "materials": "materials", "loot": "loot_table",
                  "inventory": "inventory", "levelup": "level_up", "items": "interact", "crafting": "crafting"}
@@ -93,6 +93,8 @@ EXPLOSION_MS = 450         # how long a landing potion's burst animation plays
 ANIM_FPS = 15              # flames and bursts animate at this rate
 SPURT_MS = 280             # a blood spurt's specks fly this long
 FLECK_MS = 300             # wall flecks fly this long
+DOOR_RADIUS = 15           # on the first floor the door down is at most this many tiles from where you start
+DOOR_RADIUS_GROWTH = 10    # and each floor deeper it can be this much further, until it can be anywhere
 LOW_HEALTH = 0.3           # at or below this share of max HP, you and enemies bleed onto the floor
 DRIP = 0.35                # blood left on a tile you step off while at low health (1 = a full puddle)
 POOL = 0.25                # blood added each turn under someone at low health who stays put
@@ -624,7 +626,8 @@ class gameManager():
         state = self.stationState(station)
         if state == "locked":
             return []
-        rows = recipes.forStation(station) + recipes.relicStationRecipes(station, self.player.inventory)
+        inventory = self.player.inventory
+        rows = recipes.forStation(station) + recipes.relicStationRecipes(station, inventory) +             recipes.salvageRecipes(station, inventory)
         if recipes.STATION_INFO[station]["setup"]:
             if state == "packed":
                 rows.insert(0, recipes.setupRecipe(station))
@@ -684,6 +687,9 @@ class gameManager():
         if recipe.kind == "potion" and len(player.inventory) + recipe.amount > player.inventoryLimit:
             return "not enough room in your inventory"
         return None
+
+    def salvagePercent(self):
+        return recipes.salvagePercent(self.player.attributes["intelligence"])
 
     def craftableCount(self, recipe):
         """How many times the pouch (and gold) could pay for this recipe."""
@@ -779,6 +785,15 @@ class gameManager():
             if rand.random() < 0.5:
                 player.addMaterial("void_shard", 1)
                 message += ", +1 Void Shard"
+        elif kind == "salvage":
+            player.inventory = [item for item in player.inventory if item is not recipe.target]
+            made = recipes.RECIPES_BY_ID[recipe.makes]
+            back = recipes.rollSalvage(made, self.salvagePercent())
+            for materialId, amount in back.items():
+                self.give(materialId, amount, self.playerPositionFlat)
+            got = ", ".join(f"{n} {'Gold' if m == 'gold' else resources.materialName(m)}" for m, n in back.items())
+            self.craftMessage = f"Took apart {recipe.target.name}: " + (got or "nothing worth keeping")
+            return
         elif kind == "plant":
             look = self.PlayerLookPosition
             self.grid[look] = [8, self.grid[look][1], plants.Plant(recipe.makes, planted=True)]
@@ -789,7 +804,9 @@ class gameManager():
             return
         elif kind == "potion":
             for _ in range(recipe.amount):
-                player.addItemToInventory(recipe.makeItem(0, 0))
+                made = recipe.makeItem(0, 0)
+                made.recipeId = recipe.id
+                player.addItemToInventory(made)
             name = recipe.makeItem(0, 0).name
             popup = name if recipe.amount == 1 else f"{recipe.amount} {name}"
             message = f"{popup} added to your inventory"
@@ -844,7 +861,7 @@ class gameManager():
         spec["selected"] = min(self.windowSel["crafting"], max(0, len(recipeList) - 1))
         spec["list"] = []
         for recipe in recipeList:
-            if recipe.kind in ("setup", "pack"):
+            if recipe.kind in ("setup", "pack", "salvage"):
                 spec["list"].append((recipe.name, f"{recipe.turns}t", self.craftProblem(recipe) is None))
             elif (recipe.kind == "station" and recipe.makes in player.stations) or \
                     (recipe.kind == "upgrade" and player.pouchLimit >= resources.BIG_POUCH_LIMIT):
@@ -873,6 +890,21 @@ class gameManager():
                            ("label", "MAKE IT BY HAND" if maker.station == "hand" else f"MAKE IT AT THE {recipes.STATION_INFO[maker.station]['name'].upper()}", "")] + needRows(maker.needs)
         elif recipe is None:
             detail = [("title", info["name"], ""), ("muted", "Nothing to work on. Relics and Masterwork gear in your pack show up here.", "")]
+        elif recipe.kind == "salvage":
+            percent = self.salvagePercent()
+            made = recipes.RECIPES_BY_ID[recipe.makes]
+            detail = [("title", recipe.name, ""), ("muted", recipe.description, "")]
+            problem = self.craftProblem(recipe)
+            if problem:
+                detail.append(("warn", problem[0].upper() + problem[1:], ""))
+            detail.append(("label", "GIVES BACK", f"about {percent:g}%"))
+            for m, share in recipes.salvageShares(made, percent).items():
+                low, high = int(share), int(share) + (1 if share % 1 else 0)
+                amount = f"x{low}" if low == high else f"x{low}-{high}"
+                detail.append(("need", "Gold" if m == "gold" else resources.materialName(m), amount))
+            detail.append(("label", "TAKES", f"{recipe.turns} turn" + ("s" if recipe.turns > 1 else "")))
+            detail.append(("muted", f"INT {player.attributes['intelligence']}: {percent:g}% back. More Intelligence, more back.", ""))
+            detail.append(("hint", "Enter  take apart", ""))
         else:
             detail = [("title", recipe.name, ""), ("muted", recipe.description, "")]
             problem = self.craftProblem(recipe)
@@ -1303,13 +1335,24 @@ class gameManager():
         self.grid[position] = [6, 1]
         self.EnemyPositions.discard(position)
 
+    def doorRadius(self):
+        """How far (in tiles) from where you arrive the door down can be on this floor. It grows every floor,
+        and once it's bigger than the map the door can be anywhere."""
+        return DOOR_RADIUS + DOOR_RADIUS_GROWTH * self.level
+
     def PlaceNextLevelDoor(self):
+        R = self.rowLength
+        px, py = self.playerPositionFlat % R, self.playerPositionFlat // R
+        radius = self.doorRadius()
         while True:
-            i = rand.randint(0, self.numberOfSpots - 1)
-            if i != self.playerPositionFlat and self.grid[i][0] in (0, 2):
-                self.grid[i] = [4, 0]
-                self.doorPositions.append(i)
+            spots = [i for i in range(self.numberOfSpots) if i != self.playerPositionFlat and self.grid[i][0] in (0, 2)
+                     and (i % R - px) ** 2 + (i // R - py) ** 2 <= radius * radius]
+            if spots:
                 break
+            radius += DOOR_RADIUS_GROWTH  # nowhere in range (shouldn't happen): look further out
+        i = rand.choice(spots)
+        self.grid[i] = [4, 0]
+        self.doorPositions.append(i)
 
     def updateDoors(self):
         currentDoorPos = self.doorPositions[self.level]

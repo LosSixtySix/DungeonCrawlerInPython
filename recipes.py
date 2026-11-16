@@ -84,6 +84,7 @@ class Recipe():
     "plant"    sows a seed (makes = plant kind) on the floor tile you face
     "setup" / "pack"   set a heavy station up beside you, or pack it away again
     "scrap" / "reforge" / "rekindle"   the relic stations' recipes, made for one item in your pack (target)
+    "salvage"  takes a crafted item in your pack (target) apart at the station that made it, for some materials
     For items, makeItem(bonus, bonus2) builds the equipment; bonus (and bonus2 for two-stat gear) are the
     Common-quality stats. enchants are effect tags the item always has (see relics.EFFECTS)."""
 
@@ -109,6 +110,7 @@ class Recipe():
         """The finished item at this quality, named like "Fine Stone Pick" (Common has no prefix). Masterwork
         gear also gets a free minor enchantment."""
         item = self.makeItem(scaleStat(self.bonus, quality), scaleStat(self.bonus2, quality) if self.bonus2 else 0)
+        item.recipeId = self.id
         item.quality = quality
         item.baseName = item.name
         item.enchants = list(self.enchants)
@@ -288,6 +290,58 @@ def packRecipe(station):
     info = STATION_INFO[station]
     return Recipe("pack_" + station, f"Pack up {info['name']}", station, info["setup"], {}, "pack",
                   "Folds it back into your pack, repaired. Leave it standing and it stays on this floor.", "Back in your pack")
+
+
+# Taking things apart: any item made from a recipe (gear or a potion) can be broken down at the station that
+# makes it, for a share of what it cost. Each material's share is rounded up or down at random, so on average
+# you get exactly the percent. Intelligence raises the percent.
+SALVAGE_BASE = 25        # percent back with 1 Intelligence
+SALVAGE_PER_INT = 0.5    # more percent per point of Intelligence above 1
+SALVAGE_MOST = 75        # never more than this
+RECIPES_BY_ID = {r.id: r for r in RECIPES}
+
+
+def salvagePercent(intelligence):
+    return min(SALVAGE_MOST, SALVAGE_BASE + SALVAGE_PER_INT * max(0, intelligence - 1))
+
+
+def recipeFor(item):
+    """The recipe an item was made from, or None. Items made before recipes were recorded on them (and found
+    items that share a recipe's name) are matched by name."""
+    recipe = RECIPES_BY_ID.get(getattr(item, "recipeId", None))
+    if recipe is not None:
+        return recipe
+    name = getattr(item, "baseName", item.name)
+    return next((r for r in RECIPES if r.kind in ("item", "potion") and r.name == name), None)
+
+
+def salvageShares(recipe, percent):
+    """{material id (or "gold"): average amount back} for taking apart one thing made by this recipe."""
+    return {m: n / recipe.amount * percent / 100 for m, n in recipe.needs.items()}
+
+
+def rollSalvage(recipe, percent):
+    back = {}
+    for m, share in salvageShares(recipe, percent).items():
+        n = int(share) + (1 if random.random() < share % 1 else 0)
+        if n:
+            back[m] = n
+    return back
+
+
+def salvageRecipes(station, inventory):
+    """A Take Apart recipe for each item in your pack that was made at this station."""
+    out = []
+    for item in inventory:
+        if relics.isRelic(item):
+            continue
+        made = recipeFor(item)
+        if made is None or made.station != station or not made.needs:
+            continue
+        out.append(Recipe("salvage", f"Take apart {item.name}", station, max(1, made.turns // 2), {}, "salvage",
+                          "Breaks it down for some of what went into it. The item is lost.", "Some of its materials",
+                          makes=made.id, target=item))
+    return out
 
 
 def relicStationRecipes(station, inventory):
