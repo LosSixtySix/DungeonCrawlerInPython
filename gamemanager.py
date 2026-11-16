@@ -80,10 +80,25 @@ CRAFT_MORE = 5       # Shift+Enter crafts up to this many in a row
 THROWN_EFFECTS = {"Fire", "Smoke"}  # potions you aim and throw instead of drinking
 THROW_RANGE = 8      # how far (in tiles) a potion can be thrown
 FLIGHT_TURNS = [(3, 0), (6, 1), (THROW_RANGE, 2)]  # (up to this distance, turns in the air): close throws land at once
-BLAST_RADIUS = {"Fire": 1, "Smoke": 2}  # tiles around the landing spot a thrown potion reaches
+BLAST_RADIUS = {"Fire": 2, "Smoke": 2}  # a thrown potion reaches tiles within this circle of its landing spot
 BURN_CHANCE = 0.5    # chance fire damage sets the target burning
 BURN_TURNS = 3       # how long burning lasts
 BURN_DAMAGE = 1      # fire damage burning deals each turn (Fire Resist takes off it like any fire)
+GROUND_FIRE_CHANCE = 0.25  # chance each floor tile a Fire Flask splashes catches fire
+GROUND_FIRE_TURNS = 3      # how long burning ground lasts
+PLANT_CATCH = 0.6          # chance a plant catches fire (from a flask, or each turn from a burning plant beside it)
+FIREPROOF_CATCH = 0.1      # the same for plants used in fire recipes (recipes.FIRE_HERBS): they barely burn
+PLANT_FIRE_TURNS = 4       # a burning plant burns this long, then it's gone
+EXPLOSION_MS = 450         # how long a landing potion's burst animation plays
+ANIM_FPS = 15              # flames and bursts animate at this rate
+SPURT_MS = 280             # a blood spurt's specks fly this long
+FLECK_MS = 300             # wall flecks fly this long
+LOW_HEALTH = 0.3           # at or below this share of max HP, you and enemies bleed onto the floor
+DRIP = 0.35                # blood left on a tile you step off while at low health (1 = a full puddle)
+POOL = 0.25                # blood added each turn under someone at low health who stays put
+SPILL = 0.3                # what a full tile spills into a floor tile next to it
+HIT_SPECK = 0.04           # every hit leaves a faint speck on the floor
+BLOOD_FADE = 1 / 150       # blood dries away by this much a turn (a full puddle lasts 150 turns)
 
 
 class gameManager():
@@ -201,6 +216,14 @@ class gameManager():
         self.throwing = None  # inventory index of the potion being aimed, or None
         self.throwArea = None # tiles the aimed potion would reach where it lands
         self.inFlight = []    # thrown potions still in the air: {"effect", "power", "path", "landing", "turns", "flight"}
+        self.fires = {}       # burning tiles (ground or plants): {map position: turns left}
+        self.freshFires = set()  # fires lit this turn: they don't hurt anyone standing in them until next turn
+        self.explosions = []  # landing bursts still playing: [landing, radius, effect, start ms]
+        self.animStep = -1    # which step of the flame/burst animation was last drawn
+        self.blood = {}       # blood on the floor: {map position: amount, 0 to 1}
+        self.spurts = []      # blood spurts playing: [map position, start ms, seed]
+        self.flecks = []      # wall flecks playing: [wall position, start ms, seed, (dx, dy) toward the hitter, colors]
+        self.playerBloodSpot = None  # where you were last turn (a drip when you move, a pool when you don't)
         self.currentPosition = "Floor"
         self.currentAimSpot = None
         self.aimLine = None
@@ -900,6 +923,7 @@ class gameManager():
             self.addPopup("Warded", self.playerPositionFlat)
             return
         player.damageTaken += player.hitDamage(enemy.damage)
+        self.bleed(self.playerPositionFlat)
 
     def placeRelicChest(self, grid, depth, proportion):
         """Sometimes a floor has a chest with a relic in it."""
@@ -1041,6 +1065,7 @@ class gameManager():
             return
         tile = self.grid[target]
         if tile[0] == 2:  # wall
+            self.chip(target, self.playerPositionFlat)
             dig = not (self.player.burrow and tile[2].soft)
             if dig:
                 hits = 2 if self.player.hasEffect("half_swings") else 1  # Mole-King's Claws: half the swings
@@ -1059,7 +1084,10 @@ class gameManager():
                     self.currentLocation = currentWall
                     self.playerPositionFlat = target
         elif tile[0] == 5:  # enemy
-            tile[2].hp -= self.player.DealDamage()
+            dealt = self.player.DealDamage()
+            tile[2].hp -= dealt
+            if dealt > 0:
+                self.bleed(target)
             self.thirst()
             if tile[2].hp <= 0:
                 self.killEnemy(target)
@@ -1254,8 +1282,15 @@ class gameManager():
         self.goldWallCount = 0
         self.addUnsealed = False
         self.player.burnTurns = 0  # the stairs put you out
-        self.smoke = {}      # smoke and potions in the air stay behind on the floor you left
+        self.smoke = {}      # smoke, fire and potions in the air stay behind on the floor you left
         self.inFlight = []
+        self.fires = {}
+        self.freshFires = set()
+        self.explosions = []
+        self.blood = {}
+        self.spurts = []
+        self.flecks = []
+        self.playerBloodSpot = None
         self.closeWindow("items")
         self.picker = {"ChangingColor": False, "ColorSelected": False}
         self.messageBools["floorLevelMessage"] = True
@@ -1542,10 +1577,9 @@ class gameManager():
         for position in hit:
             enemy = self.grid[position][2]
             enemy.hp -= damage
+            self.bleed(position)
             if enemy.hp <= 0:
                 self.killEnemy(position)
-            else:
-                self.addPopup(f"-{damage}", position)
         return len(hit)
 
     def searingLight(self):
@@ -1635,14 +1669,32 @@ class gameManager():
                 break
         return path, (path[-1] if path else None)
 
+    def inCircle(self, dx, dy, radius):
+        """The round area shape used for every splash: radius 2 is the 21-tile circle."""
+        return dx * dx + dy * dy <= radius * radius + radius
+
+    def plantsAtEdge(self, center, radius):
+        """Plants you can't see through inside the circle: they stop the splash, but fire still reaches them."""
+        cx, cy = center % self.rowLength, center // self.rowLength
+        out = []
+        for y in range(cy - radius, cy + radius + 1):
+            for x in range(cx - radius, cx + radius + 1):
+                position = x + y * self.rowLength
+                tile = self.grid.get(position)
+                if not 0 <= x < self.rowLength or tile is None or tile[0] != 8 or not self.inCircle(x - cx, y - cy, radius):
+                    continue
+                if all(not self.blocksThrow(px + py * self.rowLength) for px, py in self.linePoints(center, position)[:-1]):
+                    out.append(position)
+        return out
+
     def blastArea(self, center, radius):
-        """The tiles within radius of center that a splash can reach (walls stop it)."""
+        """The tiles within the circle around center that a splash can reach (walls stop it)."""
         cx, cy = center % self.rowLength, center // self.rowLength
         area = []
         for y in range(cy - radius, cy + radius + 1):
             for x in range(cx - radius, cx + radius + 1):
                 position = x + y * self.rowLength
-                if not 0 <= x < self.rowLength or (x - cx) ** 2 + (y - cy) ** 2 > radius * radius + radius:
+                if not 0 <= x < self.rowLength or not self.inCircle(x - cx, y - cy, radius):
                     continue
                 if self.blocksThrow(position):
                     continue
@@ -1680,8 +1732,11 @@ class gameManager():
     def land(self, shot):
         """A thrown potion hits the ground. The splash is worked out now, so enemies that moved in are caught."""
         landing = shot["landing"]
-        area = self.blastArea(landing, BLAST_RADIUS[shot["effect"]])
+        radius = BLAST_RADIUS[shot["effect"]]
+        area = self.blastArea(landing, radius)
+        self.explosions.append([landing, radius, shot["effect"], pygame.time.get_ticks()])
         if shot["effect"] == "Fire":
+            self.igniteArea(area + [p for p in self.plantsAtEdge(landing, radius) if p not in area])
             hit = 0
             for position in area:
                 tile = self.grid[position]
@@ -1713,10 +1768,9 @@ class gameManager():
             self.addPopup("Resisted", self.playerPositionFlat)
             return
         player.damageTaken += dealt
-        self.addPopup(f"-{dealt} HP", self.playerPositionFlat)
+        self.bleed(self.playerPositionFlat)
         if canIgnite and BURN_DAMAGE > player.fireResistance() and rand.random() < BURN_CHANCE:
-            player.burnTurns = BURN_TURNS
-            self.addPopup("Burning!", self.playerPositionFlat)
+            player.burnTurns = BURN_TURNS  # shown as flames on you, not a message
 
     def enemyFireDamage(self, enemy, damage):
         """Fire damage after an enemy's resistance: flat fireResistance first, then fireResistPercent (0-1)."""
@@ -1730,13 +1784,12 @@ class gameManager():
             self.addPopup("Resisted", position)
             return
         enemy.hp -= dealt
+        self.bleed(position)
         if enemy.hp <= 0:
             self.killEnemy(position)
             return
-        self.addPopup(f"-{dealt}", position)
         if canIgnite and self.enemyFireDamage(enemy, BURN_DAMAGE) > 0 and rand.random() < BURN_CHANCE:
-            enemy.burnTurns = BURN_TURNS  # (no point setting alight something its burn can't hurt)
-            self.addPopup("Burning!", position)
+            enemy.burnTurns = BURN_TURNS  # shown as flames on it (no point setting alight something its burn can't hurt)
 
     def stepBurning(self):
         """Everything on fire takes its burn damage and burns a turn shorter."""
@@ -1750,6 +1803,157 @@ class gameManager():
         if getattr(player, "burnTurns", 0) > 0:
             player.burnTurns -= 1
             self.firePlayer(BURN_DAMAGE, canIgnite=False)
+
+    # ------------------------------------------------------- burning ground
+    # A Fire Flask can set the tiles it splashes alight: plain ground with GROUND_FIRE_CHANCE, plants with
+    # their catch chance. Anyone standing in fire takes BURN_DAMAGE (and may start burning) every turn.
+    # Burning plants spread fire to the plants around them, and burn away when their fire goes out.
+
+    def plantAt(self, position):
+        """The plant on a tile, also when you or an enemy is standing in it. None if there isn't one."""
+        if position == self.playerPositionFlat:
+            here = self.currentLocation
+        elif position in self.enemyOccupiedItemSpaces:
+            here = self.enemyOccupiedItemSpaces[position]
+        else:
+            here = self.grid.get(position)
+        return here[2] if here and here[0] == 8 and len(here) > 2 else None
+
+    def burnAwayPlant(self, position):
+        visibility = self.grid[position][1]
+        if position == self.playerPositionFlat:
+            self.currentLocation = [0, visibility]
+        elif position in self.enemyOccupiedItemSpaces:
+            del self.enemyOccupiedItemSpaces[position]  # the enemy's tile becomes floor when it moves on
+        else:
+            self.grid[position] = [0, visibility]
+
+    def catchChance(self, plant):
+        return FIREPROOF_CATCH if plants.PLANTS[plant.kind]["herb"] in recipes.FIRE_HERBS else PLANT_CATCH
+
+    def lightFire(self, position, turns):
+        if self.fires.get(position, 0) < turns:
+            self.fires[position] = turns
+            self.freshFires.add(position)
+
+    def igniteArea(self, area):
+        for position in area:
+            plant = self.plantAt(position)
+            if plant is not None:
+                if rand.random() < self.catchChance(plant):
+                    self.lightFire(position, PLANT_FIRE_TURNS)
+            elif self.grid[position][0] in (0, 1, 5) and rand.random() < GROUND_FIRE_CHANCE:
+                self.lightFire(position, GROUND_FIRE_TURNS)
+
+    def eightAround(self, i):
+        x = i % self.rowLength
+        return [i + dx + dy * self.rowLength for dy in (-1, 0, 1) for dx in (-1, 0, 1)
+                if (dx or dy) and 0 <= x + dx < self.rowLength and i + dx + dy * self.rowLength in self.grid]
+
+    def stepFires(self):
+        if not self.fires:
+            return
+        for position in list(self.fires):
+            if position in self.freshFires:
+                continue
+            tile = self.grid[position]
+            if tile[0] == 5 and len(tile) > 2:
+                self.fireEnemy(position, BURN_DAMAGE)
+            if position == self.playerPositionFlat:
+                self.firePlayer(BURN_DAMAGE)
+        spread = []
+        for position in self.fires:
+            if self.plantAt(position) is None:
+                continue
+            for near in self.eightAround(position):
+                plant = self.plantAt(near)
+                if plant is not None and near not in self.fires and near not in spread and rand.random() < self.catchChance(plant):
+                    spread.append(near)
+        self.freshFires = set()
+        for position in list(self.fires):
+            self.fires[position] -= 1
+            if self.fires[position] <= 0:
+                del self.fires[position]
+                if self.plantAt(position) is not None:
+                    self.burnAwayPlant(position)
+        for position in spread:
+            self.lightFire(position, PLANT_FIRE_TURNS)
+        self.change = True
+
+    # ----------------------------------------------------------------- blood
+    # Every hit makes a little spurt and leaves a speck on the floor. At LOW_HEALTH or below, you and enemies
+    # bleed: a drip on each tile you leave, and a pool that grows under you while you stay put. A full tile
+    # spills into a floor tile beside it. Blood dries away slowly and is left behind when you change floors.
+
+    def bleed(self, position):
+        self.spurts.append([position, pygame.time.get_ticks(), rand.random()])
+        self.addBlood(position, HIT_SPECK)
+
+    def addBlood(self, position, amount):
+        have = self.blood.get(position, 0)
+        if have + amount > 1:
+            spill = [n for n in self.eightAround(position) if self.grid[n][0] in (0, 1, 5)]
+            if spill:
+                near = rand.choice(spill)
+                self.blood[near] = min(1.0, self.blood.get(near, 0) + SPILL)
+        self.blood[position] = min(1.0, have + amount)
+        self.change = True
+
+    def chip(self, wallTile, fromTile):
+        """Flecks fly off the face of a wall that was just hit, in its colors (and its ore's, for a vein)."""
+        tile = self.grid.get(wallTile)
+        if not tile or tile[0] != 2 or len(tile) < 3:
+            return
+        w = tile[2]
+        if isinstance(w, wall.OreVein):
+            base = self.painter.roomWallColor(wallTile, self.rooms, False)
+            colors = [list(w.oreHighlight), list(w.oreColor), themes.mix(list(base), [0, 0, 0], 0.45)]
+        else:
+            base = self.painter.wallColor(w.name, False)
+            colors = [themes.mix(list(base), [255, 255, 255], 0.45), themes.mix(list(base), [0, 0, 0], 0.45), list(base)]
+        dx = fromTile % self.rowLength - wallTile % self.rowLength
+        dy = fromTile // self.rowLength - wallTile // self.rowLength
+        self.flecks.append([wallTile, pygame.time.get_ticks(), rand.random(), (dx, dy), colors])
+
+    def stepBlood(self):
+        for position in list(self.blood):
+            self.blood[position] -= BLOOD_FADE
+            if self.blood[position] <= 0:
+                del self.blood[position]
+        for position in list(self.EnemyPositions):
+            tile = self.grid.get(position)
+            if not tile or tile[0] != 5 or len(tile) < 3:
+                continue
+            enemy = tile[2]
+            if not hasattr(enemy, "maxHp"):  # from an old save
+                enemy.maxHp = max(1, enemy.hp)
+            if 0 < enemy.hp <= max(1, enemy.maxHp * LOW_HEALTH):  # the last HP always counts, so small things bleed too
+                last = getattr(enemy, "bloodSpot", None)
+                if last == position:
+                    self.addBlood(position, POOL)
+                elif last is not None:
+                    self.addBlood(last, DRIP)
+            enemy.bloodSpot = position
+        player = self.player
+        here = self.playerPositionFlat
+        if 0 < player.getCurrentHealth() <= max(1, player.getMaxHealth() * LOW_HEALTH):
+            if self.playerBloodSpot == here:
+                self.addBlood(here, POOL)
+            elif self.playerBloodSpot is not None:
+                self.addBlood(self.playerBloodSpot, DRIP)
+        self.playerBloodSpot = here
+
+    def animating(self):
+        """True while something on screen moves: bursts, fire in view, something burning, or a throw that would
+        land at once (its landing tile shows a little burst)."""
+        if self.explosions or self.spurts or self.flecks or any(self.grid[p][1] == 1 for p in self.fires):
+            return True
+        if getattr(self.player, "burnTurns", 0) > 0:
+            return True
+        if self.throwArea is not None and self.throwArea[2] == 0:
+            return True
+        return any(self.grid[p][1] == 1 and len(self.grid[p]) > 2 and getattr(self.grid[p][2], "burnTurns", 0) > 0
+                   for p in self.EnemyPositions if p in self.grid)
 
     def stepThrows(self):
         """Potions in the air get one turn closer to landing."""
@@ -1778,15 +1982,31 @@ class gameManager():
         aim = None
         if self.throwArea is not None:
             landing, area, turns = self.throwArea
-            aim = {"landing": landing, "area": area, "turns": turns, "effect": self.player.inventory[self.throwing].effect}
+            effect = self.player.inventory[self.throwing].effect
+            aim = {"landing": landing, "area": area, "turns": turns, "effect": effect}
         smoke = [p for p in self.smoke if self.grid[p][1] == 1]
-        return {"aim": aim, "flying": flying, "smoke": smoke}
+        now = pygame.time.get_ticks()
+        burning = [p for p in self.EnemyPositions if p in self.grid and self.grid[p][1] == 1 and len(self.grid[p]) > 2
+                   and getattr(self.grid[p][2], "burnTurns", 0) > 0]
+        if getattr(self.player, "burnTurns", 0) > 0:
+            burning.append(self.playerPositionFlat)
+        return {"aim": aim, "flying": flying, "smoke": smoke, "time": now / 1000,
+                "fires": [p for p in self.fires if self.grid[p][1] == 1], "burning": burning,
+                "explosions": [(landing, radius, effect, (now - start) / EXPLOSION_MS)
+                               for landing, radius, effect, start in self.explosions if self.grid[landing][1] != 0],
+                "spurts": [(tile, (now - start) / SPURT_MS, seed) for tile, start, seed in self.spurts
+                           if tile in self.grid and self.grid[tile][1] == 1 and 0 <= now - start < SPURT_MS],
+                "flecks": [(tile, (now - start) / FLECK_MS, seed, direction, colors)
+                           for tile, start, seed, direction, colors in self.flecks
+                           if tile in self.grid and self.grid[tile][1] != 0 and 0 <= now - start < FLECK_MS]}
 
     def enemyTurn(self):
         self.turnCount += 1
         self.MoveEnemies()
         self.searingLight()
         self.stepBurning()
+        self.stepFires()
+        self.stepBlood()
         self.stepSmoke()
         self.stepThrows()
         if self.turnCount % plants.GROW_TURNS == 0:
@@ -1865,11 +2085,13 @@ class gameManager():
                     self.hitPlayer(currentEnemy, i)
                 elif tileType == 2:
                     if currentEnemy.dig:
+                        self.chip(newPosition, i)
                         self.grid[newPosition][2].takeDamage(currentEnemy.wallDamage, self.tileSize)
                         if self.grid[newPosition][2].hp <= 0:
                             self.grid[newPosition].pop()
                             self.grid[newPosition][0] = 0
                     elif currentEnemy.burrow:
+                        self.chip(newPosition, i)
                         self.enemyOccupiedItemSpaces[newPosition] = copy.copy(self.grid[newPosition])
                         self.enemyOccupiedItemSpaces[newPosition][2].hp -= 1
                         self.grid[newPosition] = [0, self.grid[newPosition][1]]
@@ -2166,7 +2388,7 @@ class gameManager():
             bonus = player.attributeBonuses.get(item.attributeScaling, 0)
             effect = {"Heal": f"Heals {item.bonus}" + (f" (+{bonus} from WIS)" if bonus else ""),
                       "DoorLocate": "Shows the way to the next floor",
-                      "Fire": f"Thrown: {item.bonus} damage to everything where it lands, you included",
+                      "Fire": f"Thrown: {item.bonus} damage to everything where it lands, you included. Can set the ground and plants alight",
                       "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Enemies can't see into it"}.get(item.effect, item.effect)
             lines.append(("body", effect, ""))
             lines.append(("hint", "Enter  aim and throw" if item.effect in THROWN_EFFECTS else "Enter  use", ""))
@@ -2261,7 +2483,7 @@ class gameManager():
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly,
-            popups=self.popupView())
+            popups=self.popupView(), blood=self.blood)
 
         if messageKey is not None and messageFinished:
             self.messageBools[messageKey] = False
@@ -2327,6 +2549,17 @@ class gameManager():
             if step != self.lightStep and (self.lightStyle() is not None or self.unsealedInView()):
                 self.lightStep = step
                 self.lightChange = True
+
+            # Flames and landing bursts animate at ANIM_FPS
+            now = pygame.time.get_ticks()
+            self.explosions = [e for e in self.explosions if now - e[3] < EXPLOSION_MS]
+            self.spurts = [b for b in self.spurts if now - b[1] < SPURT_MS]
+            self.flecks = [f for f in self.flecks if now - f[1] < FLECK_MS]
+            if self.animating():
+                step = pygame.time.get_ticks() * ANIM_FPS // 1000
+                if step != self.animStep:
+                    self.animStep = step
+                    self.change = True
 
             # Popups rise and fade, so they need redrawing every frame until they're gone
             if self.popups:

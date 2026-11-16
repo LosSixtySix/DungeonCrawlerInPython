@@ -17,6 +17,7 @@ class Enemy():
         self.tremorSense = False
         self.allSight = False
         self.gold = goldWorth
+        self.maxHp = hp  # for bleeding at low health
 
     def CanDig(self):
         if self.wallDamage > 0:

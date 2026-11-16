@@ -1,4 +1,5 @@
 import math
+import random
 import pygame
 import pygame.ftfont
 import themes
@@ -36,6 +37,7 @@ class renderer():
         self.overlay = pygame.Surface((self.screenWidth, self.screenHeight), pygame.SRCALPHA)
 
         self.tileSize = 0
+        self.blood = {}  # set every frame by draw()
         self.rowLength = 0
         self.columnLength = 0
         self.mapSurface = None
@@ -169,7 +171,7 @@ class renderer():
     # ------------------------------------------------------------- top level
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
-             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None):
+             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -179,6 +181,7 @@ class renderer():
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill(self.color("fog"))
+        self.blood = blood or {}  # map position -> how much blood is on that floor tile (0-1)
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
         light = self.lightShape(lightTime, lightStyle)
         if lightOnly:
@@ -780,41 +783,202 @@ class renderer():
     def effectColor(self, effect):
         return self.color("enemy") if effect == "Fire" else self.color("font")
 
-    def drawBlast(self, landing, area, effect, turns, alpha):
-        """A potion's reach: every tile it splashes tinted, the landing tile boxed, and how many turns until it
-        lands written on it ("now" when it lands this turn)."""
+    FIRE_RED, FIRE_ORANGE, FIRE_YELLOW = (196, 48, 28), (240, 128, 40), (255, 222, 120)
+
+    def drawBlast(self, landing, area, effect, turns, alpha, time):
+        """A potion's reach: the round splash tinted with its outer edge traced, the landing tile boxed, and how
+        many turns until it lands over it. A throw that lands at once shows a little looping burst instead."""
         color = self.effectColor(effect)
         fill = self.tint(color, alpha)
+        tiles = set(area)
         for position in area:
             rect = self.screenTile(position)
             self.win.blit(fill, rect)
-            pygame.draw.rect(self.win, color, rect, width=1)
+            # trace only the outside edge, so the splash reads as one round shape
+            x = position % self.rowLength
+            if x == 0 or position - 1 not in tiles:
+                pygame.draw.line(self.win, color, rect.topleft, rect.bottomleft)
+            if x == self.rowLength - 1 or position + 1 not in tiles:
+                pygame.draw.line(self.win, color, (rect.right - 1, rect.top), (rect.right - 1, rect.bottom - 1))
+            if position - self.rowLength not in tiles:
+                pygame.draw.line(self.win, color, rect.topleft, (rect.right - 1, rect.top))
+            if position + self.rowLength not in tiles:
+                pygame.draw.line(self.win, color, (rect.left, rect.bottom - 1), (rect.right - 1, rect.bottom - 1))
         rect = self.screenTile(landing)
         pygame.draw.rect(self.win, color, rect.inflate(2, 2), width=2)
-        label = "now" if turns == 0 else str(turns)
+        if turns == 0:
+            self.drawBurst(rect.center, self.tileSize * 0.9, effect, (time * 1.6) % 1)
+            return
+        label = str(turns)
         shadow = self.popupFont.render(label, True, (0, 0, 0))
         text = self.popupFont.render(label, True, color)
         textRect = text.get_rect(midbottom=(rect.centerx, rect.top - 2))
         self.win.blit(shadow, textRect.move(1, 1))
         self.win.blit(text, textRect)
 
+    def drawBurst(self, center, reach, effect, age):
+        """An explosion (fire) or a puff (smoke) growing out from center to reach pixels as age goes 0 to 1."""
+        age = max(0.0, min(1.0, age))
+        size = int(reach * 2.4) + 4
+        surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        c = size // 2
+        grow = 1 - (1 - age) ** 3  # fast out, slow at the end
+        fade = int(255 * (1 - age))
+        if effect == "Fire":
+            if age < 0.6:  # the bright core
+                coreAge = age / 0.6
+                core = self.FIRE_YELLOW if coreAge < 0.4 else self.FIRE_ORANGE
+                pygame.draw.circle(surface, (*core, int(230 * (1 - coreAge))), (c, c), max(1, int(reach * 0.85 * grow)))
+            pygame.draw.circle(surface, (*self.FIRE_RED, fade // 2), (c, c), max(1, int(reach * grow)))
+            pygame.draw.circle(surface, (*self.FIRE_ORANGE, fade), (c, c), max(2, int(reach * grow)), width=max(1, int(reach / 6)))
+            for k in range(8):  # sparks flying out
+                angle = k * math.pi / 4 + 0.4
+                d = reach * (0.4 + 0.75 * grow)
+                spot = (int(c + math.cos(angle) * d), int(c + math.sin(angle) * d))
+                pygame.draw.circle(surface, (*self.FIRE_YELLOW, fade), spot, max(1, int(reach / 10)))
+        else:
+            gray = themes.desaturate(list(self.color("font")), 0.9)
+            for k in range(7):
+                angle = k * 2 * math.pi / 7
+                d = reach * 0.55 * grow
+                spot = (int(c + math.cos(angle) * d), int(c + math.sin(angle) * d))
+                pygame.draw.circle(surface, (*gray[:3], int(fade * 0.6)), spot, max(1, int(reach * (0.25 + 0.3 * grow))))
+        self.win.blit(surface, (center[0] - c, center[1] - c))
+
+    def drawFlames(self, rect, time, phase, creature=False):
+        """Fire seen from above, see-through so the floor shows: a flickering ring of red lobes round an orange
+        middle and a yellow core, with an ember drifting out. Something on fire (creature) gets four small
+        flames circling its edge instead, so you can still see what it is."""
+        w = self.tileSize
+        layer = pygame.Surface((w * 2, w * 2), pygame.SRCALPHA)
+        cx = cy = w
+        if creature:
+            for k in range(4):
+                a = k * math.pi / 2 + time * 2.2 + phase
+                flick = 0.7 + 0.3 * math.sin(time * 13 + k * 1.9 + phase)
+                spot = (cx + math.cos(a) * w * 0.45, cy + math.sin(a) * w * 0.45)
+                pygame.draw.circle(layer, (*self.FIRE_RED, 190), spot, max(1, w * 0.13 * flick))
+                pygame.draw.circle(layer, (*self.FIRE_ORANGE, 200), spot, max(1, w * 0.07 * flick))
+        else:
+            for spin, color, ring, size, count in ((-0.9, (*self.FIRE_RED, 170), 0.2, 0.18, 5),
+                                                   (1.3, (*self.FIRE_ORANGE, 190), 0.1, 0.13, 4)):
+                for k in range(count):
+                    a = k * 2 * math.pi / count + time * spin + phase
+                    flick = 0.75 + 0.25 * math.sin(time * 12 + k * 2.4 + phase * 3)
+                    pygame.draw.circle(layer, color, (cx + math.cos(a) * w * ring, cy + math.sin(a) * w * ring), max(1, w * size * flick))
+            pygame.draw.circle(layer, (*self.FIRE_YELLOW, 210), (cx, cy), max(1, w * (0.08 + 0.03 * math.sin(time * 15 + phase))))
+            t = (time * 1.4 + phase * 0.13) % 1  # an ember drifting outward
+            a = phase * 5 + t * 0.8
+            d = w * (0.2 + 0.55 * t)
+            pygame.draw.circle(layer, (*(self.FIRE_YELLOW if t < 0.5 else self.FIRE_ORANGE), 200),
+                               (cx + math.cos(a) * d, cy + math.sin(a) * d), 1)
+        self.win.blit(layer, (rect.centerx - w, rect.centery - w))
+
+    # Blood, seen from above. Pools are drawn as part of the floor (under sprites, dimmed with the floor when
+    # remembered). Each tile's blob shape is fixed by its position, so pools grow without wobbling.
+    BLOOD_DARK, BLOOD, BLOOD_LIGHT = (92, 6, 10), (138, 14, 20), (186, 52, 52)
+
+    def floorFill(self, i, rooms, memorized, x, y):
+        self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+        amount = self.blood.get(i, 0) if self.blood else 0
+        if amount > 0:
+            ts = self.tileSize
+            self.drawBlood(pygame.Rect(x * ts, y * ts, ts, ts), min(1.0, amount), i, memorized)
+
+    def drawBlood(self, rect, amount, seed, memorized):
+        rng = random.Random(seed)
+        w = rect.w
+        colors = (self.BLOOD_DARK, self.BLOOD, self.BLOOD_LIGHT)
+        if memorized:
+            fog = self.theme.colors["fog"]
+            colors = tuple(themes.remembered(list(c), fog) for c in colors)
+        dark, mid, light = colors
+        old = self.mapSurface.get_clip()
+        self.mapSurface.set_clip(rect)
+        spots = [(rect.x + w * rng.uniform(0.2, 0.8), rect.y + w * rng.uniform(0.2, 0.8), rng.uniform(0.6, 1.0))
+                 for _ in range(2 + int(amount * 4))]
+        for x, y, size in spots:
+            pygame.draw.circle(self.mapSurface, dark, (x, y), max(1, w * (0.12 + 0.4 * amount) * size))
+        for x, y, size in spots:
+            pygame.draw.circle(self.mapSurface, mid, (x, y), max(1, w * (0.08 + 0.32 * amount) * size))
+        if amount > 0.35:
+            x, y, _ = spots[0]
+            pygame.draw.circle(self.mapSurface, light, (x - w * 0.08, y - w * 0.08), 1)
+        self.mapSurface.set_clip(old)
+
+    def drawParticles(self, spurts, flecks):
+        """Blood spurts (a few red specks flying off whatever was hurt) and wall flecks (chips flying off the
+        face of a wall that was hit, out to both sides of whoever hit it). Ages go 0 to 1."""
+        for tile, age, seed in spurts:
+            rng = random.Random(seed)
+            rect = self.screenTile(tile)
+            ease = 1 - (1 - age) ** 2
+            color = (200, 30, 34) if age < 0.5 else self.BLOOD
+            for _ in range(5):
+                a = rng.uniform(0, 2 * math.pi)
+                d = self.tileSize * rng.uniform(0.6, 1.1) * ease
+                self.win.fill(color, pygame.Rect(int(rect.centerx + math.cos(a) * d), int(rect.centery + math.sin(a) * d), 1, 1))
+        for tile, age, seed, (dx, dy), colors in flecks:
+            rng = random.Random(seed)
+            rect = self.screenTile(tile)
+            ox, oy = rect.centerx + dx * rect.w * 0.5, rect.centery + dy * rect.h * 0.5
+            facing = math.atan2(dy, dx)
+            ease = 1 - (1 - age) ** 2
+            for k in range(5):
+                side = 1 if k % 2 else -1
+                a = facing + side * rng.uniform(0.55, 1.35)
+                d = self.tileSize * rng.uniform(0.4, 1.1) * ease
+                color = colors[rng.randrange(len(colors))]
+                if age > 0.6:
+                    color = themes.mix(list(color), [0, 0, 0], 0.4)
+                size = 2 if k == 0 and age < 0.5 else 1
+                self.win.fill(color, pygame.Rect(int(ox + math.cos(a) * d), int(oy + math.sin(a) * d), size, size))
+
     def drawThrows(self, throws):
-        smoke = self.tint(self.color("muted"), 120)
-        puff = self.color("font")
-        for position in throws["smoke"]:
-            rect = self.screenTile(position)
-            self.win.blit(smoke, rect)
-            r = max(1, self.tileSize // 5)
-            for fx, fy in ((0.3, 0.35), (0.7, 0.45), (0.45, 0.72)):
-                pygame.draw.circle(self.win, puff, (rect.x + int(rect.w * fx), rect.y + int(rect.h * fy)), r, width=1)
+        time = throws["time"]
+        if throws["fires"]:
+            glow = self.tint(self.FIRE_RED, 35)
+            for position in throws["fires"]:
+                rect = self.screenTile(position)
+                self.win.blit(glow, rect)
+                self.drawFlames(rect, time, position * 1.7)
+        for position in throws["burning"]:  # something on fire: small flames circling it
+            self.drawFlames(self.screenTile(position), time, position * 2.9, creature=True)
+        if throws["smoke"]:
+            smoke = self.smokeTile()
+            for position in throws["smoke"]:
+                self.win.blit(smoke[position % len(smoke)], self.screenTile(position))
         for shot in throws["flying"]:
-            self.drawBlast(shot["landing"], shot["area"], shot["effect"], shot["turns"], 40)
+            self.drawBlast(shot["landing"], shot["area"], shot["effect"], shot["turns"], 40, time)
             rect = self.screenTile(shot["at"])  # the potion itself, partway along its arc
             pygame.draw.circle(self.win, (0, 0, 0), rect.center, max(2, self.tileSize // 4) + 1)
             pygame.draw.circle(self.win, self.effectColor(shot["effect"]), rect.center, max(2, self.tileSize // 4))
+        for landing, radius, effect, age in throws["explosions"]:
+            self.drawBurst(self.screenTile(landing).center, (radius + 0.5) * self.tileSize, effect, age)
+        self.drawParticles(throws.get("spurts", ()), throws.get("flecks", ()))
         aim = throws["aim"]
         if aim is not None:
-            self.drawBlast(aim["landing"], aim["area"], aim["effect"], aim["turns"], 70)
+            self.drawBlast(aim["landing"], aim["area"], aim["effect"], aim["turns"], 70, time)
+
+    def smokeTile(self):
+        """A few see-through grey haze tiles with soft puffs, so a cloud doesn't look like a repeating stamp.
+        Rebuilt when the theme or the tile size changes."""
+        key = (self.tileSize, id(self.theme))
+        if getattr(self, "smokeKey", None) != key:
+            fog = self.theme.colors["fog"]
+            gray = themes.mix(themes.desaturate(list(self.color("font")), 0.9), fog, 0.25)
+            light = themes.mix(gray, [255, 255, 255], 0.25)
+            s = self.tileSize
+            puffs = [((0.25, 0.3), (0.7, 0.6)), ((0.65, 0.25), (0.3, 0.7)), ((0.5, 0.5), (0.2, 0.2))]
+            self.smokeTiles = []
+            for spots in puffs:
+                tile = pygame.Surface((s, s), pygame.SRCALPHA)
+                tile.fill((*gray[:3], 125))
+                for fx, fy in spots:
+                    pygame.draw.circle(tile, (*light[:3], 70), (int(s * fx), int(s * fy)), max(2, s * 2 // 5))
+                self.smokeTiles.append(tile)
+            self.smokeKey = key
+        return self.smokeTiles
 
     def fillTile(self, color, x, y):
         pygame.draw.rect(self.mapSurface, color, pygame.Rect(x * self.tileSize, y * self.tileSize, self.tileSize, self.tileSize))
@@ -876,7 +1040,7 @@ class renderer():
         ts = self.tileSize
         match grid[i][0]:
             case 1:  # Player: the Torchbearer facing the way it last moved, on the floor it stands on
-                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
                 standingIn = grid[i][2] if len(grid[i]) > 2 else None
                 if standingIn is not None and hasattr(standingIn, "kind"):  # in a plant: it's drawn over you, see-through
@@ -892,14 +1056,14 @@ class renderer():
             # Chests and doors: the floor first (it shows through the pictures' transparent pixels and
             # shadows), then the picture. They keep their full color even when remembered.
             case 3:  # Chest: walnut, mahogany or burnt umber (the same on every floor)
-                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["chests"][sprites.chestColorFor(i)], (x * ts, y * ts))
             case 4:  # Door to the next level: a pit in the floor, randomly an open pit or a collapsed grave
                 floor = self.floorColor(i, rooms, memorized)
                 self.fillTile(floor, x, y)
                 self.mapSurface.blit(self.pitSprite(sprites.pitStyleFor(i), floor), (x * ts, y * ts))
             case 7:  # A set-up crafting station (kept in full color when remembered, like chests)
-                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                self.floorFill(i, rooms, memorized, x, y)
                 station = grid[i][2]
                 picture = self.sprites["stations"].get(station.id)
                 if picture is not None:
@@ -908,15 +1072,15 @@ class renderer():
                     pygame.draw.rect(self.mapSurface, (40, 10, 10), pygame.Rect(x * ts + 1, y * ts + ts - 2, ts - 2, 1))
                     pygame.draw.rect(self.mapSurface, self.color("enemy"), pygame.Rect(x * ts + 1, y * ts + ts - 2, max(1, (ts - 2) * station.hp // station.maxHp), 1))
             case 8:  # A plant: the floor, then the plant (kept in full color when remembered, like chests)
-                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                self.floorFill(i, rooms, memorized, x, y)
                 picture = self.sprites["plants"].get(grid[i][2].kind)
                 if picture is not None:
                     self.mapSurface.blit(picture, (x * ts, y * ts))
             case 6:  # Door back to the previous level
-                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))
             case 5 if not memorized:  # Enemy (enemies are not remembered)
-                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                self.floorFill(i, rooms, memorized, x, y)
                 name = grid[i][2].name if len(grid[i]) > 2 else ""
                 if name == "Unsealed":
                     frame = sprites.shardFrameFor(getattr(self, "lightTime", 0.0))
@@ -926,4 +1090,4 @@ class renderer():
                 else:  # an enemy with no picture yet: a plain square
                     self.fillTile(self.color("enemy"), x, y)
             case _:  # Floor
-                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                self.floorFill(i, rooms, memorized, x, y)

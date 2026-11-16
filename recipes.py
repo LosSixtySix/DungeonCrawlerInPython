@@ -255,11 +255,16 @@ RECIPES = [
            "Two caps go further in a big pot.", "2 potions that show the way down", amount=2,
            makeItem=potion("Potion Of Door", "DoorLocate")),
     Recipe("fire_flask", "Fire Flask", "cauldron", 3, {"glass": 1, "emberroot": 2, "coal": 1}, "potion",
-           "Throw it and everything it splashes burns.", f"Thrown: {FIRE_FLASK_DAMAGE} damage to everything where it lands",
+           "Throw it and everything it splashes burns.", f"Thrown: {FIRE_FLASK_DAMAGE} damage where it lands; sets fires",
            makeItem=potion("Fire Flask", "Fire", FIRE_FLASK_DAMAGE)),
 ]
 
 SCRAP_GOLD, REFORGE_GOLD, REKINDLE_GOLD = 40, 150, 100
+
+# Herbs that go into fire potions and fire gear. Plants of those kinds are used to heat and barely catch fire.
+FIRE_RECIPES = ("fire_flask", "ember_amulet")
+FIRE_HERBS = {m for r in RECIPES if r.id in FIRE_RECIPES for m in r.needs
+              if any(info["herb"] == m for info in plants.PLANTS.values())}
 
 
 
