@@ -1,0 +1,38 @@
+import random
+
+"""
+Floor events: something that can happen on a floor while you're on it. Each new floor (from floor 2 down)
+rolls EVENT_CHANCE for an event. If it gets one, the event fires a few turns after you arrive (DELAY), with its
+name shown big on screen like "The Seal is Broken", and lasts for the rest of that floor.
+
+Each event's "plants" entry changes how plants grow while it's active (see plants.step):
+  growTurns   a growth step happens this often (normally plants.GROW_TURNS)
+  birth       births are this many times as likely
+  death       the chance a lonely or crowded wild plant withers (normally plants.DEATH_CHANCE)
+  maxPlants   the floor stops growing new plants past this many (normally plants.MAX_PLANTS)
+"""
+
+EVENT_CHANCE = 0.2     # chance a new floor gets an event
+FIRST_FLOOR = 1        # no events before this floor (0 is the first floor)
+DELAY = (15, 60)       # the event fires this many turns after you first arrive (random in this range)
+
+EVENTS = {
+    "overgrowth": {"name": "Overgrowth", "description": "Plants grow much faster and rarely wither",
+                   "plants": {"growTurns": 3, "birth": 1.5, "death": 0.05, "maxPlants": 320}},
+}
+
+
+def roll(depth):
+    """The event waiting on a new floor at this depth, or None: {"id", "turnsLeft", "active"}."""
+    if depth < FIRST_FLOOR or random.random() >= EVENT_CHANCE:
+        return None
+    return {"id": random.choice(list(EVENTS)), "turnsLeft": random.randint(*DELAY), "active": False}
+
+
+def name(eventId):
+    return EVENTS[eventId]["name"]
+
+
+def plantRules(eventId):
+    """How plants grow under this event ({} if it doesn't change them)."""
+    return EVENTS[eventId].get("plants", {}) if eventId else {}

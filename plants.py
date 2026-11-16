@@ -104,19 +104,20 @@ def around(i, rowLength, grid):
     return out
 
 
-def step(grid, rooms, rowLength):
-    """One growth step for the whole floor. Returns True if anything changed."""
+def step(grid, rooms, rowLength, birth=1.0, death=DEATH_CHANCE, maxPlants=MAX_PLANTS, **_):
+    """One growth step for the whole floor. Returns True if anything changed. A floor event can make births
+    more likely (birth), withering less likely (death) and raise the cap (maxPlants); see events.py."""
     plantsHere = {i: tile[2] for i, tile in grid.items() if tile[0] == 8}
     counts = {}  # (tile, kind) -> neighbors of that kind
     for i, plant in plantsHere.items():
         for j in around(i, rowLength, grid):
             counts[(j, plant.kind)] = counts.get((j, plant.kind), 0) + 1
     births, deaths = {}, []
-    room = MAX_PLANTS - len(plantsHere)
+    room = maxPlants - len(plantsHere)
     for (j, kind), n in counts.items():
         if j in births or room <= 0 or not canGrow(kind, j, grid, rooms):
             continue
-        if random.random() < BIRTH_CHANCE.get(n, 0):
+        if random.random() < BIRTH_CHANCE.get(n, 0) * birth:
             births[j] = kind
             room -= 1
     takeovers = {}
@@ -132,7 +133,7 @@ def step(grid, rooms, rowLength):
                 break
     for i, plant in plantsHere.items():
         n = counts.get((i, plant.kind), 0)
-        if i not in takeovers and not plant.planted and (n < 2 or n > 3) and random.random() < DEATH_CHANCE:
+        if i not in takeovers and not plant.planted and (n < 2 or n > 3) and random.random() < death:
             deaths.append(i)
     for j, kind in list(births.items()) + list(takeovers.items()):
         grid[j] = [8, grid[j][1], Plant(kind)]

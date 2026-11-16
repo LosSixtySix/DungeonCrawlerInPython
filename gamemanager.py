@@ -11,6 +11,7 @@ import os
 import EventDispatcher as ED
 import themes
 import attempts
+import events
 import loot
 import resources
 import recipes
@@ -51,7 +52,7 @@ MENU_OPTIONS_FILE = "menuOpts.txt"
 # Frame rate cap, and how much the splash messages fade per frame
 FPS = 60
 # Each message starts at 255 and loses this much every frame: 255 / step / FPS = seconds on screen
-FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage": 1.5}
+FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage": 1.5, "eventMessage": 1.5}
 # The title fades in as the exact reverse of the "Escape" message fading out: same speed (about 4 seconds)
 TITLE_FADE_STEP = FADE_STEPS["escapeMessage"]
 KEY_REPEAT_DELAY = 250     # ms before a held key starts repeating
@@ -95,6 +96,9 @@ SPURT_MS = 280             # a blood spurt's specks fly this long
 FLECK_MS = 300             # wall flecks fly this long
 DOOR_RADIUS = 15           # on the first floor the door down is at most this many tiles from where you start
 DOOR_RADIUS_GROWTH = 10    # and each floor deeper it can be this much further, until it can be anywhere
+DOOR_SENSE = 1             # you sense the door down (even through walls) this many tiles away...
+DOOR_SENSE_WISDOM = 3      # ...plus 1 tile for every this many Wisdom points above 1...
+DOOR_SENSE_MOST = 10       # ...up to this many
 LOW_HEALTH = 0.3           # at or below this share of max HP, you and enemies bleed onto the floor
 DRIP = 0.35                # blood left on a tile you step off while at low health (1 = a full puddle)
 POOL = 0.25                # blood added each turn under someone at low health who stays put
@@ -179,6 +183,7 @@ class gameManager():
         self.deepest = 0  # deepest floor reached this run, for the Attempts list
         self.levelGrids = []
         self.doorPositions = []
+        self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
         self.enemyOccupiedItemSpaces = {}
 
         playerposx, playerposy = self.painter.getCenterCartesian()
@@ -230,7 +235,8 @@ class gameManager():
         self.currentAimSpot = None
         self.aimLine = None
 
-        self.messageBools = {"escapeMessage": False, "floorLevelMessage": False, "brokenSealMessage": False}
+        self.messageBools = {"escapeMessage": False, "floorLevelMessage": False, "brokenSealMessage": False,
+                             "eventMessage": False}
         self.painter.fade = 255
 
         self.rotate = False
@@ -444,6 +450,7 @@ class gameManager():
             self.hotkeySel = 0
         elif label == "Reset Windows":
             self.settings.resetWindows()
+            self.painter.autoPlaced = {}  # every window finds its usual spot again
         elif label == "Quit to Title":
             if self.menuOptions["Save on Exit"]:
                 self.saveGame()
@@ -466,6 +473,7 @@ class gameManager():
         if windowId not in self.openWindows:
             self.openWindows.append(windowId)
             self.openWindows.sort(key=WINDOW_ORDER.index)
+            self.openOrder = [w for w in getattr(self, "openOrder", []) if w != windowId] + [windowId]
             self.windowSel[windowId] = 0
         self.focus = windowId
 
@@ -1306,6 +1314,9 @@ class gameManager():
         self.enemyOccupiedItemSpaces = {}
         self.level += 1
         self.deepest = max(self.deepest, self.level)
+        event = events.roll(self.level)
+        if event:
+            self.floorEvents[self.level] = event
         self.PlacePreviousLevelDoor()
         self.PlaceNextLevelDoor()
         self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
@@ -1598,6 +1609,51 @@ class gameManager():
         if self.player.seeDoor:
             self.grid[self.doorPositions[self.level]][1] = 2
             self.player.seeDoor = False
+        door = self.doorPositions[self.level]
+        if self.grid[door][1] == 0:  # Wisdom: sense the door down when it's close, even through walls
+            R, radius = self.rowLength, self.doorSense()
+            if (door % R - self.playerPositionFlat % R) ** 2 + (door // R - self.playerPositionFlat // R) ** 2 <= radius * radius:
+                self.grid[door][1] = 2
+                self.addPopup("You sense a door", door)
+
+    def levelUpPreview(self, attribute):
+        """What one more point in this attribute would change: [(what, now, after)] for the Level Up window."""
+        player = self.player
+        now = self.attributeEffects(attribute)
+        old, oldBonus = player.attributes[attribute], player.attributeBonuses[attribute]
+        player.attributes[attribute] = old + 1
+        player.attributeBonuses[attribute] = int(math.log2(old + 1) * 4)
+        try:
+            after = self.attributeEffects(attribute)
+        finally:
+            player.attributes[attribute], player.attributeBonuses[attribute] = old, oldBonus
+        return {"title": f"{attribute.title()} {old} -> {old + 1}",
+                "rows": [(what, a, b) for (what, a), (_, b) in zip(now, after)],
+                "note": "Leveling up also heals you fully"}
+
+    def attributeEffects(self, attribute):
+        """[(what, value as text)] for everything this attribute affects, at the player's current stats."""
+        player = self.player
+        bonus = player.attributeBonuses[attribute]
+        if attribute == "strength":
+            low, high = player.getMinMaxDamage()
+            return [("STR bonus to gear", f"+{bonus}"), ("Damage", f"{low}-{high}"), ("Wall Damage", str(player.getWallDamage()))]
+        if attribute == "constitution":
+            return [("Max HP", str(player.getMaxHealth()))]
+        if attribute == "intelligence":
+            odds = dict(recipes.qualityOdds(bonus))
+            return [("Crafted Masterwork", f"{odds['Masterwork']}%"), ("Crafted Fine", f"{odds['Fine']}%"),
+                    ("Crafted Crude", f"{odds['Crude']}%"), ("Taking apart gives", f"{self.salvagePercent():g}%")]
+        if attribute == "wisdom":
+            nothing, _, _ = loot.wallOdds(player.attributes["wisdom"])
+            return [("Healing potions", f"+{bonus}"), ("Walls give nothing", f"{nothing:g}%"),
+                    ("Door sense", f"{self.doorSense()} tile" + ("s" if self.doorSense() != 1 else ""))]
+        return []
+
+    def doorSense(self):
+        """How many tiles away Wisdom lets you sense the door down."""
+        wisdom = self.player.attributes["wisdom"]
+        return min(DOOR_SENSE_MOST, DOOR_SENSE + max(0, wisdom - 1) // DOOR_SENSE_WISDOM)
 
     # --------------------------------------------------------------- enemies
 
@@ -2045,6 +2101,23 @@ class gameManager():
                            for tile, start, seed, direction, colors in self.flecks
                            if tile in self.grid and self.grid[tile][1] != 0 and 0 <= now - start < FLECK_MS]}
 
+    def activeEvent(self):
+        """The id of the event going on on this floor, or None."""
+        event = self.floorEvents.get(self.level)
+        return event["id"] if event and event["active"] else None
+
+    def stepFloorEvent(self):
+        """Counts down to this floor's event and fires it: its name shows big on screen."""
+        event = self.floorEvents.get(self.level)
+        if not event or event["active"]:
+            return
+        event["turnsLeft"] -= 1
+        if event["turnsLeft"] <= 0:
+            event["active"] = True
+            self.messageBools["eventMessage"] = True
+            self.painter.fade = 255
+            self.change = True
+
     def enemyTurn(self):
         self.turnCount += 1
         self.MoveEnemies()
@@ -2054,8 +2127,10 @@ class gameManager():
         self.stepBlood()
         self.stepSmoke()
         self.stepThrows()
-        if self.turnCount % plants.GROW_TURNS == 0:
-            changed = plants.step(self.grid, self.rooms, self.rowLength)
+        self.stepFloorEvent()
+        growth = events.plantRules(self.activeEvent())
+        if self.turnCount % growth.get("growTurns", plants.GROW_TURNS) == 0:
+            changed = plants.step(self.grid, self.rooms, self.rowLength, **growth)
             changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
             if changed:
                 self.change = True
@@ -2226,7 +2301,8 @@ class gameManager():
             "currentLocation": self.currentLocation,
             "player": self.player,
             "goldwallCount": self.goldWallCount,
-            "addUnsealed": self.addUnsealed
+            "addUnsealed": self.addUnsealed,
+            "floorEvents": self.floorEvents
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -2245,6 +2321,7 @@ class gameManager():
             # .get with a default: saves made before "deepest" was added still load
             self.deepest = data.get("deepest", self.level)
             self.levelGrids = data["levelGrids"]
+            self.floorEvents = data.get("floorEvents", {})
             self.doorPositions = data["doorPositions"]
             self.playerPositionFlat = data["playerPositionFlat"]
             self.currentLocation = data["currentLocation"]
@@ -2337,6 +2414,7 @@ class gameManager():
             minDamage, maxDamage = player.getMinMaxDamage()
             spec["rows"] = [("Health", f"{player.getCurrentHealth()} / {player.getMaxHealth()}"),
                             ("AC", player.damageReduction()), ("Fire Resist", player.fireResistance()),
+                            ("Door Sense", f"{self.doorSense()} tile" + ("s" if self.doorSense() != 1 else "")),
                             ("Status", f"Burning ({player.burnTurns})" if getattr(player, "burnTurns", 0) > 0 else "Fine"),
                             ("Gold", player.gold),
                             ("Facing", self.getDirectionName()), ("Wall Damage", player.getWallDamage()),
@@ -2345,7 +2423,8 @@ class gameManager():
         elif windowId == "room":
             spec["rows"] = [("Floor Type", self.proportion), ("Theme", self.theme.name),
                             ("Room Type", self.getRoomType(self.playerPositionFlat, self.rooms) or "-"),
-                            ("Floor", self.level), ("Standing On", self.currentPosition), ("Looking At", self.lookingAt())]
+                            ("Floor", self.level), ("Event", events.name(self.activeEvent()) if self.activeEvent() else "-"),
+                            ("Standing On", self.currentPosition), ("Looking At", self.lookingAt())]
             if self.pickerActive():
                 spec["rows"].append(("Color Selected", self.selectedColor))
         elif windowId == "equipment":
@@ -2356,6 +2435,9 @@ class gameManager():
         elif windowId == "levelup":
             spec["header"] = f"Gold {player.gold}     Next point costs {player.nextLevelGold}"
             spec["rows"] = [(name.title(), value) for name, value in player.attributes.items()]
+            names = list(player.attributes)
+            if self.focus == "levelup":  # the attached panel only shows while Level Up is focused
+                spec["preview"] = self.levelUpPreview(names[min(self.windowSel["levelup"], len(names) - 1)])
         elif windowId == "items":
             spec["rows"] = [(f"Slot {i + 1}", item.name) for i, item in enumerate(self.roomItems or [])]
         elif windowId == "materials":
@@ -2518,7 +2600,8 @@ class gameManager():
 
         messageKey, messageText = None, None
         messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"Floor {self.level}\n{self.theme.name}",
-                        "brokenSealMessage": "The Seal is Broken"}
+                        "brokenSealMessage": "The Seal is Broken",
+                        "eventMessage": events.name(self.activeEvent()) if self.activeEvent() else ""}
         for key, active in self.messageBools.items():
             if active:
                 messageKey, messageText = key, messageTexts[key]
@@ -2539,7 +2622,8 @@ class gameManager():
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly,
-            popups=self.popupView(), blood=self.blood)
+            popups=self.popupView(), blood=self.blood,
+            openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
         if messageKey is not None and messageFinished:
             self.messageBools[messageKey] = False

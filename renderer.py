@@ -171,7 +171,7 @@ class renderer():
     # ------------------------------------------------------------- top level
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
-             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None):
+             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None, openOrder=()):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -198,16 +198,8 @@ class renderer():
         if hud is not None:
             self.drawHud(*hud)
 
-        rects = {}
-        for spec in windows:  # size Equipment first: Level Up docks under it even when Equipment is drawn last
-            if spec["id"] == "equipment":
-                self.windowSize(spec)
+        rects = self.layoutWindows(windows, openOrder, playerPosition)
         for spec in windows:
-            w, h = self.windowSize(spec)
-            x, y = spec["position"] if spec.get("position") else self.defaultWindowPosition(spec["id"], w, h)
-            x = max(0, min(self.screenWidth - w, x))
-            y = max(0, min(self.screenHeight - h, y))
-            rects[spec["id"]] = pygame.Rect(x, y, w, h)
             self.drawWindow(spec, rects[spec["id"]])
 
         messageFinished = False
@@ -376,6 +368,74 @@ class renderer():
             self.equipmentHeight = height  # Level Up docks right under it, so it moves down when a swap adds a line
         return max(300, widest + self.PAD * 2), height
 
+    LAYOUT_STEP = 16     # how finely the screen is searched for a free spot for a window
+    LAYOUT_GAP = 8       # space kept between windows
+    LAYOUT_SHIFT = 48    # when two windows must overlap, they're offset at least this much from each other
+
+    def layoutWindows(self, windows, openOrder, playerPosition):
+        """Where every open window goes. Windows you dragged stay where you put them. Any other window gets
+        its spot when it opens and keeps it while it's open: its usual spot if that's free, otherwise the
+        nearest spot that doesn't overlap a window already on screen (staying off you if it can). If there's
+        nowhere free, it goes where it overlaps least, shifted so it never sits squarely on top of another."""
+        sizes = {}
+        for spec in windows:  # size Equipment first: Level Up docks under it
+            if spec["id"] == "equipment":
+                sizes["equipment"] = self.windowSize(spec)
+        for spec in windows:
+            sizes[spec["id"]] = sizes.get(spec["id"]) or self.windowSize(spec)
+        W, H = self.screenWidth, self.screenHeight
+        self.autoPlaced = {k: v for k, v in getattr(self, "autoPlaced", {}).items() if k in sizes}  # forget closed ones
+        rects = {}
+
+        def clamp(x, y, w, h):
+            return pygame.Rect(max(0, min(W - w, x)), max(0, min(H - h, y)), w, h)
+
+        for spec in windows:  # windows that already have a spot
+            w, h = sizes[spec["id"]]
+            if spec.get("position"):
+                self.autoPlaced.pop(spec["id"], None)
+                rects[spec["id"]] = clamp(*spec["position"], w, h)
+            elif spec["id"] in self.autoPlaced:
+                rects[spec["id"]] = clamp(*self.autoPlaced[spec["id"]], w, h)
+        rank = {windowId: i for i, windowId in enumerate(openOrder)}
+        new = sorted((s for s in windows if s["id"] not in rects), key=lambda s: rank.get(s["id"], len(rank)))
+        player = self.screenTile(playerPosition).inflate(self.tileSize * 4, self.tileSize * 4) if playerPosition is not None else None
+        for spec in new:
+            w, h = sizes[spec["id"]]
+            spot = self.findSpot(spec["id"], w, h, list(rects.values()), player)
+            self.autoPlaced[spec["id"]] = (spot.x, spot.y)
+            rects[spec["id"]] = spot
+        return rects
+
+    def findSpot(self, windowId, w, h, others, player):
+        W, H, gap = self.screenWidth, self.screenHeight, self.LAYOUT_GAP
+        x, y = self.defaultWindowPosition(windowId, w, h)
+        home = pygame.Rect(max(0, min(W - w, x)), max(0, min(H - h, y)), w, h)
+        padded = [r.inflate(gap * 2, gap * 2) for r in others]
+        if home.collidelist(padded) == -1 and not (player and home.colliderect(player)):
+            return home
+        best, bestScore = home, None
+        for cy in range(0, max(1, H - h + 1), self.LAYOUT_STEP):
+            for cx in range(0, max(1, W - w + 1), self.LAYOUT_STEP):
+                spot = pygame.Rect(cx, cy, w, h)
+                overlap = 0
+                for o in padded:
+                    c = spot.clip(o)
+                    overlap += c.w * c.h
+                score = (overlap, bool(player and spot.colliderect(player)), abs(cx - home.x) + abs(cy - home.y))
+                if bestScore is None or score < bestScore:
+                    best, bestScore = spot, score
+        if bestScore and bestScore[0] > 0:  # nowhere free: keep it clearly offset from what it overlaps
+            shift = self.LAYOUT_SHIFT
+            for _ in range(len(others) + 1):
+                clash = next((r for r in others if abs(r.x - best.x) < shift and abs(r.y - best.y) < shift), None)
+                if clash is None:
+                    break
+                nx = clash.x + shift if clash.x + shift + w <= W else clash.x - shift
+                ny = clash.y + shift if clash.y + shift + h <= H else clash.y - shift
+                best = pygame.Rect(max(0, nx), max(0, ny), w, h)
+        return best
+
     def defaultWindowPosition(self, windowId, w, h):
         """Where each window docks until the player drags it somewhere else."""
         W, H = self.screenWidth, self.screenHeight
@@ -462,6 +522,46 @@ class renderer():
             color = select if selected else (muted if i in spec.get("dimRows", ()) else body)
             self.blitText(win, ("> " if selected else "") + str(label), self.windowFont, color, rect.x + self.PAD + 2, rowY)
             self.blitText(win, value, self.windowFont, muted if value == "None" else color, rect.right - self.PAD, rowY, align="right")
+        if spec.get("preview"):
+            self.drawPreview(spec["preview"], rect)
+
+    BETTER = (130, 210, 120)
+
+    def drawPreview(self, preview, beside):
+        """A panel attached to the Level Up window while it's focused: what one more point in the selected
+        stat changes. preview = {"title", "rows": [(what, now, after)], "note"}. It sits to the left of the
+        window, or to the right when there's no room."""
+        win = self.win
+        panel, font, muted, select = (self.color(c) for c in ("panel", "font", "muted", "select"))
+        gap, colGap = 8, 18
+        rows = preview["rows"]
+        labelW = max([self.windowFont.size(what)[0] for what, _, _ in rows] or [0])
+        nowW = max([self.windowFont.size(now)[0] for _, now, _ in rows] or [0])
+        afterW = max([self.windowFont.size(after)[0] for _, _, after in rows] or [0])
+        arrowW = self.windowFont.size("->")[0]
+        w = max(self.windowTitleFont.size(preview["title"])[0], self.windowFont.size("Does nothing yet")[0], labelW + colGap + nowW + colGap + arrowW + colGap + afterW,
+                self.windowSmallFont.size(preview.get("note", ""))[0]) + self.PAD * 2 + 4
+        h = self.WINDOW_HEAD + max(1, len(rows)) * self.ROW + (self.ROW if preview.get("note") else 0) + 14
+        x = beside.x - gap - w if beside.x - gap - w >= 0 else beside.right + gap
+        rect = pygame.Rect(x, beside.y, w, h)
+        pygame.draw.rect(win, panel, rect)
+        pygame.draw.rect(win, select, rect, width=2)
+        self.blitText(win, preview["title"], self.windowTitleFont, select, rect.x + self.PAD + 2, rect.y + 24)
+        pygame.draw.rect(win, self.color("boxLine"), pygame.Rect(rect.x + self.PAD, rect.y + self.WINDOW_HEAD - 4, rect.w - self.PAD * 2, 1))
+        y = rect.y + self.WINDOW_HEAD + self.ROW // 2 + 2
+        if not rows:
+            self.blitText(win, "Does nothing yet", self.windowFont, muted, rect.x + self.PAD + 2, y)
+            y += self.ROW
+        right = rect.right - self.PAD
+        for what, now, after in rows:
+            changes = now != after
+            self.blitText(win, what, self.windowFont, font, rect.x + self.PAD + 2, y)
+            self.blitText(win, after, self.windowFont, self.BETTER if changes else muted, right, y, align="right")
+            self.blitText(win, "->", self.windowFont, muted, right - afterW - colGap, y, align="right")
+            self.blitText(win, now, self.windowFont, muted, right - afterW - colGap - arrowW - colGap, y, align="right")
+            y += self.ROW
+        if preview.get("note"):
+            self.blitText(win, preview["note"], self.windowSmallFont, muted, rect.x + self.PAD + 2, y)
 
     def drawItemDetail(self, win, lines, area):
         """The inventory's details panel: the selected item's slot, bonuses, effects and how it compares."""
