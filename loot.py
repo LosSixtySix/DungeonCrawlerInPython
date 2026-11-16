@@ -13,22 +13,62 @@ nothing, one thing, or several. "gold" means gold coins (player.gold), not a pou
 "relic:<id>" is a relic item (see relics.py).
 """
 
-# Keyed by wall.name
+# Keyed by wall.name: the material each wall gives. Every wall rolls its amount from WALL_AMOUNTS.
 WALL_LOOT = {
-    "Wood Wall": [("wood", 100, (1, 2))],
-    "Stone Wall": [("stone", 100, (1, 1))],
-    "Sand Wall": [("sand", 100, (1, 2))],
-    "Gold Wall": [("gold", 100, (1, 1))],
-    "Coal Vein": [("coal", 100, (2, 3))],
-    "Copper Vein": [("copper_ore", 100, (1, 2))],
-    "Iron Vein": [("iron_ore", 100, (1, 2))],
-    "Silver Vein": [("silver_ore", 100, (1, 1))],
-    "Jade Vein": [("rough_jade", 100, (1, 1))],
-    "Peridot Vein": [("rough_peridot", 100, (1, 1))],
-    "Rose Quartz Vein": [("rough_rose_quartz", 100, (1, 1))],
-    "Ruby Vein": [("rough_ruby", 100, (1, 1))],
-    "Amethyst Vein": [("rough_amethyst", 100, (1, 1))],
+    "Wood Wall": "wood",
+    "Stone Wall": "stone",
+    "Sand Wall": "sand",
+    "Gold Wall": "gold",
+    "Coal Vein": "coal",
+    "Copper Vein": "copper_ore",
+    "Iron Vein": "iron_ore",
+    "Silver Vein": "silver_ore",
+    "Jade Vein": "rough_jade",
+    "Peridot Vein": "rough_peridot",
+    "Rose Quartz Vein": "rough_rose_quartz",
+    "Ruby Vein": "rough_ruby",
+    "Amethyst Vein": "rough_amethyst",
 }
+
+# A broken wall gives 0, 1 or 2 of its material, at these percent chances (with 1 Wisdom). Ore and gem veins
+# give one more: 1, 2 or 3 at the same chances.
+WALL_AMOUNTS = (80, 15, 5)
+WISDOM_LUCK = 5         # each Wisdom point above 1 takes this many percent off getting nothing...
+LEAST_NOTHING = 20      # ...down to this. What's taken off goes to 1 and 2 in their 15:5 ratio.
+
+
+def isVein(source):
+    return source.endswith(" Vein")
+
+
+FIXED_WALLS = {"Gold Wall": 1}  # walls that always give exactly this many, whatever the roll
+
+
+def wallRange(source):
+    """(fewest, most) a wall can give: 0-2, 1-3 for an ore or gem vein, or a fixed amount (FIXED_WALLS)."""
+    if source in FIXED_WALLS:
+        return (FIXED_WALLS[source], FIXED_WALLS[source])
+    return (1, 3) if isVein(source) else (0, 2)
+
+
+def wallOdds(wisdom):
+    """Percent chances of a broken wall giving its least, middle and most amount for this much Wisdom."""
+    nothing, one, two = WALL_AMOUNTS
+    less = min(nothing - LEAST_NOTHING, max(0, wisdom - 1) * WISDOM_LUCK)
+    return (nothing - less, one + less * one / (one + two), two + less * two / (one + two))
+
+
+def rollWall(source, wisdom):
+    """[(material id, amount)] from breaking this wall: empty for nothing."""
+    materialId = WALL_LOOT.get(source)
+    if materialId is None:
+        return []
+    if source in FIXED_WALLS:
+        return [(materialId, FIXED_WALLS[source])]
+    least, middle, _ = wallOdds(wisdom)
+    r = random.random() * 100
+    amount = wallRange(source)[0] + (0 if r < least else 1 if r < least + middle else 2)
+    return [(materialId, amount)] if amount else []
 
 # Keyed by enemy.name (as spelled in enemies.py)
 ENEMY_LOOT = {

@@ -1114,8 +1114,10 @@ class gameManager():
                 self.addUnsealed = True
         broken = tile.pop()
         tile[0] = 0
-        drops = loot.roll(loot.WALL_LOOT, name)
         player = self.player
+        drops = loot.rollWall(name, player.attributes["wisdom"])
+        if isinstance(broken, wall.OreVein) and position in self.rooms["Gold"]:  # a vein in a gold wall: gold too
+            drops += loot.rollWall("Gold Wall", player.attributes["wisdom"])
         if isinstance(broken, wall.OreVein):  # Iron Pick (+1 ore) and Keen Eye (1 in 4 for +1)
             extra = player.countEffect("extra_ore") + sum(1 for _ in range(player.countEffect("keen_eye")) if rand.random() < 0.25)
             drops = [(m, n + extra if m == broken.ore else n) for m, n in drops]
@@ -2332,17 +2334,28 @@ class gameManager():
             found = player.lootFound
             sections = []
             compact = {"title": None, "rows": []}  # sources with one drop: one line each ("Coal Vein   Coal  always x2-3")
-            for source, lines in loot.LOOT_TABS[tab][1].items():
+            table = loot.LOOT_TABS[tab][1]
+            walls = table is loot.WALL_LOOT
+            if walls:  # every wall rolls the same 0-2, better with Wisdom
+                nothing, one, two = loot.wallOdds(player.attributes["wisdom"])
+                sections.append({"title": None, "rows": [], "note":
+                                 f"Walls give x0/x1/x2, ore and gem veins x1/x2/x3: {nothing:g}% / {one:g}% / {two:g}%. "
+                                 "Wisdom raises the odds of more. Gold walls always give 1 "
+                                 "(veins in gold walls too) unless an item changes it."})
+                table = {source: [(materialId, 100, loot.wallRange(source))] for source, materialId in table.items()}
+            for source, lines in table.items():
                 if len(lines) == 1:
                     materialId, chance, (fewest, most) = lines[0]
                     sourceKnown = loot.discoveryKey(source) in found
                     known = loot.discoveryKey(source, materialId) in found
                     amount = f"x{fewest}" if fewest == most else f"x{fewest}-{most}"
                     odds = "always" if chance == 100 else f"{chance}%"
+                    if walls:
+                        odds = ""
                     color = loot.dropColor(materialId)
                     label = loot.displayName(source) if sourceKnown else "???"
                     what = loot.dropName(materialId) if known else "???"
-                    compact["rows"].append((label, f"{what}  {odds}  {amount}", color if known else None))
+                    compact["rows"].append((label, "  ".join(p for p in (what, odds, amount) if p), color if known else None))
                     continue
                 rows = []
                 for materialId, chance, (fewest, most) in lines:

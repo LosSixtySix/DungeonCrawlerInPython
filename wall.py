@@ -70,7 +70,7 @@ class OreVein(Wall):
         self.hp = hp
         self.hardness = hardness
         self.soft = False
-        self.ore = ore                      # material id it gives (see loot.WALL_LOOT for amounts)
+        self.ore = ore                      # material id it gives (see loot.WALL_AMOUNTS for amounts)
         self.oreColor = oreColor
         self.oreHighlight = oreHighlight
 
