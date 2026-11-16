@@ -31,6 +31,7 @@ class PlayerClass():
         self.stationPlaced = {}  # heavy stations that are set up: station id -> (floor, map position)
         self.pouchLimit = resources.POUCH_LIMIT  # how many of each material fit (the Leather Pouch raises it)
         self.wardReady = True    # Warded Chainmail: the first hit on each floor does nothing
+        self.burnTurns = 0       # turns of burning left (fire can set you alight; see gameManager.applyFire)
 
     def levelUp(self,attribute):
         if self.gold >= self.nextLevelGold:
@@ -190,6 +191,10 @@ class PlayerClass():
 
     def takeDamage(self,damage):
         self.damageTaken += damage - self.damageReduction()
+
+    def fireResistance(self):
+        """Fire Resist from gear. Fire ignores Defense; only this takes damage off it."""
+        return self.getequipmentBonus("FireRes")
 
     def damageReduction(self):
         reduction = 0

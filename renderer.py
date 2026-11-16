@@ -169,7 +169,7 @@ class renderer():
     # ------------------------------------------------------------- top level
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
-             lightTime=0.0, lightStyle=None, lightOnly=False, popups=()):
+             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -188,6 +188,8 @@ class renderer():
             self.renderScreen(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
         self.drawAimline(aimLine)
         self.win.blit(self.mapSurface, self.mapOffset)
+        if throws is not None:
+            self.drawThrows(throws)
 
         self.drawPopups(popups)
         if hud is not None:
@@ -762,6 +764,57 @@ class renderer():
             return
         for i in aimLine:
             self.fillTile(self.color("aim"), i % self.rowLength, i // self.rowLength)
+
+    # Thrown potions. Drawn straight onto the window after the map (the window is cleared every frame), so the
+    # see-through tints never pile up on tiles the light-only redraw skips.
+
+    def screenTile(self, position):
+        return pygame.Rect(self.mapOffset[0] + (position % self.rowLength) * self.tileSize,
+                           self.mapOffset[1] + (position // self.rowLength) * self.tileSize, self.tileSize, self.tileSize)
+
+    def tint(self, color, alpha):
+        surface = pygame.Surface((self.tileSize, self.tileSize), pygame.SRCALPHA)
+        surface.fill((*color[:3], alpha))
+        return surface
+
+    def effectColor(self, effect):
+        return self.color("enemy") if effect == "Fire" else self.color("font")
+
+    def drawBlast(self, landing, area, effect, turns, alpha):
+        """A potion's reach: every tile it splashes tinted, the landing tile boxed, and how many turns until it
+        lands written on it ("now" when it lands this turn)."""
+        color = self.effectColor(effect)
+        fill = self.tint(color, alpha)
+        for position in area:
+            rect = self.screenTile(position)
+            self.win.blit(fill, rect)
+            pygame.draw.rect(self.win, color, rect, width=1)
+        rect = self.screenTile(landing)
+        pygame.draw.rect(self.win, color, rect.inflate(2, 2), width=2)
+        label = "now" if turns == 0 else str(turns)
+        shadow = self.popupFont.render(label, True, (0, 0, 0))
+        text = self.popupFont.render(label, True, color)
+        textRect = text.get_rect(midbottom=(rect.centerx, rect.top - 2))
+        self.win.blit(shadow, textRect.move(1, 1))
+        self.win.blit(text, textRect)
+
+    def drawThrows(self, throws):
+        smoke = self.tint(self.color("muted"), 120)
+        puff = self.color("font")
+        for position in throws["smoke"]:
+            rect = self.screenTile(position)
+            self.win.blit(smoke, rect)
+            r = max(1, self.tileSize // 5)
+            for fx, fy in ((0.3, 0.35), (0.7, 0.45), (0.45, 0.72)):
+                pygame.draw.circle(self.win, puff, (rect.x + int(rect.w * fx), rect.y + int(rect.h * fy)), r, width=1)
+        for shot in throws["flying"]:
+            self.drawBlast(shot["landing"], shot["area"], shot["effect"], shot["turns"], 40)
+            rect = self.screenTile(shot["at"])  # the potion itself, partway along its arc
+            pygame.draw.circle(self.win, (0, 0, 0), rect.center, max(2, self.tileSize // 4) + 1)
+            pygame.draw.circle(self.win, self.effectColor(shot["effect"]), rect.center, max(2, self.tileSize // 4))
+        aim = throws["aim"]
+        if aim is not None:
+            self.drawBlast(aim["landing"], aim["area"], aim["effect"], aim["turns"], 70)
 
     def fillTile(self, color, x, y):
         pygame.draw.rect(self.mapSurface, color, pygame.Rect(x * self.tileSize, y * self.tileSize, self.tileSize, self.tileSize))

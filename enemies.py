@@ -43,6 +43,7 @@ class Unsealed(Enemy):
     def __init__(self):
         super().__init__(10, 3, 2, 3, 3, "Unsealed", 25)
         self.allSight = True
+        self.fireResistPercent = 0.8  # fire barely touches it
 
 lowerFloorEnemies = [Goblin,GoblinChief,DireRat,DireMole]
 

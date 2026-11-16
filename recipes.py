@@ -221,6 +221,9 @@ RECIPES = [
            makeItem=gear("Health", "Rose Quartz Amulet", "Neck", None)),
     Recipe("sight_amulet", "Amulet of Sight", "jeweler", 4, {"silver_ingot": 1, "glass": 1, "cut_peridot": 1}, "item",
            "A peridot lens set in silver.", "Neck  Vision +1", bonus=1, makeItem=gear("Light", "Amulet of Sight", "Neck", None)),
+    Recipe("ember_amulet", "Ember Ward Amulet", "jeweler", 4, {"silver_ingot": 1, "cut_ruby": 1, "emberroot": 2}, "item",
+           "Emberroot ash sealed behind a ruby. Fire slides off you.", "Neck  Fire Resist +3", bonus=3,
+           makeItem=gear("FireRes", "Ember Ward Amulet", "Neck", None)),
     Recipe("gilded_amulet", "Gilded Amulet", "jeweler", 5, {"silver_ingot": 1, "cut_ruby": 1, "gold": 60}, "item",
            "Warm to the touch.", "Neck  Health +6", bonus=6, enchants=["regen"], makeItem=gear("Health", "Gilded Amulet", "Neck", None)),
     Recipe("void_amulet", "Void Amulet", "jeweler", 6, {"void_shard": 3, "cut_amethyst": 2, "gold": 80}, "item",
@@ -241,7 +244,7 @@ RECIPES = [
            "Glowcaps lean toward the way down.", "Shows the way to the next floor", makeItem=potion("Potion Of Door", "DoorLocate")),
 
     Recipe("smoke_bomb", "Smoke Bomb", "alchemist", 3, {"glass": 1, "shadowfern": 2, "coal": 1}, "potion",
-           "Burning fern and a lot of smoke.", f"Hides you for {SMOKE_TURNS} turns", makeItem=potion("Smoke Bomb", "Smoke", SMOKE_TURNS)),
+           "Burning fern and a lot of smoke.", f"Thrown: a smoke cloud for {SMOKE_TURNS} turns", makeItem=potion("Smoke Bomb", "Smoke", SMOKE_TURNS)),
 
     # ---- Cauldron (has to be set up; stronger brews)
     Recipe("healing", "Healing Potion", "cauldron", 2, {"glass": 1, "bloodcap": 1, "hearthmoss": 1, "coal": 1}, "potion",
@@ -252,7 +255,7 @@ RECIPES = [
            "Two caps go further in a big pot.", "2 potions that show the way down", amount=2,
            makeItem=potion("Potion Of Door", "DoorLocate")),
     Recipe("fire_flask", "Fire Flask", "cauldron", 3, {"glass": 1, "emberroot": 2, "coal": 1}, "potion",
-           "Throw it and everything in your light burns.", f"{FIRE_FLASK_DAMAGE} damage to every enemy in your light",
+           "Throw it and everything it splashes burns.", f"Thrown: {FIRE_FLASK_DAMAGE} damage to everything where it lands",
            makeItem=potion("Fire Flask", "Fire", FIRE_FLASK_DAMAGE)),
 ]
 

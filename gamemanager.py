@@ -77,6 +77,13 @@ INVENTORY_COLUMNS = 5
 EQUIP_TURNS = 1         # turns to put one item on or take one off (a swap is both)
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
 CRAFT_MORE = 5       # Shift+Enter crafts up to this many in a row
+THROWN_EFFECTS = {"Fire", "Smoke"}  # potions you aim and throw instead of drinking
+THROW_RANGE = 8      # how far (in tiles) a potion can be thrown
+FLIGHT_TURNS = [(3, 0), (6, 1), (THROW_RANGE, 2)]  # (up to this distance, turns in the air): close throws land at once
+BLAST_RADIUS = {"Fire": 1, "Smoke": 2}  # tiles around the landing spot a thrown potion reaches
+BURN_CHANCE = 0.5    # chance fire damage sets the target burning
+BURN_TURNS = 3       # how long burning lasts
+BURN_DAMAGE = 1      # fire damage burning deals each turn (Fire Resist takes off it like any fire)
 
 
 class gameManager():
@@ -190,7 +197,10 @@ class gameManager():
         self.colorIndex = 0
 
         self.swap = None  # an equipment swap waiting for Enter (see startSwap)
-        self.smokeTurns = 0  # a Smoke Bomb hides you while this is above 0
+        self.smoke = {}       # thrown Smoke Bomb clouds: {map position: turns left}
+        self.throwing = None  # inventory index of the potion being aimed, or None
+        self.throwArea = None # tiles the aimed potion would reach where it lands
+        self.inFlight = []    # thrown potions still in the air: {"effect", "power", "path", "landing", "turns", "flight"}
         self.currentPosition = "Floor"
         self.currentAimSpot = None
         self.aimLine = None
@@ -281,6 +291,8 @@ class gameManager():
             if key == pygame.K_ESCAPE:
                 self.stopCrafting(f"Stopped making {self.crafting['recipe'].name}")
             return
+        if self.throwing is not None:  # aiming a throw: arrows move the target, Enter throws, Esc puts it away
+            return self.onThrowKey(key)
 
         if key == pygame.K_ESCAPE:
             return self.onEscape()
@@ -318,7 +330,7 @@ class gameManager():
                 self.cycleFocus(1)
                 self.change = True
             self.cycleHeld = False
-        if self.isAction(event.key, "aim"):
+        if self.isAction(event.key, "aim") and self.throwing is None:
             self.currentAimSpot = None
             self.aimLine = None
             self.change = True
@@ -489,7 +501,9 @@ class gameManager():
         if windowId == "inventory":
             if index < len(self.player.inventory):
                 item = self.player.inventory[index]
-                if item.Etype == "Consume":
+                if item.Etype == "Consume" and item.effect in THROWN_EFFECTS:
+                    self.startThrow(index)
+                elif item.Etype == "Consume":
                     self.useConsumable(index)
                 elif self.player.slotsFor(item) and self.player.freeSlotFor(item) is None:
                     self.startSwap(index)
@@ -1239,6 +1253,9 @@ class gameManager():
         self.player.wardReady = True
         self.goldWallCount = 0
         self.addUnsealed = False
+        self.player.burnTurns = 0  # the stairs put you out
+        self.smoke = {}      # smoke and potions in the air stay behind on the floor you left
+        self.inFlight = []
         self.closeWindow("items")
         self.picker = {"ChangingColor": False, "ColorSelected": False}
         self.messageBools["floorLevelMessage"] = True
@@ -1270,7 +1287,7 @@ class gameManager():
         elif self.currentLocation[0] == 8:
             self.currentPosition = self.currentLocation[2].name + (" (hidden)" if self.playerHidden() else "")
         else:
-            self.currentPosition = "Hidden in smoke" if self.smokeTurns > 0 else "Floor"
+            self.currentPosition = "Hidden in smoke" if self.playerPositionFlat in self.smoke else "Floor"
 
         if self.grid[currentDoorPos][0] != 1:
             self.grid[currentDoorPos][0] = 4
@@ -1465,6 +1482,7 @@ class gameManager():
         positions = set()
         h = position % self.rowLength
         k = position // self.rowLength
+        smoke = self.smoke if selfNum == 5 and not tremorSense else {}  # smoke blinds enemies (tremor sense feels through it)
         t = 0
         while t < 2 * math.pi:
             ray = []
@@ -1477,6 +1495,8 @@ class gameManager():
                 if flat not in self.grid:
                     continue
                 positions.add(flat)
+                if flat in smoke:
+                    break  # an enemy sees into smoke but not through it (and sees nothing from inside it)
                 tile = self.grid[flat]
                 seeThrough = tile[0] == 0 or (tile[0] == 8 and not tile[2].blocksSight)
                 if not (seeThrough or tile[0] == selfNum or tremorSense):
@@ -1535,38 +1555,240 @@ class gameManager():
 
     def playerHidden(self):
         """Hidden from enemies: standing in a plant you can hide in, or in a Smoke Bomb's smoke."""
-        if self.smokeTurns > 0:
+        if self.playerPositionFlat in self.smoke:
             return True
         here = self.currentLocation
         return here[0] == 8 and len(here) > 2 and here[2].hides
 
     def useConsumable(self, index):
-        """Drinks or throws a potion from the inventory."""
-        item = self.player.inventory[index]
-        if item.effect == "Smoke":
-            self.player.inventory.pop(index)
-            self.smokeTurns = item.bonus
-            for position in self.EnemyPositions:  # everyone loses track of you
-                if len(self.grid[position]) > 2:
-                    self.grid[position][2].lastPlayerPosition = None
-            self.addPopup("Hidden in smoke", self.playerPositionFlat)
-            self.change = True
-            return
-        if item.effect == "Fire":
-            self.player.inventory.pop(index)
-            hit = self.burnEnemiesInLight(item.bonus)
-            if not hit:
-                self.addPopup("Nothing burns", self.playerPositionFlat)
-            self.change = True
-            return
+        """Drinks a potion from the inventory (thrown ones go through startThrow instead)."""
         self.player.useConsumable(index)
+
+    # ---------------------------------------------------------------- throwing
+    # Enter on a Fire Flask or Smoke Bomb starts aiming: the aim line runs from you to where it will land and the
+    # landing spot's reach is outlined. Arrows move the target, Enter throws (one turn), Esc puts it away.
+    # Far throws stay in the air for a turn or two (FLIGHT_TURNS) before they land, so you have to lead a target.
+
+    def startThrow(self, index):
+        self.throwing = index
+        look = self.PlayerLookPosition
+        self.currentAimSpot = look if look in self.grid else self.playerPositionFlat
+        self.refreshThrowAim()
+        self.addPopup("Aim, Enter to throw", self.playerPositionFlat)
+
+    def cancelThrow(self):
+        self.throwing = None
+        self.throwArea = None
+        self.currentAimSpot = None
+        self.aimLine = None
+        self.change = True
+
+    def onThrowKey(self, key):
+        if key == pygame.K_ESCAPE:
+            return self.cancelThrow()
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            return self.throw()
+        move = self.direction(key)
+        if move is None:
+            return
+        x, y = self.currentAimSpot % self.rowLength + move[0], self.currentAimSpot // self.rowLength + move[1]
+        px, py = self.playerPositionFlat % self.rowLength, self.playerPositionFlat // self.rowLength
+        target = x + y * self.rowLength
+        if 0 <= x < self.rowLength and target in self.grid and math.hypot(x - px, y - py) <= THROW_RANGE:
+            self.currentAimSpot = target
+            self.refreshThrowAim()
+
+    def linePoints(self, start, target):
+        """The tiles on a straight line from start to target, in order, not counting start (Bresenham)."""
+        x0, y0 = start % self.rowLength, start // self.rowLength
+        x1, y1 = target % self.rowLength, target // self.rowLength
+        dx, dy = abs(x1 - x0), -abs(y1 - y0)
+        sx, sy = (1 if x1 > x0 else -1), (1 if y1 > y0 else -1)
+        err = dx + dy
+        points = []
+        while (x0, y0) != (x1, y1):
+            e2 = 2 * err
+            if e2 >= dy:
+                err += dy
+                x0 += sx
+            if e2 <= dx:
+                err += dx
+                y0 += sy
+            points.append((x0, y0))
+        return points
+
+    def blocksThrow(self, position):
+        """Walls, stations and plants you can't see through stop a thrown potion."""
+        tile = self.grid.get(position)
+        return tile is None or tile[0] in (2, 7) or (tile[0] == 8 and tile[2].blocksSight)
+
+    def throwPath(self, target):
+        """(the tiles the potion flies over, where it lands). It stops short of anything that blocks it and lands
+        on the first enemy it reaches. The landing spot is None when there's no room to throw at all."""
+        path = []
+        for x, y in self.linePoints(self.playerPositionFlat, target):
+            position = x + y * self.rowLength
+            if not 0 <= x < self.rowLength or self.blocksThrow(position):
+                break
+            path.append(position)
+            if self.grid[position][0] == 5:
+                break
+        return path, (path[-1] if path else None)
+
+    def blastArea(self, center, radius):
+        """The tiles within radius of center that a splash can reach (walls stop it)."""
+        cx, cy = center % self.rowLength, center // self.rowLength
+        area = []
+        for y in range(cy - radius, cy + radius + 1):
+            for x in range(cx - radius, cx + radius + 1):
+                position = x + y * self.rowLength
+                if not 0 <= x < self.rowLength or (x - cx) ** 2 + (y - cy) ** 2 > radius * radius + radius:
+                    continue
+                if self.blocksThrow(position):
+                    continue
+                if all(not self.blocksThrow(px + py * self.rowLength) for px, py in self.linePoints(center, position)):
+                    area.append(position)
+        return area
+
+    def flightTurns(self, landing):
+        px, py = self.playerPositionFlat % self.rowLength, self.playerPositionFlat // self.rowLength
+        distance = math.hypot(landing % self.rowLength - px, landing // self.rowLength - py)
+        return next((turns for reach, turns in FLIGHT_TURNS if distance <= reach), FLIGHT_TURNS[-1][1])
+
+    def refreshThrowAim(self):
+        item = self.player.inventory[self.throwing]
+        path, landing = self.throwPath(self.currentAimSpot)
+        self.aimLine = set(path[:-1])  # the landing tile is outlined instead, so you can still see what's on it
+        self.throwArea = (landing, self.blastArea(landing, BLAST_RADIUS[item.effect]), self.flightTurns(landing)) if landing else None
+        self.change = True
+
+    def throw(self):
+        path, landing = self.throwPath(self.currentAimSpot)
+        if landing is None:
+            self.addPopup("No room to throw", self.playerPositionFlat)
+            return
+        item = self.player.inventory.pop(self.throwing)
+        self.cancelThrow()
+        turns = self.flightTurns(landing)
+        shot = {"effect": item.effect, "power": item.bonus, "path": path, "landing": landing, "turns": turns, "flight": turns}
+        if turns == 0:
+            self.land(shot)
+        else:
+            self.inFlight.append(shot)
+        self.enemyMove = True  # throwing takes your turn
+
+    def land(self, shot):
+        """A thrown potion hits the ground. The splash is worked out now, so enemies that moved in are caught."""
+        landing = shot["landing"]
+        area = self.blastArea(landing, BLAST_RADIUS[shot["effect"]])
+        if shot["effect"] == "Fire":
+            hit = 0
+            for position in area:
+                tile = self.grid[position]
+                if tile[0] == 5 and len(tile) > 2:
+                    hit += 1
+                    self.fireEnemy(position, shot["power"])
+            if self.playerPositionFlat in area:  # too close: you burn too
+                hit += 1
+                self.firePlayer(shot["power"])
+            if not hit:
+                self.addPopup("Nothing burns", landing)
+        else:
+            for position in area:
+                self.smoke[position] = max(self.smoke.get(position, 0), shot["power"])
+                tile = self.grid[position]
+                if tile[0] == 5 and len(tile) > 2:
+                    tile[2].lastPlayerPosition = None  # caught in the smoke: it loses track of you
+            self.addPopup("Smoke", landing)
+        self.change = True
+
+    # ------------------------------------------------------------------- fire
+    # Fire ignores Defense: only Fire Resist (gear) takes damage off it. Fire that gets through has a
+    # BURN_CHANCE chance to set the target burning for BURN_TURNS turns, BURN_DAMAGE fire damage a turn.
+
+    def firePlayer(self, damage, canIgnite=True):
+        player = self.player
+        dealt = max(0, damage - player.fireResistance())
+        if dealt == 0:
+            self.addPopup("Resisted", self.playerPositionFlat)
+            return
+        player.damageTaken += dealt
+        self.addPopup(f"-{dealt} HP", self.playerPositionFlat)
+        if canIgnite and BURN_DAMAGE > player.fireResistance() and rand.random() < BURN_CHANCE:
+            player.burnTurns = BURN_TURNS
+            self.addPopup("Burning!", self.playerPositionFlat)
+
+    def enemyFireDamage(self, enemy, damage):
+        """Fire damage after an enemy's resistance: flat fireResistance first, then fireResistPercent (0-1)."""
+        dealt = max(0, damage - getattr(enemy, "fireResistance", 0))
+        return round(dealt * (1 - getattr(enemy, "fireResistPercent", 0)))
+
+    def fireEnemy(self, position, damage, canIgnite=True):
+        enemy = self.grid[position][2]
+        dealt = self.enemyFireDamage(enemy, damage)
+        if dealt == 0:
+            self.addPopup("Resisted", position)
+            return
+        enemy.hp -= dealt
+        if enemy.hp <= 0:
+            self.killEnemy(position)
+            return
+        self.addPopup(f"-{dealt}", position)
+        if canIgnite and self.enemyFireDamage(enemy, BURN_DAMAGE) > 0 and rand.random() < BURN_CHANCE:
+            enemy.burnTurns = BURN_TURNS  # (no point setting alight something its burn can't hurt)
+            self.addPopup("Burning!", position)
+
+    def stepBurning(self):
+        """Everything on fire takes its burn damage and burns a turn shorter."""
+        for position in list(self.EnemyPositions):
+            tile = self.grid.get(position)
+            if not tile or tile[0] != 5 or len(tile) < 3 or getattr(tile[2], "burnTurns", 0) <= 0:
+                continue
+            tile[2].burnTurns -= 1
+            self.fireEnemy(position, BURN_DAMAGE, canIgnite=False)
+        player = self.player
+        if getattr(player, "burnTurns", 0) > 0:
+            player.burnTurns -= 1
+            self.firePlayer(BURN_DAMAGE, canIgnite=False)
+
+    def stepThrows(self):
+        """Potions in the air get one turn closer to landing."""
+        landed = [shot for shot in self.inFlight if shot["turns"] <= 1]
+        self.inFlight = [shot for shot in self.inFlight if shot["turns"] > 1]
+        for shot in self.inFlight:
+            shot["turns"] -= 1
+        for shot in landed:
+            self.land(shot)
+
+    def stepSmoke(self):
+        for position in list(self.smoke):
+            self.smoke[position] -= 1
+            if self.smoke[position] <= 0:
+                del self.smoke[position]
+
+    def throwView(self):
+        """What the renderer needs to show aiming and potions in the air."""
+        flying = []
+        for shot in self.inFlight:
+            path = shot["path"]
+            progress = (shot["flight"] - shot["turns"] + 1) / (shot["flight"] + 1)
+            flying.append({"landing": shot["landing"], "turns": shot["turns"], "effect": shot["effect"],
+                           "area": self.blastArea(shot["landing"], BLAST_RADIUS[shot["effect"]]),
+                           "at": path[min(len(path) - 1, int(len(path) * progress))]})
+        aim = None
+        if self.throwArea is not None:
+            landing, area, turns = self.throwArea
+            aim = {"landing": landing, "area": area, "turns": turns, "effect": self.player.inventory[self.throwing].effect}
+        smoke = [p for p in self.smoke if self.grid[p][1] == 1]
+        return {"aim": aim, "flying": flying, "smoke": smoke}
 
     def enemyTurn(self):
         self.turnCount += 1
         self.MoveEnemies()
         self.searingLight()
-        if self.smokeTurns > 0:
-            self.smokeTurns -= 1
+        self.stepBurning()
+        self.stepSmoke()
+        self.stepThrows()
         if self.turnCount % plants.GROW_TURNS == 0:
             changed = plants.step(self.grid, self.rooms, self.rowLength)
             changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
@@ -1833,7 +2055,9 @@ class gameManager():
         if tile[0] == 7:
             station = tile[2]
             return f"{station.name} ({station.hp}/{station.maxHp})" if station.claimed else f"{station.name} (unclaimed)"
-        return {0: "Floor", 3: "Chest", 4: "Door Down", 5: "Enemy", 6: "Door Up"}.get(tile[0], "Floor")
+        if tile[0] == 5 and len(tile) > 2:
+            return tile[2].name + (" (burning)" if getattr(tile[2], "burnTurns", 0) > 0 else "")
+        return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up"}.get(tile[0], "Floor")
 
     def windowSpec(self, windowId):
         """Everything the renderer needs to draw one window."""
@@ -1845,7 +2069,9 @@ class gameManager():
         if windowId == "character":
             minDamage, maxDamage = player.getMinMaxDamage()
             spec["rows"] = [("Health", f"{player.getCurrentHealth()} / {player.getMaxHealth()}"),
-                            ("AC", player.damageReduction()), ("Gold", player.gold),
+                            ("AC", player.damageReduction()), ("Fire Resist", player.fireResistance()),
+                            ("Status", f"Burning ({player.burnTurns})" if getattr(player, "burnTurns", 0) > 0 else "Fine"),
+                            ("Gold", player.gold),
                             ("Facing", self.getDirectionName()), ("Wall Damage", player.getWallDamage()),
                             ("Damage", f"{minDamage} - {maxDamage}"), ("Vision", player.getVisionRange()),
                             ("Effects", ", ".join(relics.effectName(t) for t in player.effects()) or "None")]
@@ -1919,7 +2145,8 @@ class gameManager():
                 [("muted", "Empty slot", "")]
         return spec
 
-    STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health"}
+    STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health",
+                  "FireRes": "Fire Resist"}
 
     def statLines(self, item):
         """[(stat name, bonus)] for a piece of gear."""
@@ -1939,10 +2166,10 @@ class gameManager():
             bonus = player.attributeBonuses.get(item.attributeScaling, 0)
             effect = {"Heal": f"Heals {item.bonus}" + (f" (+{bonus} from WIS)" if bonus else ""),
                       "DoorLocate": "Shows the way to the next floor",
-                      "Fire": f"{item.bonus} damage to every enemy in your light",
-                      "Smoke": f"Hides you for {item.bonus} turns"}.get(item.effect, item.effect)
+                      "Fire": f"Thrown: {item.bonus} damage to everything where it lands, you included",
+                      "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Enemies can't see into it"}.get(item.effect, item.effect)
             lines.append(("body", effect, ""))
-            lines.append(("hint", "Enter  use", ""))
+            lines.append(("hint", "Enter  aim and throw" if item.effect in THROWN_EFFECTS else "Enter  use", ""))
             return lines
         lines.append(("label", (item.slot or "").upper(), getattr(item, "quality", "")))
         scaling = player.attributeBonuses.get(item.attributeScaling, 0)
@@ -2030,7 +2257,7 @@ class gameManager():
 
         messageFinished, self.windowRects = self.painter.draw(
             grid=self.grid, rooms=self.rooms, player=self.player, playerPosition=self.playerPositionFlat,
-            aimLine=self.aimLine, hud=hud,
+            aimLine=self.aimLine, throws=self.throwView(), hud=hud,
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly,
