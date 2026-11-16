@@ -15,6 +15,7 @@ import loot
 import resources
 import recipes
 import relics
+import plants
 from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES
 from renderer import renderer as rend, SWAY_FPS
 import pickle
@@ -73,6 +74,7 @@ HOTKEYS_PER_COLUMN = 9
 POPUP_SECONDS = 1.2  # how long a "+2 Wood" popup takes to rise and fade
 POPUP_GAP = 450      # ms between two different popups on the same tile, so they don't draw over each other
 INVENTORY_COLUMNS = 5
+EQUIP_TURNS = 1         # turns to put one item on or take one off (a swap is both)
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
 CRAFT_MORE = 5       # Shift+Enter crafts up to this many in a row
 
@@ -187,6 +189,8 @@ class gameManager():
         self.selectedColor = "fog"
         self.colorIndex = 0
 
+        self.swap = None  # an equipment swap waiting for Enter (see startSwap)
+        self.smokeTurns = 0  # a Smoke Bomb hides you while this is above 0
         self.currentPosition = "Floor"
         self.currentAimSpot = None
         self.aimLine = None
@@ -322,6 +326,8 @@ class gameManager():
     def onEscape(self):
         if self.pickerActive():
             self.picker = {"ChangingColor": False, "ColorSelected": False}
+        elif self.swapActive():
+            self.cancelSwap()
         elif self.focus in self.openWindows:
             self.closeWindow(self.focus)
         else:
@@ -467,6 +473,13 @@ class gameManager():
             if 0 <= index < self.player.inventoryLimit:
                 self.windowSel["inventory"] = index
             return
+        if windowId == "equipment" and self.swapActive():
+            keys = list(self.player.equipment.keys())
+            slots = self.swap["slots"]
+            current = keys[self.windowSel["equipment"]]
+            at = slots.index(current) if current in slots else 0
+            self.windowSel["equipment"] = keys.index(slots[max(0, min(len(slots) - 1, at + dy))])
+            return
         count = {"equipment": len(self.player.equipment), "levelup": len(self.player.attributes),
                  "items": len(self.roomItems) if self.roomItems else 0}[windowId]
         self.windowSel[windowId] = max(0, min(count - 1, self.windowSel[windowId] + dy))
@@ -475,18 +488,67 @@ class gameManager():
         index = self.windowSel[windowId]
         if windowId == "inventory":
             if index < len(self.player.inventory):
-                if self.player.inventory[index].Etype == "Consume":
-                    self.player.useConsumable(index)
+                item = self.player.inventory[index]
+                if item.Etype == "Consume":
+                    self.useConsumable(index)
+                elif self.player.slotsFor(item) and self.player.freeSlotFor(item) is None:
+                    self.startSwap(index)
                 else:
+                    before = len(self.player.inventory)
                     self.player.equipItem(index)
+                    if len(self.player.inventory) < before:
+                        self.spendTurns(EQUIP_TURNS)
         elif windowId == "equipment":
-            self.player.unEquipItem(list(self.player.equipment.keys())[index])
+            slot = list(self.player.equipment.keys())[index]
+            if self.swapActive():
+                if slot in self.swap["slots"]:
+                    self.player.swapEquip(self.swap["index"], slot)
+                    self.spendTurns(2 * EQUIP_TURNS)  # taking one off and putting one on
+                    self.swap = None
+                    self.focus = "inventory" if "inventory" in self.openWindows else "equipment"
+            elif self.player.equipment[slot] != "None":
+                if self.player.unEquipItem(slot):
+                    self.spendTurns(EQUIP_TURNS)
+                else:
+                    self.addPopup("Inventory full", self.playerPositionFlat)
         elif windowId == "levelup":
             self.player.levelUp(list(self.player.attributes.keys())[index])
         elif windowId == "items":
             self.onPickUpItem()
         elif windowId == "crafting":
             self.startCrafting(1)
+
+    # --------------------------------------------------------- equipment swap
+    # Equipping with every fitting slot full opens the Equipment window on that slot; Enter swaps the item in
+    # (the old one takes its place in the inventory), Esc cancels. Arrows only move between the slots it fits.
+
+    def spendTurns(self, turns):
+        """Equipping, unequipping and swapping take turns: the enemies move once for each."""
+        for _ in range(turns):
+            self.enemyTurn()
+        self.change = True
+
+    def startSwap(self, inventoryIndex):
+        item = self.player.inventory[inventoryIndex]
+        slots = self.player.slotsFor(item)
+        self.swap = {"index": inventoryIndex, "item": item, "slots": slots}
+        self.openWindow("equipment")
+        self.windowSel["equipment"] = list(self.player.equipment.keys()).index(slots[0])
+
+    def swapActive(self):
+        """True while a swap is waiting. It's dropped if the Equipment window lost focus or the item moved."""
+        swap = self.swap
+        if swap is None:
+            return False
+        inventory = self.player.inventory
+        if self.focus != "equipment" or swap["index"] >= len(inventory) or inventory[swap["index"]] is not swap["item"]:
+            self.swap = None
+            return False
+        return True
+
+    def cancelSwap(self):
+        self.swap = None
+        self.focus = "inventory" if "inventory" in self.openWindows else "map"
 
     # -------------------------------------------------------------- crafting
 
@@ -575,6 +637,15 @@ class gameManager():
             return "not enough materials"
         if recipe.kind == "item" and len(player.inventory) >= player.inventoryLimit:
             return "inventory is full"
+        if recipe.kind == "plant":
+            look = self.PlayerLookPosition
+            if look not in self.grid or self.grid[look][0] != 0:
+                return "face an empty floor tile"
+            floors = plants.PLANTS[recipe.makes]["floors"]
+            if plants.floorOf(look, self.rooms) not in floors:
+                return f"it only grows on {floors[0]} or {floors[1]} floors"
+        if recipe.kind == "potion" and len(player.inventory) + recipe.amount > player.inventoryLimit:
+            return "not enough room in your inventory"
         return None
 
     def craftableCount(self, recipe):
@@ -591,7 +662,7 @@ class gameManager():
         if problem:
             self.craftMessage = f"Can't: {problem}"
             return
-        if recipe.kind not in ("material", "item"):
+        if recipe.kind not in ("material", "item", "potion"):
             times = 1
         self.crafting = {"recipe": recipe, "times": times, "done": 0, "turn": 0,
                          "next": pygame.time.get_ticks() + CRAFT_TURN_MS}
@@ -671,6 +742,20 @@ class gameManager():
             if rand.random() < 0.5:
                 player.addMaterial("void_shard", 1)
                 message += ", +1 Void Shard"
+        elif kind == "plant":
+            look = self.PlayerLookPosition
+            self.grid[look] = [8, self.grid[look][1], plants.Plant(recipe.makes, planted=True)]
+            popup = f"Planted {plants.PLANTS[recipe.makes]['name']}"
+            message = popup
+            self.craftMessage = message
+            self.addPopup(popup, look)
+            return
+        elif kind == "potion":
+            for _ in range(recipe.amount):
+                player.addItemToInventory(recipe.makeItem(0, 0))
+            name = recipe.makeItem(0, 0).name
+            popup = name if recipe.amount == 1 else f"{recipe.amount} {name}"
+            message = f"{popup} added to your inventory"
         elif kind in ("reforge", "rekindle"):
             relics.givePower(recipe.target, relics.newPower(recipe.target))
             popup = recipe.target.name
@@ -770,10 +855,10 @@ class gameManager():
             if recipe.kind == "item":
                 odds = recipes.qualityOdds(player.attributeBonuses["intelligence"])
                 detail.append(("muted", f"INT {player.attributes['intelligence']}:  " + "  ".join(f"{name} {pct}%" for name, pct in odds), ""))
-            if recipe.kind in ("material", "item"):
+            if recipe.kind in ("material", "item", "potion"):
                 detail.append(("hint", f"Enter  craft      Shift+Enter  up to {CRAFT_MORE}", ""))
             else:
-                detail.append(("hint", "Enter  " + {"setup": "set up", "pack": "pack up"}.get(recipe.kind, "craft"), ""))
+                detail.append(("hint", "Enter  " + {"setup": "set up", "pack": "pack up", "plant": "plant"}.get(recipe.kind, "craft"), ""))
         spec["detail"] = detail
 
         craft = self.crafting
@@ -921,7 +1006,16 @@ class gameManager():
 
     def movePlayer(self, newPosition):
         targetLocation = self.grid[newPosition][0] if newPosition in self.grid else None
-        if targetLocation != 7 and self.player.checkValidMoveLocation(targetLocation):
+        if targetLocation == 8 and self.grid[newPosition][2].walkable:
+            hidden = self.playerHidden()
+            self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
+            self.currentLocation = copy.copy(self.grid[newPosition])
+            self.playerPositionFlat = newPosition
+            self.enemyMove = True
+            if self.playerHidden() and not hidden:
+                self.addPopup("Hidden", newPosition)
+            return
+        if targetLocation not in (7, 8) and self.player.checkValidMoveLocation(targetLocation):  # stations and other plants block
             self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
             self.currentLocation = copy.copy(self.grid[newPosition])
             self.playerPositionFlat = newPosition
@@ -952,6 +1046,7 @@ class gameManager():
                     self.playerPositionFlat = target
         elif tile[0] == 5:  # enemy
             tile[2].hp -= self.player.DealDamage()
+            self.thirst()
             if tile[2].hp <= 0:
                 self.killEnemy(target)
         elif tile[0] == 3:  # items
@@ -959,6 +1054,8 @@ class gameManager():
                 self.openWindow("items")
         elif tile[0] == 7:  # a crafting station
             self.onStationInteract(target)
+        elif tile[0] == 8:  # a plant: harvest it
+            self.harvestPlant(target)
         self.enemyMove = True
 
     # ------------------------------------------------------------------ loot
@@ -984,30 +1081,44 @@ class gameManager():
             drops = [(m, n * 2 if m == "gold" else n) for m, n in drops]
         self.collectDrops(drops, name, position)
 
+    def harvestPlant(self, position):
+        """A plant was picked: its herb (and sometimes a seed) goes straight into the pouch."""
+        name = self.grid[position][2].name
+        self.grid[position] = [0, self.grid[position][1]]
+        self.collectDrops(loot.roll(loot.PLANT_LOOT, name), name, position)
+
     def killEnemy(self, position):
         """An enemy died: it pays its gold, rolls its loot table, and any drops land on its tile as an item pile."""
         tile = self.grid[position]
         enemy = tile.pop()
         player = self.player
-        player.gold += enemy.gold + 3 * player.countEffect("gold_per_kill") + player.countEffect("lucky")
-        if player.hasEffect("lifedrinker") and player.damageTaken > 0:
-            player.damageTaken = max(0, player.damageTaken - 2)
+        gold = enemy.gold + 3 * player.countEffect("gold_per_kill") + player.countEffect("lucky")
+        if gold:
+            self.give("gold", gold, position)
         self.EnemyPositions.discard(position)
         drops = loot.roll(loot.ENEMY_LOOT, enemy.name)
         self.player.lootFound.add(loot.discoveryKey(enemy.name))
-        for materialId, amount in drops:
-            self.player.lootFound.add(loot.discoveryKey(enemy.name, materialId))
-        stacks = [relics.make(dropId[6:]) if loot.isRelicDrop(dropId) else resources.MaterialStack(dropId, amount)
-                  for dropId, amount in drops]
+        # Like breaking a wall, the drops go straight to you with a popup each. Relics (items) and whatever
+        # doesn't fit in a full pouch are left on the enemy's tile instead.
+        stacks = []
+        for dropId, amount in drops:
+            self.player.lootFound.add(loot.discoveryKey(enemy.name, dropId))
+            if loot.isRelicDrop(dropId):
+                relic = relics.make(dropId[6:])
+                stacks.append(relic)
+                self.addPopup(f"{relic.name} dropped!", position)
+            else:
+                left = amount - self.give(dropId, amount, position)
+                if left:
+                    stacks.append(resources.MaterialStack(dropId, left))
         underneath = self.enemyOccupiedItemSpaces.pop(position, None)  # what it was standing on, if anything
-        if underneath is not None and underneath[0] == 3:  # an item pile: the drops join it
+        if underneath is not None and underneath[0] == 3:  # an item pile: anything left over joins it
             underneath[2].extend(stacks)
             underneath[1] = tile[1]
             self.grid[position] = underneath
-        elif underneath is not None:  # a burrower died inside a wall: the wall comes back, drops go to the pouch
+        elif underneath is not None and not stacks:  # a burrower died inside a wall: the wall comes back
             self.grid[position] = underneath
-            self.collectDrops(drops, enemy.name, position, alreadyFound=True)
-        elif stacks:
+        elif stacks:  # (a burrower inside a wall that left something: the wall crumbles so it can be picked up)
             self.grid[position] = [3, tile[1], stacks]
         else:
             self.grid[position] = [0, tile[1]]
@@ -1156,8 +1267,10 @@ class gameManager():
             self.currentPosition = "Door to previous Level"
         elif self.currentLocation[0] == 3:
             self.currentPosition = "Items" if len(self.currentLocation[2]) > 1 else "Item"
+        elif self.currentLocation[0] == 8:
+            self.currentPosition = self.currentLocation[2].name + (" (hidden)" if self.playerHidden() else "")
         else:
-            self.currentPosition = "Floor"
+            self.currentPosition = "Hidden in smoke" if self.smokeTurns > 0 else "Floor"
 
         if self.grid[currentDoorPos][0] != 1:
             self.grid[currentDoorPos][0] = 4
@@ -1195,7 +1308,8 @@ class gameManager():
         grid[self.playerPositionFlat] = [0, 0]
         if addStartingItem:
             grid[self.playerPositionFlat - 1] = [3, 0, [items.startingPick]]
-        rooms, proportion, nodes = self.createRooms(CER.createNodes(grid, self.rowLength, 5))
+        # The first floor is always Mixed, so every starting material (and every herb) is there to find
+        rooms, proportion, nodes = self.createRooms(CER.createNodes(grid, self.rowLength, 5), "Mixed" if depth == 0 else None)
         for room in nodes:
             caveIn = rand.randint(0, 100)
             if caveIn == 0:
@@ -1207,7 +1321,14 @@ class gameManager():
         self.placeRandomItems(grid, items.createRandomStatItems(3), 10, self.playerPositionFlat - 1)
         self.createObjects(grid, rooms)
         self.placeVeins(grid, proportion, depth)
+        if depth == 0:  # at least one Coal and one Copper vein on the first floor
+            for veinClass in (wall.CoalVein, wall.CopperVein):
+                walls = [i for i, tile in grid.items() if tile[0] == 2 and not isinstance(tile[2], wall.OreVein)]
+                if walls and not any(isinstance(tile[2], veinClass) for tile in grid.values() if tile[0] == 2):
+                    self.growVein(grid, rand.choice(walls), veinClass, rand.randint(2, 5))
         self.placeRelicChest(grid, depth, proportion)
+        plants.placeWild(grid, rooms, self.rowLength, self.numberOfSpots, avoid={self.playerPositionFlat, self.playerPositionFlat - 1},
+                         everyKind=depth == 0)
         owned = self.player.stations if hasattr(self, "player") else set()
         if depth >= 5 and "shrine" not in owned and rand.random() < 0.4:
             self.placeVault(grid, "shrine", ListOfEnemyPositions)
@@ -1288,7 +1409,8 @@ class gameManager():
                 grid[i][0] = 5
         return placedPositions
 
-    def createRooms(self, emptyNodes):
+    def createRooms(self, emptyNodes, proportion=None):
+        """proportion picks the floor type; None means a random one."""
         rooms = {"Stone": set(), "Wood": set(), "Sand": set(), "Gold": set()}
 
         nodes = []
@@ -1302,9 +1424,15 @@ class gameManager():
         Mixed = [0, 1, 2, 3]
         randomProportions = {"Mostly Stone": MostlyStone, "Mostly Sand": MostlySand, "Mostly Wood": MostlyWood,
                              "All Gold": Gold, "Mixed": Mixed}
-        proportion = rand.choice(list(randomProportions))
+        if proportion is None:
+            proportion = rand.choice(list(randomProportions))
 
         roomNames = {0: "Stone", 1: "Wood", 2: "Gold", 3: "Sand"}
+        if proportion == "Mixed":  # a Mixed floor always has some of every room type
+            rand.shuffle(emptyNodes)
+            for roomName in ("Stone", "Wood", "Gold", "Sand"):
+                if emptyNodes:
+                    rooms[roomName] = rooms[roomName].union(emptyNodes.pop())
         while len(emptyNodes) > 0:
             node = emptyNodes.pop()
             roomName = roomNames.get(rand.choice(randomProportions[proportion]), "Sand")
@@ -1349,7 +1477,9 @@ class gameManager():
                 if flat not in self.grid:
                     continue
                 positions.add(flat)
-                if not (self.grid[flat][0] == 0 or self.grid[flat][0] == selfNum or tremorSense):
+                tile = self.grid[flat]
+                seeThrough = tile[0] == 0 or (tile[0] == 8 and not tile[2].blocksSight)
+                if not (seeThrough or tile[0] == selfNum or tremorSense):
                     break
             t += .1
         return positions
@@ -1371,9 +1501,77 @@ class gameManager():
 
     # --------------------------------------------------------------- enemies
 
+    def thirst(self):
+        """Hollow Blade: a hit sometimes heals you."""
+        player = self.player
+        if player.hasEffect("lifedrinker") and player.damageTaken > 0 and rand.random() < relics.THIRST_CHANCE:
+            healed = min(relics.THIRST_HEAL, player.damageTaken)
+            player.damageTaken -= healed
+            self.addPopup(f"+{healed} HP", self.playerPositionFlat)
+
+    def enemiesInLight(self):
+        """Enemies in your light: in sight and within your vision range (not just seen through walls)."""
+        if not self.EnemyPositions:
+            return []
+        lit = self.rayCircleVision(self.playerPositionFlat, self.player.getVisionRange(), 1)
+        return [p for p in self.EnemyPositions if p in lit]
+
+    def burnEnemiesInLight(self, damage):
+        """Damages every enemy in your light. Returns how many were hit."""
+        hit = self.enemiesInLight()
+        for position in hit:
+            enemy = self.grid[position][2]
+            enemy.hp -= damage
+            if enemy.hp <= 0:
+                self.killEnemy(position)
+            else:
+                self.addPopup(f"-{damage}", position)
+        return len(hit)
+
+    def searingLight(self):
+        """Lantern of the Deep: every enemy in your light takes damage each turn."""
+        if self.player.hasEffect("searing_light"):
+            self.burnEnemiesInLight(relics.SEARING_DAMAGE)
+
+    def playerHidden(self):
+        """Hidden from enemies: standing in a plant you can hide in, or in a Smoke Bomb's smoke."""
+        if self.smokeTurns > 0:
+            return True
+        here = self.currentLocation
+        return here[0] == 8 and len(here) > 2 and here[2].hides
+
+    def useConsumable(self, index):
+        """Drinks or throws a potion from the inventory."""
+        item = self.player.inventory[index]
+        if item.effect == "Smoke":
+            self.player.inventory.pop(index)
+            self.smokeTurns = item.bonus
+            for position in self.EnemyPositions:  # everyone loses track of you
+                if len(self.grid[position]) > 2:
+                    self.grid[position][2].lastPlayerPosition = None
+            self.addPopup("Hidden in smoke", self.playerPositionFlat)
+            self.change = True
+            return
+        if item.effect == "Fire":
+            self.player.inventory.pop(index)
+            hit = self.burnEnemiesInLight(item.bonus)
+            if not hit:
+                self.addPopup("Nothing burns", self.playerPositionFlat)
+            self.change = True
+            return
+        self.player.useConsumable(index)
+
     def enemyTurn(self):
         self.turnCount += 1
         self.MoveEnemies()
+        self.searingLight()
+        if self.smokeTurns > 0:
+            self.smokeTurns -= 1
+        if self.turnCount % plants.GROW_TURNS == 0:
+            changed = plants.step(self.grid, self.rooms, self.rowLength)
+            changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
+            if changed:
+                self.change = True
         player = self.player
         if player.hasEffect("regen") and self.turnCount % 20 == 0 and player.damageTaken > 0:
             player.damageTaken -= 1  # Gilded Amulet
@@ -1408,6 +1606,13 @@ class gameManager():
                     visiblePositions.add(self.playerPositionFlat)
                 if len(visiblePositions) == 0:
                     break
+                if self.playerPositionFlat in visiblePositions and self.playerHidden() and not currentEnemy.tremorSense \
+                        and self.playerPositionFlat not in self.neighbors(i):
+                    visiblePositions.discard(self.playerPositionFlat)  # hidden: only an enemy right beside you notices
+                    if currentEnemy.lastPlayerPosition == self.playerPositionFlat:
+                        currentEnemy.lastPlayerPosition = None
+                    if not visiblePositions:
+                        break
                 if self.playerPositionFlat in visiblePositions:
                     currentEnemy.lastPlayerPosition = self.playerPositionFlat
                 elif currentEnemy.lastPlayerPosition is None:
@@ -1459,7 +1664,7 @@ class gameManager():
                     elif currentEnemy.lastPlayerPosition == newPosition:
                         currentEnemy.lastPlayerPosition = None
                         moving = True
-                elif tileType == 3:
+                elif tileType == 3 or (tileType == 8 and self.grid[newPosition][2].walkable):
                     self.enemyOccupiedItemSpaces[newPosition] = copy.copy(self.grid[newPosition])
                     self.grid[newPosition] = [0, self.grid[newPosition][1]]
                     movedToNewPosition = True
@@ -1569,12 +1774,48 @@ class gameManager():
                 self.player.pouchLimit = resources.POUCH_LIMIT
             if not hasattr(self.player, "wardReady"):
                 self.player.wardReady = True
+            self.updateOldGems()
+            self.updateOldRelics()
             self.goldWallCount = data["goldwallCount"]
             self.addUnsealed = data["addUnsealed"]
 
             self.LoadLevel(self.level)
             return True
         return False
+
+    def updateOldRelics(self):
+        """Relic powers that were changed: old copies get the new power and an up-to-date description."""
+        found = list(self.player.inventory) + list(self.player.equipment.values())
+        for data in self.levelGrids:
+            if data:
+                found += [item for tile in data[0].values() if tile[0] == 3 and len(tile) > 2 for item in tile[2]]
+        for item in found:
+            power = getattr(item, "relicPower", None)
+            if power is None:
+                continue
+            item.relicPower = relics.RENAMED_POWERS.get(power, power)
+            item.description = relics.describe([item.relicPower] + list(getattr(item, "enchants", [])))
+
+    def updateOldGems(self):
+        """Saves from before the five gem types had one "Gem Vein" and Rough/Cut Gem. They become Amethyst."""
+        rename = {"rough_gem": "rough_amethyst", "cut_gem": "cut_amethyst"}
+        for old, new in rename.items():
+            if old in self.player.materials:
+                self.player.materials[new] = self.player.materials.get(new, 0) + self.player.materials.pop(old)
+        for data in self.levelGrids:
+            if not data:
+                continue
+            grid = data[0]
+            for i, tile in grid.items():
+                obj = tile[2] if len(tile) > 2 else None
+                if tile[0] == 2 and getattr(obj, "ore", None) == "rough_gem":
+                    vein = wall.AmethystVein()
+                    vein.hp, vein.brokenPoints = obj.hp, obj.brokenPoints
+                    tile[2] = vein
+                elif tile[0] == 3 and isinstance(obj, list):
+                    for item in obj:
+                        if getattr(item, "materialId", None) in rename:
+                            item.materialId = rename[item.materialId]
 
     # ----------------------------------------------------------------- drawing
 
@@ -1587,6 +1828,8 @@ class gameManager():
             return "Nothing"
         if tile[0] == 2:
             return tile[2].name
+        if tile[0] == 8:
+            return tile[2].name + (" (yours)" if tile[2].planted else "")
         if tile[0] == 7:
             station = tile[2]
             return f"{station.name} ({station.hp}/{station.maxHp})" if station.claimed else f"{station.name} (unclaimed)"
@@ -1614,6 +1857,9 @@ class gameManager():
                 spec["rows"].append(("Color Selected", self.selectedColor))
         elif windowId == "equipment":
             spec["rows"] = [(slot, getattr(item, "name", item)) for slot, item in player.equipment.items()]
+            if self.swapActive():
+                spec["header"] = f"Swap in {self.swap['item'].name}: Enter swaps, Esc cancels"
+                spec["dimRows"] = {i for i, slot in enumerate(player.equipment) if slot not in self.swap["slots"]}
         elif windowId == "levelup":
             spec["header"] = f"Gold {player.gold}     Next point costs {player.nextLevelGold}"
             spec["rows"] = [(name.title(), value) for name, value in player.attributes.items()]
@@ -1668,7 +1914,60 @@ class gameManager():
             spec["kind"] = "grid"
             spec["items"] = [item.name for item in player.inventory]
             spec["capacity"] = player.inventoryLimit
+            index = self.windowSel["inventory"]
+            spec["detail"] = self.itemDetail(player.inventory[index]) if index < len(player.inventory) else \
+                [("muted", "Empty slot", "")]
         return spec
+
+    STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health"}
+
+    def statLines(self, item):
+        """[(stat name, bonus)] for a piece of gear."""
+        if item.Etype == "DaWa":
+            return [("Damage", item.b1), ("Wall Damage", item.b2)]
+        if item.Etype in self.STAT_NAMES:
+            return [(self.STAT_NAMES[item.Etype], item.bonus)]
+        return []
+
+    def itemDetail(self, item):
+        """The lines in the inventory's details panel for one item: what it is, its bonuses, its effects, and
+        how it compares with what you have on."""
+        player = self.player
+        lines = [("title", item.name, "")]
+        if item.Etype == "Consume":
+            lines.append(("label", "POTION", ""))
+            bonus = player.attributeBonuses.get(item.attributeScaling, 0)
+            effect = {"Heal": f"Heals {item.bonus}" + (f" (+{bonus} from WIS)" if bonus else ""),
+                      "DoorLocate": "Shows the way to the next floor",
+                      "Fire": f"{item.bonus} damage to every enemy in your light",
+                      "Smoke": f"Hides you for {item.bonus} turns"}.get(item.effect, item.effect)
+            lines.append(("body", effect, ""))
+            lines.append(("hint", "Enter  use", ""))
+            return lines
+        lines.append(("label", (item.slot or "").upper(), getattr(item, "quality", "")))
+        scaling = player.attributeBonuses.get(item.attributeScaling, 0)
+        for stat, value in self.statLines(item):
+            lines.append(("row", stat, f"+{value}" + (f"  (+{scaling} STR)" if scaling and item.attributeScaling == "strength" else "")))
+        tags = ([item.relicPower] if getattr(item, "relicPower", None) else []) + list(getattr(item, "enchants", []))
+        for tag in tags:
+            name, text = relics.EFFECTS.get(tag, (tag, ""))
+            lines.append(("ench", f"{name}: {text}", ""))
+        if item.Etype == "Unique" and not tags and item.description not in (None, "None"):
+            lines.append(("ench", item.description, ""))
+        slots = player.slotsFor(item)
+        if slots:
+            worn = [player.equipment[s] for s in slots if player.equipment[s] != "None"]
+            free = len(worn) < len(slots)
+            lines.append(("label", "NOW WEARING", "free slot" if free else ""))
+            for other in worn:
+                lines.append(("muted", other.name, ""))
+                theirs = dict(self.statLines(other))
+                for stat, value in self.statLines(item):
+                    diff = value - theirs.get(stat, 0)
+                    if diff:
+                        lines.append(("better" if diff > 0 else "worse", f"{stat} {'+' if diff > 0 else ''}{diff} vs this", ""))
+            lines.append(("hint", "Enter  equip" if free else "Enter  swap", ""))
+        return lines
 
     def pauseRowValue(self, label):
         if label == "Light Style":
@@ -1687,8 +1986,6 @@ class gameManager():
         """How the light animates right now, or None when Animated Light is off."""
         if not self.menuOptions["Animated Light"]:
             return None
-        if self.settings.lightStyle == "flicker" and self.player.hasEffect("steady_light"):
-            return "sway"  # Lantern of the Deep
         return self.settings.lightStyle
 
     def pauseView(self):
@@ -1715,7 +2012,7 @@ class gameManager():
             return
 
         messageKey, messageText = None, None
-        messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"Floor {self.level}",
+        messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"Floor {self.level}\n{self.theme.name}",
                         "brokenSealMessage": "The Seal is Broken"}
         for key, active in self.messageBools.items():
             if active:

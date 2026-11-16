@@ -17,7 +17,7 @@ what's equipped, and the game checks them by name, e.g. player.hasEffect("half_s
 RELICS = {
     "burrowers_amulet": {"name": "Burrower's Amulet", "slot": "Neck", "etype": "Unique", "bonus": 0, "power": "burrow"},
     "seal_fragment": {"name": "Seal Fragment", "slot": "Neck", "etype": "Unique", "bonus": 0, "power": "seal_ward"},
-    "lantern": {"name": "Lantern of the Deep", "slot": "Hands", "etype": "Light", "bonus": 3, "power": "steady_light"},
+    "lantern": {"name": "Lantern of the Deep", "slot": "Hands", "etype": "Light", "bonus": 3, "power": "searing_light"},
     "horned_crown": {"name": "Horned Crown", "slot": "Head", "etype": "Defense", "bonus": 1, "power": "goblin_fear"},
     "mole_claws": {"name": "Mole-King's Claws", "slot": "Gloves", "etype": "WallDamage", "bonus": 1, "power": "half_swings"},
     "hollow_blade": {"name": "Hollow Blade", "slot": "Hands", "etype": "Damage", "bonus": 8, "power": "lifedrinker"},
@@ -36,10 +36,10 @@ RELIC_CHEST_CHANCE = 0.25  # chance that a floor has one relic chest (if any rel
 EFFECTS = {
     "burrow": ("Burrow", "Burrow through soft walls"),
     "seal_ward": ("Seal Ward", "The Unsealed don't appear"),
-    "steady_light": ("Steady Light", "Your light never flickers"),
+    "searing_light": ("Searing Light", "Enemies in your light take 1 damage each turn"),
     "goblin_fear": ("Dread", "Goblins sometimes flee instead of attacking"),
     "half_swings": ("Mole-King", "Breaking a wall takes half the swings"),
-    "lifedrinker": ("Thirst", "Each kill heals 2 HP"),
+    "lifedrinker": ("Thirst", "1 in 4 hits heal 2 HP"),
     "far_sight": ("Far Sight", "+3 vision"),
     "gold_double": ("Greed", "Gold walls pay double"),
     "gold_per_kill": ("Gilded", "+3 gold per kill"),
@@ -57,6 +57,13 @@ EFFECTS = {
 FORGE_POWERS = ["half_swings", "goblin_fear", "seal_ward", "lifedrinker", "far_sight", "gold_double"]
 POWER_TITLES = {"half_swings": "of the Mole-King", "goblin_fear": "of Dread", "seal_ward": "of the Seal",
                 "lifedrinker": "of Thirst", "far_sight": "of the Deep", "gold_double": "of Greed"}
+
+SEARING_DAMAGE = 1      # Lantern of the Deep: damage each turn to every enemy in your light
+THIRST_CHANCE = 0.25    # Hollow Blade (and "of Thirst" gear): chance a hit heals
+THIRST_HEAL = 2
+
+# Powers that were changed or renamed: old saves get the new one (see gameManager.updateOldSave)
+RENAMED_POWERS = {"steady_light": "searing_light"}
 
 # The free minor enchantment a Masterwork craft gets, one of these at random
 MINOR_ENCHANTS = ["bright", "hardy", "lucky", "keen_eye"]

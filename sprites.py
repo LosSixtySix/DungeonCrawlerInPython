@@ -1,5 +1,6 @@
 import math
 import pygame
+import plants
 import themes
 
 """
@@ -249,8 +250,88 @@ FORGE = [
 ]
 FORGE_COLORS = {"G": (240, 202, 96), "g": (184, 140, 50), "f": (255, 132, 40), "F": (255, 220, 120)}
 
+CAULDRON = [
+    "..........",
+    "..kkkkkk..",
+    ".kIiiiiIk.",
+    "kIgGggGgIk",
+    "kigggGggik",
+    "kIgGgggGIk",
+    ".kIiiiiIk.",
+    "..kkkkkk..",
+    "..kfFFfk..",
+    "...kkkk...",
+]
+CAULDRON_COLORS = {"i": (70, 74, 82), "I": (120, 126, 136), "g": (86, 168, 70), "G": (176, 236, 120),
+                   "f": (255, 132, 40), "F": (255, 220, 120)}
+
+# ---------------------------------------------------------------- plants (colors in plants.PLANTS)
+PLANT_SPRITES = {  # all seen from above, like the rest of the map
+    "bloodcap": [  # a round red cap with pale spots
+        "..kkkkkk..",
+        ".kcCCwcck.",
+        "kcCwccccck",
+        "kcCccccwck",
+        "kccccwccck",
+        "kcwcccccck",
+        "kccccwccck",
+        ".kcwcccck.",
+        "..kkkkkk..",
+        "..........",
+    ],
+    "hearthmoss": [  # a soft, lumpy mat of moss
+        "..kkk.kk..",
+        ".kcCckCck.",
+        "kcCccccCk.",
+        "kccsccCcck",
+        ".kcCcsccck",
+        "kcccCccck.",
+        "kCcsccCck.",
+        ".kccCcck..",
+        "..kk.kkk..",
+        "..........",
+    ],
+    "glowcap": [  # five little glowing caps
+        ".kk....kk.",
+        "kCck..kCck",
+        "kcck..kcck",
+        ".kk.kk.kk.",
+        "...kCck...",
+        "...kcck...",
+        ".kk.kk.kk.",
+        "kCck..kCck",
+        "kcck..kcck",
+        ".kk....kk.",
+    ],
+    "emberroot": [  # a rosette of pointed leaves around a bulb
+        "....kk....",
+        "...kCck...",
+        ".k.kcck.k.",
+        "kCkkcckkCk",
+        ".kcCssCck.",
+        ".kcCssCck.",
+        "kCkkcckkCk",
+        ".k.kcck.k.",
+        "...kCck...",
+        "....kk....",
+    ],
+    "shadowfern": [  # fronds spreading out from a dark middle
+        "C...cC...C",
+        ".C..cC..C.",
+        "..CccCcC..",
+        "...cssc...",
+        "CccCssCccC",
+        "CccCssCccC",
+        "...cssc...",
+        "..CcCccC..",
+        ".C..Cc..C.",
+        "C...Cc...C",
+    ],
+}
+
 STATION_SPRITES = {"smelter": (SMELTER, SMELTER_COLORS), "anvil": (ANVIL, ANVIL_COLORS),
-                   "shrine": (SHRINE, SHRINE_COLORS), "forge": (FORGE, FORGE_COLORS)}
+                   "shrine": (SHRINE, SHRINE_COLORS), "forge": (FORGE, FORGE_COLORS),
+                   "cauldron": (CAULDRON, CAULDRON_COLORS)}
 
 
 def roles(colors, base):
@@ -361,6 +442,7 @@ def buildSprites(colors, tileSize):
         "unsealed": [makeShadowed(unsealedFrame(colors, f), enemyRoles(colors, UNSEALED_COLORS), tileSize) for f in range(SHARD_FRAMES)],
         "doorUp": makeSurface(MOONBEAM, roles(colors, colors["doorPrev"]), tileSize),
         "stations": {sid: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for sid, (rows, fixed) in STATION_SPRITES.items()},
+        "plants": {kind: makeShadowed(rows, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind, rows in PLANT_SPRITES.items()},
     }
 
 

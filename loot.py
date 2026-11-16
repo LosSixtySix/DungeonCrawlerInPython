@@ -1,5 +1,6 @@
 import random
 
+import plants
 import relics
 import resources
 
@@ -22,7 +23,11 @@ WALL_LOOT = {
     "Copper Vein": [("copper_ore", 100, (1, 2))],
     "Iron Vein": [("iron_ore", 100, (1, 2))],
     "Silver Vein": [("silver_ore", 100, (1, 1))],
-    "Gem Vein": [("rough_gem", 100, (1, 1))],
+    "Jade Vein": [("rough_jade", 100, (1, 1))],
+    "Peridot Vein": [("rough_peridot", 100, (1, 1))],
+    "Rose Quartz Vein": [("rough_rose_quartz", 100, (1, 1))],
+    "Ruby Vein": [("rough_ruby", 100, (1, 1))],
+    "Amethyst Vein": [("rough_amethyst", 100, (1, 1))],
 }
 
 # Keyed by enemy.name (as spelled in enemies.py)
@@ -35,7 +40,11 @@ ENEMY_LOOT = {
 }
 
 # The tabs of the Loot Table window, in order
-LOOT_TABS = [("Enemies", ENEMY_LOOT), ("Walls", WALL_LOOT)]
+# Keyed by the plant's name: its herb, and sometimes a seed to plant
+PLANT_LOOT = {info["name"]: [(info["herb"], 100, (1, 2)), (info["seed"], plants.SEED_CHANCE, (1, 1))]
+              for info in plants.PLANTS.values()}
+
+LOOT_TABS = [("Enemies", ENEMY_LOOT), ("Walls", WALL_LOOT), ("Plants", PLANT_LOOT)]
 
 # Nicer names for the window where the code's names differ
 DISPLAY_NAMES = {"Goblin Chieftan": "Goblin Chieftain", "Unsealed": "The Unsealed"}

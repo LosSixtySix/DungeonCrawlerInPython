@@ -2,6 +2,7 @@ import math
 import random
 
 import items
+import plants
 import relics
 
 """
@@ -23,12 +24,14 @@ STATION_INFO = {
     "smelter": {"name": "Smelter", "setup": 3, "hp": 60},
     "anvil": {"name": "Anvil", "setup": 2, "hp": 120},
     "jeweler": {"name": "Jeweler's Kit", "setup": 0, "hp": 0},
+    "alchemist": {"name": "Alchemist's Set", "setup": 0, "hp": 0},
+    "cauldron": {"name": "Cauldron", "setup": 3, "hp": 140},
     "shrine": {"name": "Shrine of Unmaking", "setup": 4, "hp": 200, "found": "Vaults sealed in gold walls, floor 5 and deeper"},
     "forge": {"name": "Gilded Forge", "setup": 5, "hp": 220, "found": "Vaults on All Gold floors, floor 8 and deeper"},
 }
 STATIONS = list(STATION_INFO)
 TAB_NAMES = {"hand": "By Hand", "workbench": "Workbench", "smelter": "Smelter", "anvil": "Anvil", "jeweler": "Jeweler",
-             "shrine": "Shrine", "forge": "Forge"}
+             "alchemist": "Alchemy", "cauldron": "Cauldron", "shrine": "Shrine", "forge": "Forge"}
 
 
 class Station():
@@ -77,6 +80,8 @@ class Recipe():
     """kind:
     "station"  makes a station (unlocks its tab)        "upgrade"  the Leather Pouch (bigger stacks)
     "material" goes in the pouch                         "item"     gear: rolls a quality
+    "potion"   a consumable in your inventory (amount of them), no quality roll
+    "plant"    sows a seed (makes = plant kind) on the floor tile you face
     "setup" / "pack"   set a heavy station up beside you, or pack it away again
     "scrap" / "reforge" / "rekindle"   the relic stations' recipes, made for one item in your pack (target)
     For items, makeItem(bonus, bonus2) builds the equipment; bonus (and bonus2 for two-stat gear) are the
@@ -116,10 +121,18 @@ class Recipe():
         return item
 
 
+def potion(name, effect, power=0, scaling=None):
+    """makeItem for a potion (a consumable). Potions don't roll a quality."""
+    return lambda b, b2: items.consumable(name, power, effect, attributeScaling=scaling)
+
+
 def gear(etype, name, slot, scaling="strength"):
     """makeItem for one-stat gear."""
     return lambda b, b2: items.equipment(etype, name, slot, b, attributeScaling=scaling)
 
+
+FIRE_FLASK_DAMAGE = 5
+SMOKE_TURNS = 5
 
 RECIPES = [
     # ---- By hand
@@ -141,6 +154,8 @@ RECIPES = [
            "Stitched to your belt. Carry twice as much of everything.", "Stacks 99 to 199"),
     Recipe("smelter", "Portable Smelter", "workbench", 4, {"stone": 10, "sand": 4, "copper_ore": 2}, "station",
            "A clay furnace small enough to carry. Set it up beside you to use it.", "Unlocks the Smelter", makes="smelter"),
+    Recipe("alchemist", "Alchemist's Set", "workbench", 3, {"glass": 2, "wood": 3, "stone": 2}, "station",
+           "Vials, a mortar and a little burner. Works anywhere.", "Unlocks the Alchemist's Set", makes="alchemist"),
 
     # ---- Smelter (every smelt burns a Coal)
     Recipe("copper_ingot", "Copper Ingot", "smelter", 2, {"copper_ore": 2, "coal": 1}, "material",
@@ -188,22 +203,61 @@ RECIPES = [
            makeItem=gear("Defense", "Warded Chainmail", "Chest")),
     Recipe("jeweler", "Jeweler's Kit", "anvil", 3, {"silver_ingot": 2, "glass": 1, "wood": 2}, "station",
            "Fine tools and a lens. Works anywhere.", "Unlocks the Jeweler's Kit", makes="jeweler"),
+    Recipe("cauldron", "Cauldron", "anvil", 4, {"iron_ingot": 5, "copper_ingot": 2}, "station",
+           "A heavy iron pot. It has to be set up, but it brews stronger potions.", "Unlocks the Cauldron", makes="cauldron"),
 
     # ---- Jeweler's Kit
-    Recipe("cut_gem", "Cut Gem", "jeweler", 2, {"rough_gem": 1}, "material",
-           "Facets bring out the light.", "1 Cut Gem", makes="cut_gem"),
+    *[Recipe(f"cut_{gem}", f"Cut {name}", "jeweler", 2, {f"rough_{gem}": 1}, "material",
+             "Facets bring out the light.", f"1 Cut {name}", makes=f"cut_{gem}")
+      for gem, name in (("jade", "Jade"), ("peridot", "Peridot"), ("rose_quartz", "Rose Quartz"),
+                        ("ruby", "Ruby"), ("amethyst", "Amethyst"))],
     Recipe("silver_amulet", "Silver Amulet", "jeweler", 3, {"silver_ingot": 2}, "item",
            "A plain silver chain.", "Neck  Health +3", bonus=3, makeItem=gear("Health", "Silver Amulet", "Neck", None)),
-    Recipe("sight_amulet", "Amulet of Sight", "jeweler", 4, {"silver_ingot": 1, "glass": 1, "cut_gem": 1}, "item",
-           "A lens set in silver.", "Neck  Vision +1", bonus=1, makeItem=gear("Light", "Amulet of Sight", "Neck", None)),
-    Recipe("gilded_amulet", "Gilded Amulet", "jeweler", 5, {"silver_ingot": 1, "cut_gem": 1, "gold": 60}, "item",
+    Recipe("jade_amulet", "Jade Amulet", "jeweler", 4, {"silver_ingot": 1, "cut_jade": 1}, "item",
+           "Cool green stone that turns a blade.", "Neck  Defense +1", bonus=1,
+           makeItem=gear("Defense", "Jade Amulet", "Neck", None)),
+    Recipe("rose_amulet", "Rose Quartz Amulet", "jeweler", 4, {"silver_ingot": 1, "cut_rose_quartz": 1}, "item",
+           "Coins seem to find you.", "Neck  Health +4", bonus=4, enchants=["lucky"],
+           makeItem=gear("Health", "Rose Quartz Amulet", "Neck", None)),
+    Recipe("sight_amulet", "Amulet of Sight", "jeweler", 4, {"silver_ingot": 1, "glass": 1, "cut_peridot": 1}, "item",
+           "A peridot lens set in silver.", "Neck  Vision +1", bonus=1, makeItem=gear("Light", "Amulet of Sight", "Neck", None)),
+    Recipe("gilded_amulet", "Gilded Amulet", "jeweler", 5, {"silver_ingot": 1, "cut_ruby": 1, "gold": 60}, "item",
            "Warm to the touch.", "Neck  Health +6", bonus=6, enchants=["regen"], makeItem=gear("Health", "Gilded Amulet", "Neck", None)),
-    Recipe("void_amulet", "Void Amulet", "jeweler", 6, {"void_shard": 3, "cut_gem": 2, "gold": 80}, "item",
+    Recipe("void_amulet", "Void Amulet", "jeweler", 6, {"void_shard": 3, "cut_amethyst": 2, "gold": 80}, "item",
            "It hums when something is near.", "Neck  Health +8", bonus=8, enchants=["see_enemies"],
            makeItem=gear("Health", "Void Amulet", "Neck", None)),
+
+    # ---- Planting (By Hand): a seed on the floor tile you face
+    *[Recipe(f"plant_{kind}", f"Plant {info['name']}", "hand", 1, {info["seed"]: 1}, "plant",
+             f"Sow it on the floor tile you're facing. {plants.plantDescription(kind)}; planted ones never wither. "
+             "Plants spread like the Game of Life: an empty tile with 3 of a kind around it sprouts one.",
+             f"1 {info['name']} (yours)", makes=kind)
+      for kind, info in plants.PLANTS.items()],
+
+    # ---- Alchemist's Set (works anywhere; small brews)
+    Recipe("minor_healing", "Minor Healing Potion", "alchemist", 2, {"glass": 1, "hearthmoss": 1}, "potion",
+           "Moss steeped in a vial. A thin green tonic.", "Heals 3 (+WIS)", makeItem=potion("Minor Healing Potion", "Heal", 3, "wisdom")),
+    Recipe("door_potion", "Potion Of Door", "alchemist", 3, {"glass": 1, "glowcap": 2}, "potion",
+           "Glowcaps lean toward the way down.", "Shows the way to the next floor", makeItem=potion("Potion Of Door", "DoorLocate")),
+
+    Recipe("smoke_bomb", "Smoke Bomb", "alchemist", 3, {"glass": 1, "shadowfern": 2, "coal": 1}, "potion",
+           "Burning fern and a lot of smoke.", f"Hides you for {SMOKE_TURNS} turns", makeItem=potion("Smoke Bomb", "Smoke", SMOKE_TURNS)),
+
+    # ---- Cauldron (has to be set up; stronger brews)
+    Recipe("healing", "Healing Potion", "cauldron", 2, {"glass": 1, "bloodcap": 1, "hearthmoss": 1, "coal": 1}, "potion",
+           "Simmered slowly over coals.", "Heals 6 (+WIS)", makeItem=potion("Healing Potion", "Heal", 6, "wisdom")),
+    Recipe("greater_healing", "Greater Healing Potion", "cauldron", 4, {"glass": 1, "bloodcap": 2, "hearthmoss": 2, "cut_ruby": 1}, "potion",
+           "A ruby dissolved into it. It glows.", "Heals 12 (+WIS)", makeItem=potion("Greater Healing Potion", "Heal", 12, "wisdom")),
+    Recipe("door_potion_2", "Potion Of Door (x2)", "cauldron", 3, {"glass": 2, "glowcap": 2, "coal": 1}, "potion",
+           "Two caps go further in a big pot.", "2 potions that show the way down", amount=2,
+           makeItem=potion("Potion Of Door", "DoorLocate")),
+    Recipe("fire_flask", "Fire Flask", "cauldron", 3, {"glass": 1, "emberroot": 2, "coal": 1}, "potion",
+           "Throw it and everything in your light burns.", f"{FIRE_FLASK_DAMAGE} damage to every enemy in your light",
+           makeItem=potion("Fire Flask", "Fire", FIRE_FLASK_DAMAGE)),
 ]
 
 SCRAP_GOLD, REFORGE_GOLD, REKINDLE_GOLD = 40, 150, 100
+
 
 
 def forStation(station):

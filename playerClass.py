@@ -57,8 +57,8 @@ class PlayerClass():
         item = self.inventory[inventorySlot]
         if item.Etype == "Consume":
             match item.effect:
-                case "Heal":
-                    self.damageTaken -= item.bonus + self.attributeBonuses[item.attributeScaling]
+                case "Heal":  # can't heal past full health
+                    self.damageTaken = max(0, self.damageTaken - (item.bonus + self.attributeBonuses[item.attributeScaling]))
                     self.inventory.pop(inventorySlot)
                     self.actionMade = True
                 case "DoorLocate":
@@ -88,15 +88,41 @@ class PlayerClass():
                 self.actionMade = True
             
 
+    def slotsFor(self, item):
+        """The equipment slots an item can go in."""
+        if item.slot == "Hands":
+            return ["Right Hand", "Left Hand"]
+        return [item.slot] if item.slot in self.equipment else []
+
+    def freeSlotFor(self, item):
+        return next((s for s in self.slotsFor(item) if self.equipment[s] == "None"), None)
+
+    def swapEquip(self, inventoryIndex, slot):
+        """Puts an inventory item on in place of what's in slot; the old item takes its spot in the inventory."""
+        item, old = self.inventory[inventoryIndex], self.equipment[slot]
+        if getattr(old, "name", None) == "Burrower's Amulet":
+            self.burrow = False
+        if item.name == "Burrower's Amulet":
+            self.burrow = True
+        self.equipment[slot] = item
+        if old == "None":
+            self.inventory.pop(inventoryIndex)
+        else:
+            self.inventory[inventoryIndex] = old
+        self.actionMade = True
+
     def unEquipItem(self,slot):
         item = self.equipment[slot]
         if item != "None":
+            if not self.addItemToInventory(item):  # no room in the inventory: it stays on
+                return False
             if item.Etype == "Unique":
                 if item.name == "Burrower's Amulet":
                     self.burrow = False
-            self.addItemToInventory(item)
             self.equipment[slot] = "None"
             self.actionMade = True
+            return True
+        return False
 
     def addMaterial(self, materialId, amount):
         """Puts materials in the pouch, up to resources.POUCH_LIMIT of each. Returns how many fit."""

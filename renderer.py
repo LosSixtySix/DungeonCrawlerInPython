@@ -28,6 +28,7 @@ class renderer():
     ROW = 30           # height of one row in a window
     PAD = 16           # inner padding of a window
     BOX_W, BOX_H = 118, 74  # one inventory slot
+    INV_DETAIL_W = 250      # the inventory's details panel, right of the slots
 
     def __init__(self, win):
         self.win = win
@@ -193,6 +194,9 @@ class renderer():
             self.drawHud(*hud)
 
         rects = {}
+        for spec in windows:  # size Equipment first: Level Up docks under it even when Equipment is drawn last
+            if spec["id"] == "equipment":
+                self.windowSize(spec)
         for spec in windows:
             w, h = self.windowSize(spec)
             x, y = spec["position"] if spec.get("position") else self.defaultWindowPosition(spec["id"], w, h)
@@ -355,22 +359,26 @@ class renderer():
             return max(300, widest + self.PAD * 2), self.WINDOW_HEAD + max(1, count) * self.ROW + 14
         if spec["kind"] == "grid":
             rows = math.ceil(spec["capacity"] / 5)
-            return self.PAD * 2 + 5 * self.BOX_W, self.WINDOW_HEAD + rows * self.BOX_H + 18
+            return self.PAD * 2 + 5 * self.BOX_W + self.INV_DETAIL_W, self.WINDOW_HEAD + rows * self.BOX_H + 18
         widest = self.windowTitleFont.size(spec["title"])[0] + 70
         for label, value in spec["rows"]:
             widest = max(widest, self.windowFont.size(f"> {label}")[0] + self.windowFont.size(str(value))[0] + 40)
         if spec.get("header"):
             widest = max(widest, self.windowSmallFont.size(spec["header"])[0] + 20)
         count = len(spec["rows"]) + (1 if spec.get("header") else 0)
-        return max(300, widest + self.PAD * 2), self.WINDOW_HEAD + max(1, count) * self.ROW + 14
+        height = self.WINDOW_HEAD + max(1, count) * self.ROW + 14
+        if spec.get("id") == "equipment":
+            self.equipmentHeight = height  # Level Up docks right under it, so it moves down when a swap adds a line
+        return max(300, widest + self.PAD * 2), height
 
     def defaultWindowPosition(self, windowId, w, h):
         """Where each window docks until the player drags it somewhere else."""
         W, H = self.screenWidth, self.screenHeight
         top, gap = 70, 12
         characterHeight = self.WINDOW_HEAD + 8 * self.ROW + 14
-        equipmentHeight = self.WINDOW_HEAD + 8 * self.ROW + 14
-        inventoryWidth = self.PAD * 2 + 5 * self.BOX_W
+        equipmentHeight = getattr(self, "equipmentHeight", self.WINDOW_HEAD + 8 * self.ROW + 14)
+        inventoryWidth = self.PAD * 2 + 5 * self.BOX_W + self.INV_DETAIL_W
+        inventoryHeight = self.WINDOW_HEAD + 2 * self.BOX_H + 18
         sideColumn = 340  # room for the widest left/right column window (Character, Room, Equipment, Level Up)
         match windowId:
             case "character":
@@ -383,8 +391,8 @@ class renderer():
                 return W - 16 - w, top + equipmentHeight + gap
             case "inventory":
                 return (W - w) // 2, H - 16 - h
-            case "items":
-                return (W - inventoryWidth) // 2 + inventoryWidth + gap, H - 16 - h
+            case "items":  # above the right end of the inventory (beside it there's no room for both)
+                return (W - inventoryWidth) // 2 + inventoryWidth - w, H - 16 - inventoryHeight - gap - h
             # Materials and Loot Table dock in the gaps beside the side columns (left of center and right of
             # center), at the top, so they don't cover the player in the middle or the other windows
             case "materials":
@@ -431,6 +439,8 @@ class renderer():
                     lines = self.wrapText(spec["items"][i], self.windowSmallFont, box.w - 14)[-3:]
                     for n, line in enumerate(reversed(lines)):
                         self.blitText(win, line, self.windowSmallFont, select if selected else body, box.x + 8, box.bottom - 16 - n * 18)
+            if spec.get("detail"):
+                self.drawItemDetail(win, spec["detail"], pygame.Rect(gx + 5 * self.BOX_W + 8, gy, self.INV_DETAIL_W - 16, rect.bottom - gy - 10))
             return
 
         y = rect.y + self.WINDOW_HEAD + self.ROW // 2 + 2
@@ -444,9 +454,29 @@ class renderer():
             selected = spec.get("selectable") and focused and i == spec["selected"]
             if selected:
                 pygame.draw.rect(win, highlight, pygame.Rect(rect.x + 2, rowY - self.ROW // 2, rect.w - 4, self.ROW))
-            color = select if selected else body
+            color = select if selected else (muted if i in spec.get("dimRows", ()) else body)
             self.blitText(win, ("> " if selected else "") + str(label), self.windowFont, color, rect.x + self.PAD + 2, rowY)
             self.blitText(win, value, self.windowFont, muted if value == "None" else color, rect.right - self.PAD, rowY, align="right")
+
+    def drawItemDetail(self, win, lines, area):
+        """The inventory's details panel: the selected item's slot, bonuses, effects and how it compares."""
+        muted, body, select = self.color("muted"), self.color("font"), self.color("select")
+        pygame.draw.line(win, self.color("boxLine"), (area.x - 6, area.y), (area.x - 6, area.bottom))
+        y = area.y + 10
+        styles = {"title": (self.windowFont, select), "label": (self.windowSmallFont, muted), "row": (self.windowSmallFont, body),
+                  "muted": (self.windowSmallFont, muted), "body": (self.windowSmallFont, body), "hint": (self.windowSmallFont, muted),
+                  "ench": (self.windowSmallFont, (200, 168, 255)), "better": (self.windowSmallFont, (130, 210, 120)),
+                  "worse": (self.windowSmallFont, self.color("enemy"))}
+        for style, text, value in lines:
+            font, color = styles.get(style, styles["body"])
+            for part in self.wrapText(text, font, area.w - (90 if value else 4)):
+                if y > area.bottom - 6:
+                    return
+                self.blitText(win, part, font, color, area.x, y)
+                if value:
+                    self.blitText(win, str(value), self.windowSmallFont, select if style == "row" else muted, area.right, y, align="right")
+                    value = ""
+                y += 22 if style == "title" else 18
 
     # Crafting window layout
     CRAFT_W = 640        # whole window width
@@ -688,12 +718,20 @@ class renderer():
             self.blitText(win, f"{keyName}  -  {label}", self.menuHintFont, font, cx, cy)
 
     def drawMessage(self, message):
-        text = self.SplashScreenFont.render(message, True, self.color("font"))
+        """A big centered message; a second line (after a newline) is drawn smaller under it."""
+        first, _, second = message.partition("\n")
         alpha = max(0, int(self.fade))
         canvas = pygame.Surface((self.screenWidth, self.screenHeight), pygame.SRCALPHA)
         canvas.fill((0, 0, 0, alpha))
+        text = self.SplashScreenFont.render(first, True, self.color("font"))
         text.set_alpha(alpha)
-        canvas.blit(text, (self.screenWidth // 2 - text.get_width() // 2, self.screenHeight // 2 - text.get_height() // 2))
+        sub = self.titleOptionFont.render(second, True, self.color("select")) if second else None
+        total = text.get_height() + (sub.get_height() + 6 if sub else 0)
+        top = self.screenHeight // 2 - total // 2
+        canvas.blit(text, (self.screenWidth // 2 - text.get_width() // 2, top))
+        if sub:
+            sub.set_alpha(alpha)
+            canvas.blit(sub, (self.screenWidth // 2 - sub.get_width() // 2, top + text.get_height() + 6))
         return canvas
 
     # ------------------------------------------------------------------ tiles
@@ -773,7 +811,7 @@ class renderer():
         self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
         # Dithered light only on tiles in view (remembered tiles stay as they are). The player, enemies,
         # chests and the door back up are never dithered so they stand out; pits are part of the floor, so they are.
-        if not memorized and grid[i][0] not in (1, 3, 5, 6, 7):
+        if not memorized and grid[i][0] not in (1, 3, 5, 6, 7, 8):
             offsetX, offsetY, reach = light
             lightX = playerPosition % self.rowLength + offsetX
             lightY = playerPosition // self.rowLength + offsetY
@@ -787,6 +825,13 @@ class renderer():
             case 1:  # Player: the Torchbearer facing the way it last moved, on the floor it stands on
                 self.fillTile(self.floorColor(i, rooms, memorized), x, y)
                 self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
+                standingIn = grid[i][2] if len(grid[i]) > 2 else None
+                if standingIn is not None and hasattr(standingIn, "kind"):  # in a plant: it's drawn over you, see-through
+                    picture = self.sprites["plants"].get(standingIn.kind)
+                    if picture is not None:
+                        picture = picture.copy()
+                        picture.set_alpha(150)
+                        self.mapSurface.blit(picture, (x * ts, y * ts))
             case 2:  # Wall
                 w = grid[i][2]
                 color = self.roomWallColor(i, rooms, memorized) if isinstance(w, walls.OreVein) else self.wallColor(w.name, memorized)
@@ -809,6 +854,11 @@ class renderer():
                 if station.claimed and station.hp < station.maxHp:  # a damage bar along the bottom
                     pygame.draw.rect(self.mapSurface, (40, 10, 10), pygame.Rect(x * ts + 1, y * ts + ts - 2, ts - 2, 1))
                     pygame.draw.rect(self.mapSurface, self.color("enemy"), pygame.Rect(x * ts + 1, y * ts + ts - 2, max(1, (ts - 2) * station.hp // station.maxHp), 1))
+            case 8:  # A plant: the floor, then the plant (kept in full color when remembered, like chests)
+                self.fillTile(self.floorColor(i, rooms, memorized), x, y)
+                picture = self.sprites["plants"].get(grid[i][2].kind)
+                if picture is not None:
+                    self.mapSurface.blit(picture, (x * ts, y * ts))
             case 6:  # Door back to the previous level
                 self.fillTile(self.floorColor(i, rooms, memorized), x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))

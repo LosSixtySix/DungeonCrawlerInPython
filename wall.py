@@ -92,8 +92,27 @@ class SilverVein(OreVein):
         super().__init__("Silver Vein", 60, 8, "silver_ore", (216, 221, 228), (255, 255, 255))
 
 class GemVein(OreVein):
+    """The five gems share this base; each one has its own color, floors and use at the Jeweler's Kit."""
+
+class JadeVein(GemVein):
     def __init__(self):
-        super().__init__("Gem Vein", 60, 8, "rough_gem", (58, 184, 176), (200, 255, 248))
+        super().__init__("Jade Vein", 50, 7, "rough_jade", (46, 150, 84), (140, 220, 160))
+
+class PeridotVein(GemVein):
+    def __init__(self):
+        super().__init__("Peridot Vein", 50, 7, "rough_peridot", (164, 206, 40), (230, 255, 140))
+
+class RoseQuartzVein(GemVein):
+    def __init__(self):
+        super().__init__("Rose Quartz Vein", 55, 8, "rough_rose_quartz", (238, 140, 176), (255, 214, 228))
+
+class RubyVein(GemVein):
+    def __init__(self):
+        super().__init__("Ruby Vein", 60, 8, "rough_ruby", (214, 32, 60), (255, 140, 152))
+
+class AmethystVein(GemVein):
+    def __init__(self):
+        super().__init__("Amethyst Vein", 60, 8, "rough_amethyst", (146, 70, 206), (218, 170, 255))
 
 
 # Where veins appear. Each entry: (vein class, first floor it can appear on, {floor type: clusters per
@@ -103,5 +122,10 @@ VEIN_SPAWNS = [
     (CopperVein, 0, {"Mostly Stone": 4, "Mixed": 3, "Mostly Wood": 1, "Mostly Sand": 1}),
     (IronVein, 2, {"Mostly Stone": 3, "Mixed": 1.5, "Mostly Wood": 0.5}),
     (SilverVein, 4, {"Mostly Stone": 1.5, "All Gold": 2, "Mixed": 0.5}),
-    (GemVein, 3, {"All Gold": 1.5, "Mixed": 0.5}),
+    # each floor type has a gem of its own; All Gold has the two rarest
+    (JadeVein, 3, {"Mostly Wood": 0.8, "Mixed": 0.3}),
+    (PeridotVein, 3, {"Mostly Sand": 0.8, "Mixed": 0.3}),
+    (RoseQuartzVein, 4, {"Mostly Stone": 0.6, "Mixed": 0.3}),
+    (RubyVein, 5, {"All Gold": 1.0, "Mostly Stone": 0.3, "Mixed": 0.2}),
+    (AmethystVein, 5, {"All Gold": 1.0, "Mixed": 0.2}),
 ]
