@@ -8,7 +8,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     # Read-only files the game loads at runtime (found through paths.resourcePath)
-    datas=[('Forgore.otf', '.')],
+    datas=[('Forgore.otf', '.'), ('icon.png', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -30,6 +30,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,  # no terminal window behind the game
+    icon='CRUEL.ico',  # made by makeIcon.py
 )
 coll = COLLECT(
     exe,

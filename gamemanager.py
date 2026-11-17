@@ -112,6 +112,7 @@ class gameManager():
     def __init__(self):
         pygame.init()
 
+        pygame.display.set_icon(pygame.image.load(paths.resourcePath("icon.png")))  # made by makeIcon.py
         self.win = pygame.display.set_mode((0, 0))
         pygame.display.set_caption("CRUEL")
         self.clock = pygame.time.Clock()
