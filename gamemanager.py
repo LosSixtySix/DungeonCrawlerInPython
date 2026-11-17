@@ -8,6 +8,7 @@ import wall
 import copy
 import math
 import os
+import paths
 import EventDispatcher as ED
 import themes
 import attempts
@@ -47,7 +48,7 @@ open at once; only the focused one takes arrow keys and Enter. Cycle Windows (Ta
 and holding it while pressing Move Left / Move Right moves focus that way. Drag a window by its title bar.
 """
 
-MENU_OPTIONS_FILE = "menuOpts.txt"
+MENU_OPTIONS_FILE = paths.savePath("menuOpts.txt")
 
 # Frame rate cap, and how much the splash messages fade per frame
 FPS = 60
@@ -57,7 +58,7 @@ FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage":
 TITLE_FADE_STEP = FADE_STEPS["escapeMessage"]
 KEY_REPEAT_DELAY = 250     # ms before a held key starts repeating
 KEY_REPEAT_INTERVAL = 90   # ms between repeats (about 11 a second)
-SAVE_FILE = "savegame.pkl"
+SAVE_FILE = paths.savePath("savegame.pkl")
 SAVE_VERSION = 2  # 2: the map now fills the whole screen, so saves from the old smaller map can't load
 
 # Windows, in the order Tab cycles through them (after the "map" stop)

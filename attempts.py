@@ -1,12 +1,13 @@
 import json
 import datetime
+import paths
 
 """
 A history of every run that ended in death, kept in attempts.json so it survives between games.
 Each attempt records how deep the player got (the deepest floor reached, even if they went back up).
 """
 
-ATTEMPTS_FILE = "attempts.json"
+ATTEMPTS_FILE = paths.savePath("attempts.json")
 
 
 def load(fileName=ATTEMPTS_FILE) -> list:

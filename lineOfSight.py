@@ -1,5 +1,5 @@
 """
-Launcher kept so the existing lineOfSight.spec (PyInstaller) build still works.
+Launcher used as the entry point by CRUEL.spec (the PyInstaller build).
 The game itself lives in gamemanager.py (logic) and renderer.py (drawing).
 """
 from gamemanager import gameManager

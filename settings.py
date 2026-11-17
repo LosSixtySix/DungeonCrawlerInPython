@@ -1,5 +1,6 @@
 import json
 import pygame
+import paths
 
 """
 Player settings that should survive between runs: the hotkeys and where each window was dragged to.
@@ -7,7 +8,7 @@ They are stored as JSON (plain text you can open and read), separate from the pi
 because they belong to the player rather than to one run of the dungeon.
 """
 
-SETTINGS_FILE = "settings.json"
+SETTINGS_FILE = paths.savePath("settings.json")
 
 # (action, label shown in the Hotkeys menu, default key). The order here is the order in the menu.
 HOTKEY_ACTIONS = [

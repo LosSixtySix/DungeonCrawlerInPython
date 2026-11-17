@@ -2,6 +2,7 @@ import math
 import random
 import pygame
 import pygame.ftfont
+import paths
 import themes
 import sprites
 import wall as walls
@@ -53,7 +54,7 @@ class renderer():
 
         pygame.font.init()
         pygame.ftfont.init()
-        font = 'Forgore.otf'
+        font = paths.resourcePath('Forgore.otf')
         self.SplashScreenFont = pygame.ftfont.Font(font, 150)
         self.titleFont = pygame.ftfont.Font(font, int(self.screenHeight * 0.3))
         self.titleOptionFont = pygame.ftfont.Font(font, 40)
