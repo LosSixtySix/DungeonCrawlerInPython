@@ -39,6 +39,7 @@ class renderer():
 
         self.tileSize = 0
         self.blood = {}  # set every frame by draw()
+        self.bloodDry = {}
         self.rowLength = 0
         self.columnLength = 0
         self.mapSurface = None
@@ -172,7 +173,7 @@ class renderer():
     # ------------------------------------------------------------- top level
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
-             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None, openOrder=()):
+             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=()):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -183,6 +184,7 @@ class renderer():
         window the mouse is over."""
         self.win.fill(self.color("fog"))
         self.blood = blood or {}  # map position -> how much blood is on that floor tile (0-1)
+        self.bloodDry = bloodDry or {}
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
         light = self.lightShape(lightTime, lightStyle)
         if lightOnly:
@@ -991,18 +993,21 @@ class renderer():
     # Blood, seen from above. Pools are drawn as part of the floor (under sprites, dimmed with the floor when
     # remembered). Each tile's blob shape is fixed by its position, so pools grow without wobbling.
     BLOOD_DARK, BLOOD, BLOOD_LIGHT = (92, 6, 10), (138, 14, 20), (186, 52, 52)
+    DRIED_DARK, DRIED = (48, 28, 22), (82, 44, 32)
 
     def floorFill(self, i, rooms, memorized, x, y):
         self.fillTile(self.floorColor(i, rooms, memorized), x, y)
         amount = self.blood.get(i, 0) if self.blood else 0
         if amount > 0:
             ts = self.tileSize
-            self.drawBlood(pygame.Rect(x * ts, y * ts, ts, ts), min(1.0, amount), i, memorized)
+            self.drawBlood(pygame.Rect(x * ts, y * ts, ts, ts), min(1.0, amount), i, memorized, self.bloodDry.get(i, 0))
 
-    def drawBlood(self, rect, amount, seed, memorized):
+    def drawBlood(self, rect, amount, seed, memorized,dry=0):
         rng = random.Random(seed)
         w = rect.w
-        colors = (self.BLOOD_DARK, self.BLOOD, self.BLOOD_LIGHT)
+        colors = (themes.mix(self.BLOOD_DARK, self.DRIED_DARK, dry),
+                  themes.mix(self.BLOOD, self.DRIED, dry),
+                  self.BLOOD_LIGHT)
         if memorized:
             fog = self.theme.colors["fog"]
             colors = tuple(themes.remembered(list(c), fog) for c in colors)
@@ -1015,7 +1020,7 @@ class renderer():
             pygame.draw.circle(self.mapSurface, dark, (x, y), max(1, w * (0.12 + 0.4 * amount) * size))
         for x, y, size in spots:
             pygame.draw.circle(self.mapSurface, mid, (x, y), max(1, w * (0.08 + 0.32 * amount) * size))
-        if amount > 0.35:
+        if amount > 0.35 and dry < .5:
             x, y, _ = spots[0]
             pygame.draw.circle(self.mapSurface, light, (x - w * 0.08, y - w * 0.08), 1)
         self.mapSurface.set_clip(old)

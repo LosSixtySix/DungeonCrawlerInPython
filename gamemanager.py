@@ -107,7 +107,7 @@ DRIP = 0.35                # blood left on a tile you step off while at low heal
 POOL = 0.25                # blood added each turn under someone at low health who stays put
 SPILL = 0.3                # what a full tile spills into a floor tile next to it
 HIT_SPECK = 0.04           # every hit leaves a faint speck on the floor
-BLOOD_FADE = 1 / 150       # blood dries away by this much a turn (a full puddle lasts 150 turns)
+BLOOD_DRY = 1 / 150       # blood dries away by this much a turn (a full puddle lasts 150 turns)
 
 
 class gameManager():
@@ -233,6 +233,7 @@ class gameManager():
         self.explosions = []  # landing bursts still playing: [landing, radius, effect, start ms]
         self.animStep = -1    # which step of the flame/burst animation was last drawn
         self.blood = {}       # blood on the floor: {map position: amount, 0 to 1}
+        self.bloodDry = {}
         self.spurts = []      # blood spurts playing: [map position, start ms, seed]
         self.flecks = []      # wall flecks playing: [wall position, start ms, seed, (dx, dy) toward the hitter, colors]
         self.playerBloodSpot = None  # where you were last turn (a drip when you move, a pool when you don't)
@@ -1298,14 +1299,17 @@ class gameManager():
     def saveLevel(self):
         # Put back whatever the player is standing on so the saved grid has no player tile in it.
         self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
-        data = [self.grid, self.rooms, self.proportion, self.EnemyPositions, self.enemyOccupiedItemSpaces, self.theme]
+        data = [self.grid, self.rooms, self.proportion, self.EnemyPositions, self.enemyOccupiedItemSpaces, self.theme,self.blood,self.bloodDry]
         if self.level < len(self.levelGrids):
             self.levelGrids[self.level] = data
         else:
             self.levelGrids.append(data)
 
     def LoadLevel(self, level):
-        self.grid, self.rooms, self.proportion, self.EnemyPositions, self.enemyOccupiedItemSpaces, theme = self.levelGrids[level]
+        data = self.levelGrids[level]
+        self.grid, self.rooms, self.proportion, self.EnemyPositions, self.enemyOccupiedItemSpaces, theme = data[:6]
+        self.blood =data[6] if len(data) > 6 else {}
+        self.bloodDry = data[7] if len(data) >7 else {}
         self.setTheme(theme)
 
     def changeLevel(self, newLevel):
@@ -1318,6 +1322,8 @@ class gameManager():
 
     def goToNewLevel(self):
         self.saveLevel()
+        self.blood = {}
+        self.bloodDry = {}
         self.grid, self.EnemyPositions, self.rooms, self.proportion, self.nodes = self.generateNewLevel(depth=self.level + 1)
         self.setTheme(themes.randomTheme(self.proportion))
         self.enemyOccupiedItemSpaces = {}
@@ -1341,7 +1347,6 @@ class gameManager():
         self.fires = {}
         self.freshFires = set()
         self.explosions = []
-        self.blood = {}
         self.spurts = []
         self.flecks = []
         self.playerBloodSpot = None
@@ -2102,9 +2107,15 @@ class gameManager():
             spill = [n for n in self.eightAround(position) if self.grid[n][0] in (0, 1, 5)]
             if spill:
                 near = rand.choice(spill)
+                self.wetBlood(near,SPILL)
                 self.blood[near] = min(1.0, self.blood.get(near, 0) + SPILL)
+        self.wetBlood(position,amount)
         self.blood[position] = min(1.0, have + amount)
         self.change = True
+
+    def wetBlood(self,position,amount):
+        have = self.blood.get(position,0)
+        self.bloodDry[position] = self.bloodDry.get(position,0) * have/(have + amount)
 
     def chip(self, wallTile, fromTile):
         """Flecks fly off the face of a wall that was just hit, in its colors (and its ore's, for a vein)."""
@@ -2123,10 +2134,8 @@ class gameManager():
         self.flecks.append([wallTile, pygame.time.get_ticks(), rand.random(), (dx, dy), colors])
 
     def stepBlood(self):
-        for position in list(self.blood):
-            self.blood[position] -= BLOOD_FADE
-            if self.blood[position] <= 0:
-                del self.blood[position]
+        for position in self.blood:
+            self.bloodDry[position] = min(1.0,self.bloodDry.get(position,0) + BLOOD_DRY)
         for position in list(self.EnemyPositions):
             tile = self.grid.get(position)
             if not tile or tile[0] != 5 or len(tile) < 3:
@@ -2740,7 +2749,7 @@ class gameManager():
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly,
-            popups=self.popupView(), blood=self.blood,
+            popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry,
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
         if messageKey is not None and messageFinished:
