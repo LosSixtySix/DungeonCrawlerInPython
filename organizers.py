@@ -294,7 +294,7 @@ def layOut(gm, center, org, context):
         plan["walls"] = sorted(plan["wallSet"])
     if footprint & context["claimed"] or gm.playerPositionFlat in footprint:
         return None
-    if any(gm.grid[t][0] in (3, 4, 6, 7) for t in footprint):  # no chests, doors or stations in the way
+    if any(gm.grid[t][0] in (3, 4, 6, 7, 9) for t in footprint):  # no chests, item piles, doors or stations in the way
         return None
     plan["footprint"] = footprint
     plan["clear"] = footprint - plan["wallSet"]
@@ -368,7 +368,7 @@ def hitWall(gm, i, org, t):
     w.brokenPoints |= wall.getRandomPoints((1, gm.tileSize - 1), (1, gm.tileSize - 1), gm.tileSize ** 2 // 3)
     w.hp -= BREAK_DAMAGE
     if w.hp <= 0:
-        gm.grid[t] = [0, gm.grid[t][1]]
+        gm.enemyBrokeWall(t, org)  # it may pocket the wall's materials
     org.didSomething = True
     gm.change = True
 
@@ -414,7 +414,7 @@ def build(gm, i, org, dist, came, context):
         kind = gm.grid[t][0]
         if kind == 2 or t in plan["skip"]:
             continue
-        if kind in (3, 4, 6, 7):  # something dropped or placed there since: leave a gap
+        if kind in (3, 4, 6, 7, 9):  # something dropped or placed there since: leave a gap
             plan["skip"].add(t)
             continue
         todo.append(t)

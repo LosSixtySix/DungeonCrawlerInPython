@@ -189,6 +189,67 @@ CHEST = [
     "..hhhhhhhh",
 ]
 
+# Item piles: loose items on the floor, which you can walk over. Each pile gets one of these at random.
+# Fixed colors like the enemies; "k" is the theme's outline and "h" a see-through shadow.
+PILE_SPRITES = [
+    ([  # a burlap loot sack, tied at the neck
+        "....kk....",
+        "...klck...",
+        "...kyyk...",
+        "..kclcck..",
+        ".kcllccck.",
+        ".kclcccdkh",
+        ".kccccddkh",
+        ".kcccdddkh",
+        "..kkkkkkh.",
+        "...hhhhh..",
+    ], {"c": (150, 118, 78), "l": (190, 158, 110), "d": (104, 80, 52), "y": (220, 196, 136)}),
+    ([  # a sword stuck in a heap of gold
+        "......k...",
+        ".....kik..",
+        ".....kik..",
+        "....kgggk.",
+        ".....knk..",
+        "...kkGgkk.",
+        "..kGgGggdk",
+        ".kGgggdddk",
+        ".kkkkkkkkh",
+        "..hhhhhhhh",
+    ], {"i": (206, 212, 220), "g": (214, 164, 56), "G": (248, 218, 118), "d": (150, 108, 34), "n": (122, 82, 50)}),
+    ([  # a coin, a gem and a potion lying loose
+        "..........",
+        ".kk.......",
+        "kGgk...kk.",
+        ".kk...kpPk",
+        "......kppk",
+        "..kk...kk.",
+        ".kWek.....",
+        ".keEk..kk.",
+        "..kk..kGgk",
+        ".......kk.",
+    ], {"G": (248, 218, 118), "g": (214, 164, 56), "p": (176, 44, 52), "P": (232, 110, 110),
+        "W": (200, 238, 250), "e": (96, 172, 222), "E": (52, 110, 170)}),
+    ([  # a cloth bundle tied with red cord, set on its corner
+        "....kk....",
+        "...kWlk...",
+        "..kllyck..",
+        ".kllcyyck.",
+        "kllcyccyck",
+        ".kcycccdkh",
+        "..kycddkh.",
+        "...kddkh..",
+        "....kkh...",
+        ".....h....",
+    ], {"W": (214, 206, 186), "l": (176, 166, 146), "c": (138, 128, 110), "d": (98, 90, 78), "y": (150, 64, 52)}),
+]
+
+
+def pileRoles(colors, fixedColors):
+    palette = enemyRoles(colors, fixedColors)
+    palette["h"] = (0, 0, 0, 115)
+    return palette
+
+
 # Door down: each floor's door randomly uses one of these pits. They're holes cut into the floor, so
 # they're colored from the floor tile they sit on (see pitRoles):
 #  L  the near lip (floor, a little lighter)   a  floor in shadow   b  floor in deep shadow
@@ -492,6 +553,7 @@ def buildSprites(colors, tileSize):
     return {
         "chests": [makeSurface(CHEST, chestRoles(colors, base, stud), tileSize) for base, stud in CHEST_COLORS.values()],
         "cursedChest": makeSurface(CHEST, chestRoles(colors, *CURSED_CHEST_COLOR), tileSize),
+        "piles": [makeSurface(rows, pileRoles(colors, fixed), tileSize) for rows, fixed in PILE_SPRITES],
         "player": {facing: makePlayer(colors, facing, tileSize) for facing in PLAYER_TURNS},
         "enemies": {name: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for name, (rows, fixed) in ENEMY_SPRITES.items()},
         "unsealed": [makeShadowed(unsealedFrame(colors, f), enemyRoles(colors, UNSEALED_COLORS), tileSize) for f in range(SHARD_FRAMES)],

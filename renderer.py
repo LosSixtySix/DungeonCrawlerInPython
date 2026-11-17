@@ -65,6 +65,7 @@ class renderer():
         self.windowSmallFont = pygame.ftfont.Font(font, 16)
         self.hudFont = pygame.ftfont.Font(font, 20)
         self.popupFont = pygame.ftfont.Font(font, 18)
+        self.consoleFont = pygame.font.SysFont("consolas,couriernew,dejavusansmono,monospace", 16)  # lines up the columns
 
         # Field Journal menu. Its layout was designed in "k" units; k grows with the screen height.
         self.menuScale = self.screenHeight / 520
@@ -173,7 +174,8 @@ class renderer():
     # ------------------------------------------------------------- top level
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
-             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=()):
+             lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
+             console=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -215,9 +217,59 @@ class renderer():
 
         if pause is not None:
             self.DrawMenu(pause)
+        if console is not None:
+            self.drawConsole(console)
 
         pygame.display.flip()
         return messageFinished, rects
+
+    # -------------------------------------------------------- developer console
+    # Its own fixed colors (not the floor's theme), so it reads the same on every floor.
+    CONSOLE_COLORS = {"input": (236, 236, 236), "info": (188, 194, 204), "good": (130, 210, 120),
+                      "error": (236, 104, 96), "head": (232, 192, 96)}
+
+    def drawConsole(self, console):
+        """A dark panel over the top of the screen: the log, newest at the bottom, and the line being typed."""
+        W, H = self.screenWidth, int(self.screenHeight * 0.45)
+        font, colors = self.consoleFont, self.CONSOLE_COLORS
+        lineH = font.get_linesize() + 2
+        self.overlay.fill((0, 0, 0, 0))
+        self.overlay.fill((12, 12, 16, 232), pygame.Rect(0, 0, W, H))
+        self.win.blit(self.overlay, (0, 0))
+        pygame.draw.line(self.win, colors["head"], (0, H), (W, H), 2)
+
+        inputY = H - lineH - 8
+        pygame.draw.line(self.win, (60, 62, 70), (0, inputY - 6), (W, inputY - 6), 1)
+        typed = font.render("> " + console["text"], True, colors["input"])
+        self.win.blit(typed, (12, inputY))
+        x = 12 + typed.get_width()
+        pygame.draw.line(self.win, colors["input"], (x + 1, inputY + 1), (x + 1, inputY + font.get_height() - 2), 2)  # caret
+        if console["ghost"]:  # the rest of the best match, in grey: Tab fills it in
+            ghost = font.render(console["ghost"], True, (110, 114, 124))
+            self.win.blit(ghost, (x + 3, inputY))
+            x += ghost.get_width()
+        if console["others"]:  # the other matches, so you can see what Tab would step through
+            shown = console["others"][:8]
+            more = len(console["others"]) - len(shown)
+            listed = "   Tab: " + "  ".join(shown) + (f"  +{more} more" if more else "")
+            self.win.blit(font.render(listed, True, (84, 88, 98)), (x + 3, inputY))
+
+        log = console["log"]
+        rows = max(1, (inputY - 18) // lineH)
+        end = len(log) - console["scroll"]
+        start = max(0, end - rows)
+        y = inputY - 10 - (end - start) * lineH
+        for style, text in log[start:end]:
+            self.win.blit(font.render(text, True, colors.get(style, colors["info"])), (12, y))
+            y += lineH
+        noteY = 8
+        if console["peaceful"]:
+            tag = font.render("PEACEFUL", True, colors["good"])
+            self.win.blit(tag, (W - tag.get_width() - 12, noteY))
+            noteY += lineH
+        if console["scroll"]:
+            note = font.render(f"scrolled up {console['scroll']} lines (PgDn)", True, colors["head"])
+            self.win.blit(note, (W - note.get_width() - 12, noteY))
 
     # ----------------------------------------------------------- title screen
 
@@ -1147,7 +1199,7 @@ class renderer():
         self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
         # Dithered light only on tiles in view (remembered tiles stay as they are). The player, enemies,
         # chests and the door back up are never dithered so they stand out; pits are part of the floor, so they are.
-        if not memorized and grid[i][0] not in (1, 3, 5, 6, 7, 8):
+        if not memorized and grid[i][0] not in (1, 3, 5, 6, 7, 8, 9):
             offsetX, offsetY, reach = light
             lightX = playerPosition % self.rowLength + offsetX
             lightY = playerPosition // self.rowLength + offsetY
@@ -1160,8 +1212,10 @@ class renderer():
         match grid[i][0]:
             case 1:  # Player: the Torchbearer facing the way it last moved, on the floor it stands on
                 self.floorFill(i, rooms, memorized, x, y)
-                self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
                 standingIn = grid[i][2] if len(grid[i]) > 2 else None
+                if standingIn is not None and hasattr(standingIn, "look"):  # on an item pile: it's under your feet
+                    self.mapSurface.blit(self.sprites["piles"][standingIn.look], (x * ts, y * ts))
+                self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
                 if standingIn is not None and hasattr(standingIn, "kind"):  # in a plant: it's drawn over you, see-through
                     picture = self.sprites["plants"].get(standingIn.kind)
                     if picture is not None:
@@ -1177,6 +1231,9 @@ class renderer():
             case 3:  # Chest: walnut, mahogany or burnt umber (the same on every floor)
                 self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["chests"][sprites.chestColorFor(i)], (x * ts, y * ts))
+            case 9:  # An item pile: one of the pile pictures, picked when the pile was made
+                self.floorFill(i, rooms, memorized, x, y)
+                self.mapSurface.blit(self.sprites["piles"][grid[i][2].look], (x * ts, y * ts))
             case 4:  # Door to the next level: a pit in the floor, randomly an open pit or a collapsed grave
                 floor = self.floorColor(i, rooms, memorized)
                 self.fillTile(floor, x, y)

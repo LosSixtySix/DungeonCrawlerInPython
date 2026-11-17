@@ -37,7 +37,8 @@ ACTION_LABELS = {action: label for action, label, _ in HOTKEY_ACTIONS}
 FIXED_KEYS = [("Enter", "Confirm"), ("Esc", "Back / Pause"), ("Arrow Keys", "Move"), ("Mouse", "Drag a window by its title")]
 LIGHT_STYLES = ["sway", "flicker"]  # the order the pause menu cycles through them
 
-RESERVED_KEYS = {pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE, pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT}
+RESERVED_KEYS = {pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE, pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT,
+                 pygame.K_BACKQUOTE}  # ~ opens the developer console
 
 
 class Settings():

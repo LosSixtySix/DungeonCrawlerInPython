@@ -19,6 +19,7 @@ import recipes
 import relics
 import plants
 import organizers
+import devconsole
 from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES
 from renderer import renderer as rend, SWAY_FPS
 import pickle
@@ -46,7 +47,8 @@ Hot keys are listed (and can be changed) in the pause menu under Hotkeys; the de
 Fixed keys: Enter = confirm, Esc = close focused window / pause menu, arrow keys = move.
 Windows (Character, Room, Equipment, Inventory, Level Up, Items Here) open with their hotkey. Several can be
 open at once; only the focused one takes arrow keys and Enter. Cycle Windows (Tab) moves focus on release,
-and holding it while pressing Move Left / Move Right moves focus that way. Drag a window by its title bar.
+and holding it while pressing Move Left / Move Right moves focus that way. Holding it and pressing Move Up hands
+control back to the game, leaving every window open. Drag a window by its title bar.
 """
 
 MENU_OPTIONS_FILE = paths.savePath("menuOpts.txt")
@@ -84,6 +86,11 @@ THROWN_EFFECTS = {"Fire", "Smoke", "Magic","Explosive"}  # potions you aim and t
 THROW_RANGE = 8      # how far (in tiles) a potion can be thrown
 FLIGHT_TURNS = [(3, 0), (6, 1), (THROW_RANGE, 2)]  # (up to this distance, turns in the air): close throws land at once
 BLAST_RADIUS = {"Fire": 2, "Smoke": 2, "Magic": 2,"Explosive":3}  # a thrown potion reaches tiles within this circle of its landing spot
+POCKET_CHANCE = 0.5  # chance an enemy that breaks a wall keeps its materials (you get some back when you kill it)
+CARRIED_SHARE = 0.10  # share of an enemy's pocketed materials you get back at 1 Wisdom...
+CARRIED_SHARE_PER_WISDOM = 0.005  # ...plus this much for each Wisdom point above 1 (+0.5% each)
+SPILLED_SHARE = 0.4  # when you didn't make the kill: share of its pocketed materials that spills on the ground...
+KILLER_SHARE = 0.3   # ...and share the enemy that killed it pockets (lost if nothing did, e.g. Demise). The rest is lost
 BURN_CHANCE = 0.5    # chance fire damage sets the target burning
 BURN_TURNS = 3       # how long burning lasts
 BURN_DAMAGE = 1      # fire damage burning deals each turn (Fire Resist takes off it like any fire)
@@ -142,12 +149,16 @@ class gameManager():
         self.windowRects = {}
         self.windowDrawOrder = []
         self.drag = None
+        self.peaceful = False  # developer console /peaceful: enemies ignore you and never attack
+        self.console = devconsole.DevConsole(self)
         self.goToTitle()
 
     # ------------------------------------------------------------------ scenes
 
     def goToTitle(self, message=""):
         self.scene = "title"
+        if self.console.open:
+            self.console.toggle()
         self.titleMessage = message
         self.titleSel = 0
         self.titleFade = 0  # 0 -> 255: "CRUEL" fades in, then the menu appears. Any key or click skips it.
@@ -283,6 +294,7 @@ class gameManager():
         self.EventDispatcher.subscribe(pygame.MOUSEMOTION, self.onMouseMotion)
         self.EventDispatcher.subscribe(pygame.MOUSEBUTTONUP, self.onMouseUp)
         self.EventDispatcher.subscribe(pygame.WINDOWFOCUSLOST, self.onFocusLost)
+        self.EventDispatcher.subscribe(pygame.TEXTINPUT, self.onTextInput)
 
     # ------------------------------------------------------------------ keys
 
@@ -309,10 +321,22 @@ class gameManager():
     def onFocusLost(self, event):
         self.keysHeld.clear()  # we won't get the key-up events while the window is in the background
 
+    def onTextInput(self, event):
+        self.console.onTextInput(event)
+
     def onKeyDown(self, event):
         key = event.key
         repeat = key in self.keysHeld
         self.keysHeld.add(key)
+        # ~ opens the developer console; while it's open every key goes to it (held Backspace still repeats)
+        if self.scene == "playing" and self.rebinding is None and (self.console.open or key == pygame.K_BACKQUOTE):
+            if repeat and key in (pygame.K_BACKQUOTE, pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_KP_ENTER):
+                return
+            if self.console.open:
+                self.console.onKey(event)
+            else:
+                self.console.toggle()
+            return
         if repeat and (self.rebinding is not None or not self.isRepeatable(key)):
             return  # a held key repeating: ignored unless it's one that should repeat
         self.change = True
@@ -342,12 +366,18 @@ class gameManager():
             self.cycleFocus(move[0])
             self.cycleUsed = True
             return
+        if self.cycleHeld and move is not None and move[1] == -1:  # Tab + Up: back to the game, windows stay open
+            self.focus = "map"
+            self.cycleUsed = True
+            return
         for windowId in WINDOW_ORDER:
             if windowId != "items" and self.isAction(key, WINDOW_HOTKEY[windowId]):
                 return self.onWindowHotkey(windowId)
         if self.isAction(key, "color_picker"):
             return self.onColorPickerKey()
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT) and self.focus in ("inventory", "equipment")                     and not self.pickerActive():
+                return self.dropFocusedItem()
             if self.focus == "crafting" and not self.pickerActive():
                 return self.startCrafting(CRAFT_MORE if event.mod & pygame.KMOD_SHIFT else 1)
             return self.onEnter()
@@ -476,6 +506,8 @@ class gameManager():
     # ---------------------------------------------------------------- windows
 
     def openWindow(self, windowId):
+        if windowId == "items" and self.takePileGold():  # the pile was only gold: nothing left to show
+            return
         if windowId not in self.openWindows:
             self.openWindows.append(windowId)
             self.openWindows.sort(key=WINDOW_ORDER.index)
@@ -570,6 +602,138 @@ class gameManager():
             self.onPickUpItem()
         elif windowId == "crafting":
             self.startCrafting(1)
+
+    # ---------------------------------------------------------------- dropping
+    # Ctrl+Enter (or Alt+Enter) on an item in the Inventory or Equipment window drops it in a pile at your feet
+    # (or the nearest tile with room, see placeItems), where it can be picked up again. It's a free action.
+
+    def dropFocusedItem(self):
+        player = self.player
+        if self.focus == "inventory":
+            index = self.windowSel["inventory"]
+            if index >= len(player.inventory):
+                return
+            take = lambda: player.inventory.pop(index)
+        else:
+            if self.swapActive():
+                return
+            slot = list(player.equipment)[self.windowSel["equipment"]]
+            if player.equipment[slot] == "None":
+                return
+            take = lambda: player.takeOff(slot)
+        if not any(self.roomFor(self.groundAt(p)) for p in self.spillOrder(self.playerPositionFlat)):
+            self.addPopup("No room to drop it", self.playerPositionFlat)
+            return
+        item = take()
+        spot = self.placeItems(self.playerPositionFlat, [item])[0]
+        self.addPopup(f"Dropped {item.name}", spot)
+        self.change = True
+
+    # -------------------------------------------------------------- item piles
+    # Loose items on the floor are piles (tile type 9, an items.ItemPile), not chests (type 3): you and enemies
+    # walk over them, and each holds at most items.PILE_LIMIT. Anything more spills onto the nearest tiles with room.
+
+    def groundAt(self, position):
+        """What's lying on a tile, also under you or an enemy: e.g. [0, visibility] or [9, visibility, pile]."""
+        if position == self.playerPositionFlat:
+            return self.currentLocation
+        tile = self.grid[position]
+        if tile[0] == 5:
+            return self.enemyOccupiedItemSpaces.get(position, [0, tile[1]])
+        return tile
+
+    def setGround(self, position, ground):
+        """Changes what's lying on a tile (under you or an enemy if one is standing there)."""
+        if position == self.playerPositionFlat:
+            self.currentLocation = ground
+            self.grid[position] = [1, self.grid[position][1]] + ground[2:]
+        elif self.grid[position][0] == 5:
+            if ground[0] == 0:
+                self.enemyOccupiedItemSpaces.pop(position, None)
+            else:
+                self.enemyOccupiedItemSpaces[position] = ground
+        else:
+            self.grid[position] = ground
+
+    def goldRoomFor(self, ground):
+        """How much more gold fits on this ground: piles keep gold in its own slot, up to items.PILE_GOLD_LIMIT."""
+        if ground[0] == 0:
+            return items.PILE_GOLD_LIMIT
+        if ground[0] == 9:
+            return max(0, items.PILE_GOLD_LIMIT - getattr(ground[2], "gold", 0))
+        return 0
+
+    def takePileGold(self):
+        """Opening Items Here on a pile takes its gold straight to you. True if that emptied the pile."""
+        spot = self.itemsSpot()
+        if spot is None:
+            return False
+        ground = self.groundAt(spot)
+        if ground[0] != 9 or not getattr(ground[2], "gold", 0):
+            return False
+        self.give("gold", ground[2].gold, spot)
+        ground[2].gold = 0
+        if ground[2].items:
+            return False
+        self.setGround(spot, [0, ground[1]])
+        self.roomItems = None
+        self.change = True
+        return True
+
+    def roomFor(self, ground):
+        """How many more items fit on this ground: a full pile's worth on bare floor, nothing on anything else."""
+        if ground[0] == 0:
+            return items.PILE_LIMIT
+        if ground[0] == 9:
+            return max(0, items.PILE_LIMIT - len(ground[2].items))
+        return 0
+
+    def spillOrder(self, origin):
+        """origin, then the tiles around it nearest first, spreading only over open ground (floor, piles, and
+        tiles you or an enemy stand on), so spilled items never end up behind a wall."""
+        order, seen, ring = [], {origin}, [origin]
+        while ring and len(order) < 80:
+            order += ring
+            nextRing = []
+            for position in ring:
+                for n in self.neighbors(position):
+                    if n not in seen and self.grid[n][0] in (0, 1, 5, 9):
+                        seen.add(n)
+                        nextRing.append(n)
+            rand.shuffle(nextRing)  # so spills scatter instead of always heading the same way
+            ring = nextRing
+        return order
+
+    def placeItems(self, origin, things, gold=0):
+        """Lays things (and gold) on the floor at origin in piles of at most PILE_LIMIT items and PILE_GOLD_LIMIT
+        gold; the rest spill onto the nearest tiles with room. Returns the tiles that got something. If nowhere
+        nearby has room, the last pile takes the rest rather than lose them (and if there's no room at all,
+        nothing is placed)."""
+        left = list(things)
+        placed = []
+        for position in self.spillOrder(origin):
+            if not left and not gold:
+                break
+            ground = self.groundAt(position)
+            room = self.roomFor(ground) if left else 0
+            goldRoom = min(gold, self.goldRoomFor(ground))
+            if not room and not goldRoom:
+                continue
+            if ground[0] == 0:
+                ground = [9, ground[1], items.ItemPile()]
+            pile = ground[2]
+            pile.items.extend(left[:room])
+            left = left[room:]
+            pile.gold = getattr(pile, "gold", 0) + goldRoom
+            gold -= goldRoom
+            self.setGround(position, ground)
+            placed.append(position)
+        if placed and (left or gold):
+            pile = self.groundAt(placed[-1])[2]
+            pile.items.extend(left)
+            pile.gold += gold
+        self.change = True
+        return placed
 
     # --------------------------------------------------------- equipment swap
     # Equipping with every fitting slot full opens the Equipment window on that slot; Enter swaps the item in
@@ -855,7 +1019,8 @@ class gameManager():
     def destroyStation(self, position):
         """A station ran out of HP: it's gone, leaving a little Goblin Scrap."""
         station = self.grid[position][2]
-        self.grid[position] = [3, self.grid[position][1], [resources.MaterialStack("scrap", rand.randint(1, 2))]]
+        self.grid[position] = [0, self.grid[position][1]]
+        self.placeItems(position, [resources.MaterialStack("scrap", rand.randint(1, 2))])
         self.player.stations.discard(station.id)
         self.player.stationPlaced.pop(station.id, None)
         self.addPopup(f"{station.name} destroyed!", position)
@@ -959,6 +1124,8 @@ class gameManager():
 
     def hitPlayer(self, enemy, enemyPosition):
         """An enemy attacks the player."""
+        if self.peaceful:  # developer console /peaceful
+            return
         player = self.player
         if enemy.name in ("Goblin", "Goblin Chieftan") and player.hasEffect("goblin_fear") and rand.random() < 0.3:
             enemy.lastPlayerPosition = None
@@ -1039,6 +1206,9 @@ class gameManager():
 
     def onMouseWheel(self, event):
         if self.scene != "playing":
+            return
+        if self.console.open:
+            self.console.scrollBy(event.y * 3)
             return
         if self.picker["ChangingColor"]:
             keys = list(self.painter.colorDict.keys())
@@ -1137,7 +1307,7 @@ class gameManager():
             self.thirst()
             if tile[2].hp <= 0:
                 self.killEnemy(target)
-        elif tile[0] == 3:  # items
+        elif tile[0] in (3, 9):  # a chest or an item pile
             if self.roomItems is not None:
                 self.openWindow("items")
         elif tile[0] == 7:  # a crafting station
@@ -1181,22 +1351,46 @@ class gameManager():
         self.grid[position] = [0, self.grid[position][1]]
         self.collectDrops(loot.roll(loot.PLANT_LOOT, name), name, position)
 
-    def killEnemy(self, position):
-        """An enemy died: it pays its gold, rolls its loot table, and any drops land on its tile as an item pile."""
+    def killEnemy(self, position, killer="player"):
+        """An enemy died. killer is "player", the enemy that killed it, or None (the environment, e.g.
+        Demise). If you killed it, it pays all its gold (including gold it took from Gold Walls), rolls its loot
+        table, and gives back some of the materials it pocketed from walls (more with Wisdom, see carriedShare);
+        relics, and whatever doesn't fit in a full pouch, are left in a pile. Otherwise you get no loot: some of
+        its gold and of what it pocketed spills on the ground, some goes to the enemy that killed it, and the
+        rest is lost (see spillPockets)."""
         tile = self.grid[position]
         enemy = tile.pop()
+        self.EnemyPositions.discard(position)
+        if killer == "player":
+            stacks, gold = self.killLoot(enemy, position), 0
+        else:
+            stacks, gold = self.spillPockets(enemy, killer)
+        underneath = self.enemyOccupiedItemSpaces.pop(position, None)  # what it was standing on, if anything
+        if underneath is not None and (underneath[0] != 2 or not (stacks or gold)):  # a pile, chest or plant stays
+            underneath[1] = tile[1]                          # (so does the wall round a burrower that left nothing)
+            self.grid[position] = underneath
+        else:  # (a burrower inside a wall that left something: the wall crumbles so it can be picked up)
+            self.grid[position] = [0, tile[1]]
+        if stacks or gold:
+            self.placeItems(position, stacks, gold)
+
+    def carriedShare(self):
+        """The share of an enemy's pocketed materials you get back when you kill it."""
+        wisdom = self.player.attributes["wisdom"]
+        return min(1.0, CARRIED_SHARE + CARRIED_SHARE_PER_WISDOM * max(0, wisdom - 1))
+
+    def killLoot(self, enemy, position):
+        """Your reward for a kill: gold, its loot roll and your share of what it carried go straight to you, with
+        a popup each. Returns what's left for the floor: relics, and whatever doesn't fit in a full pouch."""
         player = self.player
         gold = enemy.gold + 3 * player.countEffect("gold_per_kill") + player.countEffect("lucky")
         if gold:
             self.give("gold", gold, position)
-        self.EnemyPositions.discard(position)
         drops = loot.roll(loot.ENEMY_LOOT, enemy.name)
-        self.player.lootFound.add(loot.discoveryKey(enemy.name))
-        # Like breaking a wall, the drops go straight to you with a popup each. Relics (items) and whatever
-        # doesn't fit in a full pouch are left on the enemy's tile instead.
+        player.lootFound.add(loot.discoveryKey(enemy.name))
         stacks = []
         for dropId, amount in drops:
-            self.player.lootFound.add(loot.discoveryKey(enemy.name, dropId))
+            player.lootFound.add(loot.discoveryKey(enemy.name, dropId))
             if loot.isRelicDrop(dropId):
                 relic = relics.make(dropId[6:])
                 stacks.append(relic)
@@ -1205,17 +1399,66 @@ class gameManager():
                 left = amount - self.give(dropId, amount, position)
                 if left:
                     stacks.append(resources.MaterialStack(dropId, left))
-        underneath = self.enemyOccupiedItemSpaces.pop(position, None)  # what it was standing on, if anything
-        if underneath is not None and underneath[0] == 3:  # an item pile: anything left over joins it
-            underneath[2].extend(stacks)
-            underneath[1] = tile[1]
-            self.grid[position] = underneath
-        elif underneath is not None and not stacks:  # a burrower died inside a wall: the wall comes back
-            self.grid[position] = underneath
-        elif stacks:  # (a burrower inside a wall that left something: the wall crumbles so it can be picked up)
-            self.grid[position] = [3, tile[1], stacks]
-        else:
-            self.grid[position] = [0, tile[1]]
+        share = self.carriedShare()
+        for materialId, amount in getattr(enemy, "materials", {}).items():
+            back = int(amount * share + rand.random())  # rounded up or down at random, so small amounts still pay
+            left = back - self.give(materialId, back, position) if back else 0
+            if left:
+                stacks.append(resources.MaterialStack(materialId, left))
+        return stacks
+
+    @staticmethod
+    def splitSpoils(amount):
+        """(spilled, taken) out of amount: each one is rolled on its own (SPILLED_SHARE spills, KILLER_SHARE goes
+        to the killer, the rest is lost), so even a single ore or coin can go any of the three ways."""
+        spilled = taken = 0
+        for _ in range(amount):
+            roll = rand.random()
+            if roll < SPILLED_SHARE:
+                spilled += 1
+            elif roll < SPILLED_SHARE + KILLER_SHARE:
+                taken += 1
+        return spilled, taken
+
+    def spillPockets(self, enemy, killer):
+        """Someone other than you killed enemy. Its gold and each material it pocketed are split (splitSpoils): the
+        spilled part is returned for the ground as (stacks, gold), the killer's part goes into killer's pockets
+        (lost if killer is None, the environment), the rest is lost."""
+        stacks = []
+        gold, taken = self.splitSpoils(enemy.gold)
+        if taken and killer is not None:
+            killer.gold += taken
+        for materialId, amount in getattr(enemy, "materials", {}).items():
+            spilled, taken = self.splitSpoils(amount)
+            if materialId == "gold":
+                gold += spilled
+            elif spilled:
+                stacks.append(resources.MaterialStack(materialId, spilled))
+            if taken and killer is not None:
+                self.pocket(killer, materialId, taken)
+        return stacks, gold
+
+    def pocket(self, enemy, materialId, amount):
+        """Puts materials in an enemy's pockets; gold goes with its own gold (all of it is yours if you kill it)."""
+        if materialId == "gold":
+            enemy.gold += amount
+            return
+        if not hasattr(enemy, "materials"):  # enemies from saves made before they could carry anything
+            enemy.materials = {}
+        enemy.materials[materialId] = enemy.materials.get(materialId, 0) + amount
+
+    def enemyBrokeWall(self, position, enemy):
+        """An enemy broke a wall: it's floor now. The enemy always keeps any gold in it, and with POCKET_CHANCE
+        the wall's other materials too."""
+        broken = self.grid[position].pop()
+        self.grid[position][0] = 0
+        drops = loot.rollWall(broken.name, 1)
+        if isinstance(broken, wall.OreVein) and position in self.rooms["Gold"]:
+            drops += loot.rollWall("Gold Wall", 1)
+        keep = rand.random() < POCKET_CHANCE
+        for materialId, amount in drops:
+            if materialId == "gold" or keep:
+                self.pocket(enemy, materialId, amount)
 
     def collectDrops(self, drops, source, position, alreadyFound=False):
         """Gives drops straight to the player (gold to gold, materials to the pouch) with a popup for each."""
@@ -1270,7 +1513,8 @@ class gameManager():
         self.pickUpItem()
         self.windowSel["items"] = 0
         if len(self.roomItems) == 0:
-            self.grid[self.PlayerLookPosition] = [0, 1]
+            spot = self.itemsSpot()
+            self.setGround(spot, [0, self.groundAt(spot)[1]])
             self.roomItems = None
             self.closeWindow("items")
 
@@ -1389,6 +1633,8 @@ class gameManager():
             self.currentPosition = "Door to previous Level"
         elif self.currentLocation[0] == 3:
             self.currentPosition = "Items" if len(self.currentLocation[2]) > 1 else "Item"
+        elif self.currentLocation[0] == 9:
+            self.currentPosition = "Item pile"
         elif self.currentLocation[0] == 8:
             self.currentPosition = self.currentLocation[2].name + (" (hidden)" if self.playerHidden() else "")
         else:
@@ -1605,7 +1851,7 @@ class gameManager():
                 if flat in smoke:
                     break  # an enemy sees into smoke but not through it (and sees nothing from inside it)
                 tile = self.grid[flat]
-                seeThrough = tile[0] == 0 or (tile[0] == 8 and not tile[2].blocksSight)
+                seeThrough = tile[0] in (0, 9) or (tile[0] == 8 and not tile[2].blocksSight)
                 if not (seeThrough or tile[0] == selfNum or tremorSense):
                     break
             t += .1
@@ -1978,7 +2224,7 @@ class gameManager():
         self.player.damageTaken += dealt
         self.bleed(self.playerPositionFlat)
 
-    def magicEnemy(self, position, damage):
+    def magicEnemy(self, position, damage, killer="player"):
         enemy = self.grid[position][2]
         dealt = max(0, damage - getattr(enemy, "magicResistance", 0))
         dealt = round(dealt * (1 - getattr(enemy, "magicResistPercent", 0)))
@@ -1988,18 +2234,21 @@ class gameManager():
         enemy.hp -= dealt
         self.bleed(position)
         if enemy.hp <= 0:
-            self.killEnemy(position)
+            self.killEnemy(position, killer)
 
     def inDemise(self, position):
         plant = self.plantAt(position)
         return plant is not None and plant.kind == organizers.DEMISE
 
     def stepDemise(self):
-        """Organizer's Demise hurts everything standing in it with magic, except Organizers."""
+        """Organizer's Demise hurts everything standing in it with magic, except Organizers. Its kills are the
+        environment's, even Demise you planted: no loot, and only some of the enemy's gold and pocketed
+        materials spill on the ground (no one gets the killer's share)."""
         for position in list(self.EnemyPositions):
             tile = self.grid.get(position)
-            if tile and tile[0] == 5 and len(tile) > 2 and not isinstance(tile[2], enemies.Organizer)                     and self.inDemise(position):
-                self.magicEnemy(position, DEMISE_DAMAGE)
+            if tile and tile[0] == 5 and len(tile) > 2 and not isinstance(tile[2], enemies.Organizer) \
+                    and self.inDemise(position):
+                self.magicEnemy(position, DEMISE_DAMAGE, killer=None)
         if self.inDemise(self.playerPositionFlat) and not self.player.hasEffect("demise_ward"):
             self.magicPlayer(DEMISE_DAMAGE)
 
@@ -2288,6 +2537,10 @@ class gameManager():
                 visiblePositions.discard(i)
                 if currentEnemy.allSight:
                     visiblePositions.add(self.playerPositionFlat)
+                if self.peaceful:  # developer console /peaceful: you're invisible to them
+                    visiblePositions.discard(self.playerPositionFlat)
+                    if currentEnemy.lastPlayerPosition == self.playerPositionFlat:
+                        currentEnemy.lastPlayerPosition = None
                 if len(visiblePositions) == 0:
                     break
                 if self.playerPositionFlat in visiblePositions and self.playerHidden() and not currentEnemy.tremorSense \
@@ -2330,8 +2583,7 @@ class gameManager():
                         self.chip(newPosition, i)
                         self.grid[newPosition][2].takeDamage(currentEnemy.wallDamage, self.tileSize)
                         if self.grid[newPosition][2].hp <= 0:
-                            self.grid[newPosition].pop()
-                            self.grid[newPosition][0] = 0
+                            self.enemyBrokeWall(newPosition, currentEnemy)
                     elif currentEnemy.burrow:
                         self.chip(newPosition, i)
                         self.enemyOccupiedItemSpaces[newPosition] = copy.copy(self.grid[newPosition])
@@ -2350,7 +2602,7 @@ class gameManager():
                     elif currentEnemy.lastPlayerPosition == newPosition:
                         currentEnemy.lastPlayerPosition = None
                         moving = True
-                elif tileType == 3 or (tileType == 8 and self.grid[newPosition][2].walkable):
+                elif tileType in (3, 9) or (tileType == 8 and self.grid[newPosition][2].walkable):
                     self.enemyOccupiedItemSpaces[newPosition] = copy.copy(self.grid[newPosition])
                     self.grid[newPosition] = [0, self.grid[newPosition][1]]
                     movedToNewPosition = True
@@ -2386,11 +2638,21 @@ class gameManager():
         if self.player.addItemToInventory(item):
             self.roomItems.pop(index)
 
-    def getItemsFromGrid(self):
-        gridList = self.grid.get(self.PlayerLookPosition)
-        if gridList is not None and gridList[0] == 3:
-            return gridList[2]
+    def itemsSpot(self):
+        """Where Items Here takes from: the chest or pile you face, otherwise a pile you're standing on."""
+        look = self.grid.get(self.PlayerLookPosition)
+        if look is not None and look[0] in (3, 9):
+            return self.PlayerLookPosition
+        if self.currentLocation[0] == 9:
+            return self.playerPositionFlat
         return None
+
+    def getItemsFromGrid(self):
+        spot = self.itemsSpot()
+        if spot is None:
+            return None
+        ground = self.groundAt(spot)
+        return ground[2].items if ground[0] == 9 else ground[2]
 
     # ----------------------------------------------------------- menu options
 
@@ -2555,6 +2817,8 @@ class gameManager():
             if self.swapActive():
                 spec["header"] = f"Swap in {self.swap['item'].name}: Enter swaps, Esc cancels"
                 spec["dimRows"] = {i for i, slot in enumerate(player.equipment) if slot not in self.swap["slots"]}
+            else:  # always shown (not just when focused) so the window doesn't change size
+                spec["header"] = "Enter takes off, Ctrl+Enter drops"
         elif windowId == "levelup":
             spec["header"] = f"Gold {player.gold}     Next point costs {player.nextLevelGold}"
             spec["rows"] = [(name.title(), value) for name, value in player.attributes.items()]
@@ -2653,10 +2917,11 @@ class gameManager():
                       "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Enemies can't see into it",
                       "Magic": f"Thrown: {item.bonus} magic damage to everything where it lands, you included. "
                             "Organizers it hits become Plant Organizers instead",
-                      "Explosive": f"Thrown: {item.bonus} damge to everything where it lands, you included. Breaks nearby walls"}.get(item.effect, item.effect)
+                      "Explosive": f"Thrown: {item.bonus} damage to everything where it lands, you included. Breaks nearby walls"}.get(item.effect, item.effect)
                                
             lines.append(("body", effect, ""))
             lines.append(("hint", "Enter  aim and throw" if item.effect in THROWN_EFFECTS else "Enter  use", ""))
+            lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines
         lines.append(("label", (item.slot or "").upper(), getattr(item, "quality", "")))
         scaling = player.attributeBonuses.get(item.attributeScaling, 0)
@@ -2681,6 +2946,7 @@ class gameManager():
                     if diff:
                         lines.append(("better" if diff > 0 else "worse", f"{stat} {'+' if diff > 0 else ''}{diff} vs this", ""))
             lines.append(("hint", "Enter  equip" if free else "Enter  swap", ""))
+        lines.append(("hint", "Ctrl+Enter  drop", ""))
         return lines
 
     def pauseRowValue(self, label):
@@ -2749,7 +3015,7 @@ class gameManager():
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly,
-            popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry,
+            popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
         if messageKey is not None and messageFinished:

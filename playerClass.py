@@ -117,13 +117,19 @@ class PlayerClass():
         if item != "None":
             if not self.addItemToInventory(item):  # no room in the inventory: it stays on
                 return False
-            if item.Etype == "Unique":
-                if item.name == "Burrower's Amulet":
-                    self.burrow = False
-            self.equipment[slot] = "None"
+            self.takeOff(slot)
             self.actionMade = True
             return True
         return False
+
+    def takeOff(self, slot):
+        """Empties slot and undoes anything the item did while worn. Returns the item (unequipping puts it in
+        the inventory, dropping puts it on the floor)."""
+        item = self.equipment[slot]
+        if item.Etype == "Unique" and item.name == "Burrower's Amulet":
+            self.burrow = False
+        self.equipment[slot] = "None"
+        return item
 
     def addMaterial(self, materialId, amount):
         """Puts materials in the pouch, up to resources.POUCH_LIMIT of each. Returns how many fit."""

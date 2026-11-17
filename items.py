@@ -102,6 +102,22 @@ def createRandomStatItems(ammount:int,quality:str = "V") -> list:
 goblinEquipmentList = [RustySword,Pick]
 
 
+PILE_LIMIT = 3   # items in one pile; more spill onto the nearest tiles with room
+PILE_LOOKS = 4   # how many pictures a pile can have (sprites.PILE_SPRITES)
+PILE_GOLD_LIMIT = 20  # gold in one pile; it has its own slot, so it doesn't count toward PILE_LIMIT
+
+
+class ItemPile():
+    """Items lying loose on the floor (tile type 9): enemy drops, a broken station's scrap, things you drop.
+    Unlike a chest (tile type 3) you and enemies can walk over it. look is which picture it's drawn with,
+    picked at random when the pile is made. gold is loose gold in its own slot (up to PILE_GOLD_LIMIT)."""
+
+    def __init__(self, things=None, look=None, gold=0):
+        self.items = list(things or [])
+        self.look = rand.randrange(PILE_LOOKS) if look is None else look
+        self.gold = gold
+
+
 
 def getItemName(item):
     return item.name

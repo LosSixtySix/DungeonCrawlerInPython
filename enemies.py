@@ -18,6 +18,7 @@ class Enemy():
         self.allSight = False
         self.gold = goldWorth
         self.maxHp = hp  # for bleeding at low health
+        self.materials = {}  # materials pocketed from walls it broke: {material id: amount}. You get some back by killing it
 
     def CanDig(self):
         if self.wallDamage > 0:
