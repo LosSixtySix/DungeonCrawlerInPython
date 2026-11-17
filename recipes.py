@@ -136,6 +136,8 @@ def gear(etype, name, slot, scaling="strength"):
 FIRE_FLASK_DAMAGE = 5
 SMOKE_TURNS = 5
 DEMISE_FLASK_DAMAGE = 5
+BOMB_FLASK_DAMAGE = 10
+BOMB_WALL_DAMAGE = 20
 
 RECIPES = [
     # ---- By hand
@@ -265,6 +267,9 @@ RECIPES = [
     Recipe("fire_flask", "Fire Flask", "cauldron", 3, {"glass": 1, "emberroot": 2, "coal": 1}, "potion",
            "Throw it and everything it splashes burns.", f"Thrown: {FIRE_FLASK_DAMAGE} damage where it lands; sets fires",
            makeItem=potion("Fire Flask", "Fire", FIRE_FLASK_DAMAGE)),
+    Recipe("bomb_flask", "Bomb","cauldron", 2,{"hide":1,"emberroot":1,"coal":2}, "potion",
+           "Throw it and it explodes.",f"Thrown: {BOMB_FLASK_DAMAGE} damage when it explodes; sets fires, breaks walls",
+           makeItem=potion("Bomb","Explosive",BOMB_FLASK_DAMAGE))
 ]
 
 SCRAP_GOLD, REFORGE_GOLD, REKINDLE_GOLD = 40, 150, 100

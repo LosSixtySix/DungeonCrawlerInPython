@@ -80,10 +80,10 @@ INVENTORY_COLUMNS = 5
 EQUIP_TURNS = 1         # turns to put one item on or take one off (a swap is both)
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
 CRAFT_MORE = 5       # Shift+Enter crafts up to this many in a row
-THROWN_EFFECTS = {"Fire", "Smoke", "Magic"}  # potions you aim and throw instead of drinking
+THROWN_EFFECTS = {"Fire", "Smoke", "Magic","Explosive"}  # potions you aim and throw instead of drinking
 THROW_RANGE = 8      # how far (in tiles) a potion can be thrown
 FLIGHT_TURNS = [(3, 0), (6, 1), (THROW_RANGE, 2)]  # (up to this distance, turns in the air): close throws land at once
-BLAST_RADIUS = {"Fire": 2, "Smoke": 2, "Magic": 2}  # a thrown potion reaches tiles within this circle of its landing spot
+BLAST_RADIUS = {"Fire": 2, "Smoke": 2, "Magic": 2,"Explosive":3}  # a thrown potion reaches tiles within this circle of its landing spot
 BURN_CHANCE = 0.5    # chance fire damage sets the target burning
 BURN_TURNS = 3       # how long burning lasts
 BURN_DAMAGE = 1      # fire damage burning deals each turn (Fire Resist takes off it like any fire)
@@ -1799,6 +1799,24 @@ class gameManager():
                     out.append(position)
         return out
 
+    def blastWalls(self,center,radius,area):
+        reached = set(area) | {center}
+        cx, cy = center % self.rowLength, center // self.rowLength
+        walls = []
+        for y in range(cy - radius, cy + radius +1):
+            for x in range(cx - radius, cx +radius+1):
+                if not 0 <= x < self.rowLength or not self.inCircle(x - cx, y- cy, radius):
+                    continue
+                position = x + y * self.rowLength
+                tile = self.grid.get(position)
+                if tile is None or tile[0] != 2 or len(tile) < 3:
+                    continue
+                neighbors = [(x + dx) + (y + dy) * self.rowLength for dx, dy in ((1,0),(-1,0),(0,1),(0,-1))
+                              if 0 <= x + dx < self.rowLength]
+                if any(n in reached for n in neighbors):
+                    walls.append(position)
+        return walls
+
     def blastArea(self, center, radius):
         """The tiles within the circle around center that a splash can reach (walls stop it)."""
         cx, cy = center % self.rowLength, center // self.rowLength
@@ -1875,6 +1893,31 @@ class gameManager():
                 self.magicPlayer(shot["power"])
             if not hit:
                 self.addPopup("Nothing there", landing)
+        elif shot["effect"] == "Explosive":
+            hit = 0
+            self.igniteArea(area + [p for p in self.plantsAtEdge(landing, radius) if p not in area])
+            for position in area:
+                tile = self.grid[position]
+                if tile[0] == 5 and len(tile) > 2:
+                    hit += 1
+                    tile[2].hp -= shot["power"]
+                    self.bleed(position)
+                    if tile[2].hp <= 0:
+                        self.killEnemy(position)
+            if self.playerPositionFlat in area:
+                hit += 1
+                self.player.damageTaken += shot["power"]
+                self.bleed(self.playerPositionFlat)
+            for position in self.blastWalls(landing,radius,area):
+                hit += 1
+                w = self.grid[position][2]
+                self.chip(position,landing)
+                w.brokenPoints |= wall.getRandomPoints((1,self.tileSize -1), (1,self.tileSize -1), self.tileSize ** 2//3)
+                w.hp -= recipes.BOMB_WALL_DAMAGE
+                if w.hp <= 0: 
+                    self.breakWall(position)
+            if not hit:
+                self.addPopup("Boom",landing)
         else:
             for position in area:
                 self.smoke[position] = max(self.smoke.get(position, 0), shot["power"])
@@ -2600,7 +2643,9 @@ class gameManager():
                       "Fire": f"Thrown: {item.bonus} damage to everything where it lands, you included. Can set the ground and plants alight",
                       "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Enemies can't see into it",
                       "Magic": f"Thrown: {item.bonus} magic damage to everything where it lands, you included. "
-                               "Organizers it hits become Plant Organizers instead"}.get(item.effect, item.effect)
+                            "Organizers it hits become Plant Organizers instead",
+                      "Explosive": f"Thrown: {item.bonus} damge to everything where it lands, you included. Breaks nearby walls"}.get(item.effect, item.effect)
+                               
             lines.append(("body", effect, ""))
             lines.append(("hint", "Enter  aim and throw" if item.effect in THROWN_EFFECTS else "Enter  use", ""))
             return lines

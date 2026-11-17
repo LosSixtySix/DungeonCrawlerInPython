@@ -886,7 +886,7 @@ class renderer():
     def effectColor(self, effect):
         if effect == "Magic":
             return self.MAGIC_PURPLE
-        return self.color("enemy") if effect == "Fire" else self.color("font")
+        return self.color("enemy") if effect in ("Fire","Explosive") else self.color("font")
 
     FIRE_RED, FIRE_ORANGE, FIRE_YELLOW = (196, 48, 28), (240, 128, 40), (255, 222, 120)
 
@@ -929,7 +929,7 @@ class renderer():
         c = size // 2
         grow = 1 - (1 - age) ** 3  # fast out, slow at the end
         fade = int(255 * (1 - age))
-        if effect == "Fire":
+        if effect in ("Fire","Explosive"):
             if age < 0.6:  # the bright core
                 coreAge = age / 0.6
                 core = self.FIRE_YELLOW if coreAge < 0.4 else self.FIRE_ORANGE
