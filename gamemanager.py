@@ -113,6 +113,7 @@ class gameManager():
         pygame.init()
 
         self.win = pygame.display.set_mode((0, 0))
+        pygame.display.set_caption("CRUEL")
         self.clock = pygame.time.Clock()
 
         self.painter: rend = rend(self.win)
