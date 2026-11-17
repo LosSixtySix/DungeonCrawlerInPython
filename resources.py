@@ -47,6 +47,8 @@ MATERIALS = {
     "emberroot_seed": ("Emberroot Seed", "Plants", (176, 120, 80)),
     "shadowfern": ("Shadowfern", "Plants", (78, 128, 86)),
     "shadowfern_spores": ("Shadowfern Spores", "Plants", (96, 120, 96)),
+    "organizers_demise": ("Organizer's Demise", "Plants", (176, 96, 184)),
+    "organizers_demise_seed": ("Demise Seeds", "Plants", (140, 96, 146)),
 }
 GROUPS = ["Raw", "Ore", "Refined", "Plants", "Drops"]
 

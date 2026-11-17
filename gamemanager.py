@@ -18,6 +18,7 @@ import resources
 import recipes
 import relics
 import plants
+import organizers
 from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES
 from renderer import renderer as rend, SWAY_FPS
 import pickle
@@ -79,13 +80,14 @@ INVENTORY_COLUMNS = 5
 EQUIP_TURNS = 1         # turns to put one item on or take one off (a swap is both)
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
 CRAFT_MORE = 5       # Shift+Enter crafts up to this many in a row
-THROWN_EFFECTS = {"Fire", "Smoke"}  # potions you aim and throw instead of drinking
+THROWN_EFFECTS = {"Fire", "Smoke", "Magic"}  # potions you aim and throw instead of drinking
 THROW_RANGE = 8      # how far (in tiles) a potion can be thrown
 FLIGHT_TURNS = [(3, 0), (6, 1), (THROW_RANGE, 2)]  # (up to this distance, turns in the air): close throws land at once
-BLAST_RADIUS = {"Fire": 2, "Smoke": 2}  # a thrown potion reaches tiles within this circle of its landing spot
+BLAST_RADIUS = {"Fire": 2, "Smoke": 2, "Magic": 2}  # a thrown potion reaches tiles within this circle of its landing spot
 BURN_CHANCE = 0.5    # chance fire damage sets the target burning
 BURN_TURNS = 3       # how long burning lasts
 BURN_DAMAGE = 1      # fire damage burning deals each turn (Fire Resist takes off it like any fire)
+DEMISE_DAMAGE = 5    # magic damage Organizer's Demise deals each turn to anything (but an Organizer) standing in it
 GROUND_FIRE_CHANCE = 0.25  # chance each floor tile a Fire Flask splashes catches fire
 GROUND_FIRE_TURNS = 3      # how long burning ground lasts
 PLANT_CATCH = 0.6          # chance a plant catches fire (from a flask, or each turn from a burning plant beside it)
@@ -1170,7 +1172,11 @@ class gameManager():
 
     def harvestPlant(self, position):
         """A plant was picked: its herb (and sometimes a seed) goes straight into the pouch."""
-        name = self.grid[position][2].name
+        plant = self.grid[position][2]
+        name = plant.name
+        if plant.kind == organizers.DEMISE and not self.player.hasEffect("demise_ward"):
+            self.addPopup("Needs Thornward Gloves", position)  # its thorns can't be picked bare-handed
+            return
         self.grid[position] = [0, self.grid[position][1]]
         self.collectDrops(loot.roll(loot.PLANT_LOOT, name), name, position)
 
@@ -1494,6 +1500,8 @@ class gameManager():
 
     def createNPC(self, position, rooms):
         # TODO: pick enemies by room type / floor level
+        if rand.random() < enemies.ORGANIZER_CHANCE:
+            return rand.choice(enemies.organizers)()
         return rand.choice(enemies.lowerFloorEnemies)()
 
     def createObjects(self, grid, rooms):
@@ -1852,6 +1860,21 @@ class gameManager():
                 self.firePlayer(shot["power"])
             if not hit:
                 self.addPopup("Nothing burns", landing)
+        elif shot["effect"] == "Magic":  # Demise Flask: magic damage, but Organizers take root instead
+            hit = 0
+            for position in area:
+                tile = self.grid[position]
+                if tile[0] == 5 and len(tile) > 2:
+                    hit += 1
+                    if isinstance(tile[2], enemies.Organizer):
+                        organizers.overgrow(self, position)
+                    else:
+                        self.magicEnemy(position, shot["power"])
+            if self.playerPositionFlat in area:  # too close: it hits you too
+                hit += 1
+                self.magicPlayer(shot["power"])
+            if not hit:
+                self.addPopup("Nothing there", landing)
         else:
             for position in area:
                 self.smoke[position] = max(self.smoke.get(position, 0), shot["power"])
@@ -1894,6 +1917,43 @@ class gameManager():
             return
         if canIgnite and self.enemyFireDamage(enemy, BURN_DAMAGE) > 0 and rand.random() < BURN_CHANCE:
             enemy.burnTurns = BURN_TURNS  # shown as flames on it (no point setting alight something its burn can't hurt)
+
+    # ------------------------------------------------------------------ magic
+    # Magic ignores Defense, like fire: only Magic Resist (gear "MagicRes") takes damage off it for you, and
+    # an enemy's magicResistance (flat) then magicResistPercent (0-1). It never sets anything burning.
+
+    def magicPlayer(self, damage):
+        dealt = max(0, damage - self.player.magicResistance())
+        if dealt == 0:
+            self.addPopup("Resisted", self.playerPositionFlat)
+            return
+        self.player.damageTaken += dealt
+        self.bleed(self.playerPositionFlat)
+
+    def magicEnemy(self, position, damage):
+        enemy = self.grid[position][2]
+        dealt = max(0, damage - getattr(enemy, "magicResistance", 0))
+        dealt = round(dealt * (1 - getattr(enemy, "magicResistPercent", 0)))
+        if dealt == 0:
+            self.addPopup("Resisted", position)
+            return
+        enemy.hp -= dealt
+        self.bleed(position)
+        if enemy.hp <= 0:
+            self.killEnemy(position)
+
+    def inDemise(self, position):
+        plant = self.plantAt(position)
+        return plant is not None and plant.kind == organizers.DEMISE
+
+    def stepDemise(self):
+        """Organizer's Demise hurts everything standing in it with magic, except Organizers."""
+        for position in list(self.EnemyPositions):
+            tile = self.grid.get(position)
+            if tile and tile[0] == 5 and len(tile) > 2 and not isinstance(tile[2], enemies.Organizer)                     and self.inDemise(position):
+                self.magicEnemy(position, DEMISE_DAMAGE)
+        if self.inDemise(self.playerPositionFlat) and not self.player.hasEffect("demise_ward"):
+            self.magicPlayer(DEMISE_DAMAGE)
 
     def stepBurning(self):
         """Everything on fire takes its burn damage and burns a turn shorter."""
@@ -2126,6 +2186,7 @@ class gameManager():
         self.MoveEnemies()
         self.searingLight()
         self.stepBurning()
+        self.stepDemise()
         self.stepFires()
         self.stepBlood()
         self.stepSmoke()
@@ -2151,10 +2212,16 @@ class gameManager():
 
     def MoveEnemies(self):
         listOfNewPositions = set()
+        organizerContext = organizers.gather(self)
         for i in self.EnemyPositions:
             if self.grid[i][0] != 5 or len(self.grid[i]) < 3:
                 continue  # stale position, the enemy is no longer here
             currentEnemy: enemies.Enemy = self.grid[i].pop()
+            if isinstance(currentEnemy, enemies.Organizer):  # builders: their own turn (organizers.py)
+                finalPosition, currentEnemy = organizers.takeTurn(self, i, currentEnemy, organizerContext)
+                self.grid[finalPosition].append(currentEnemy)
+                listOfNewPositions.add(finalPosition)
+                continue
             finalPosition = i
             passes = 0
             moving = True
@@ -2417,6 +2484,7 @@ class gameManager():
             minDamage, maxDamage = player.getMinMaxDamage()
             spec["rows"] = [("Health", f"{player.getCurrentHealth()} / {player.getMaxHealth()}"),
                             ("AC", player.damageReduction()), ("Fire Resist", player.fireResistance()),
+                            ("Magic Resist", player.magicResistance()),
                             ("Door Sense", f"{self.doorSense()} tile" + ("s" if self.doorSense() != 1 else "")),
                             ("Status", f"Burning ({player.burnTurns})" if getattr(player, "burnTurns", 0) > 0 else "Fine"),
                             ("Gold", player.gold),
@@ -2509,7 +2577,7 @@ class gameManager():
         return spec
 
     STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health",
-                  "FireRes": "Fire Resist"}
+                  "FireRes": "Fire Resist", "MagicRes": "Magic Resist"}
 
     def statLines(self, item):
         """[(stat name, bonus)] for a piece of gear."""
@@ -2530,7 +2598,9 @@ class gameManager():
             effect = {"Heal": f"Heals {item.bonus}" + (f" (+{bonus} from WIS)" if bonus else ""),
                       "DoorLocate": "Shows the way to the next floor",
                       "Fire": f"Thrown: {item.bonus} damage to everything where it lands, you included. Can set the ground and plants alight",
-                      "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Enemies can't see into it"}.get(item.effect, item.effect)
+                      "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Enemies can't see into it",
+                      "Magic": f"Thrown: {item.bonus} magic damage to everything where it lands, you included. "
+                               "Organizers it hits become Plant Organizers instead"}.get(item.effect, item.effect)
             lines.append(("body", effect, ""))
             lines.append(("hint", "Enter  aim and throw" if item.effect in THROWN_EFFECTS else "Enter  use", ""))
             return lines

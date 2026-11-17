@@ -135,6 +135,7 @@ def gear(etype, name, slot, scaling="strength"):
 
 FIRE_FLASK_DAMAGE = 5
 SMOKE_TURNS = 5
+DEMISE_FLASK_DAMAGE = 5
 
 RECIPES = [
     # ---- By hand
@@ -244,6 +245,11 @@ RECIPES = [
            "Moss steeped in a vial. A thin green tonic.", "Heals 3 (+WIS)", makeItem=potion("Minor Healing Potion", "Heal", 3, "wisdom")),
     Recipe("door_potion", "Potion Of Door", "alchemist", 3, {"glass": 1, "glowcap": 2}, "potion",
            "Glowcaps lean toward the way down.", "Shows the way to the next floor", makeItem=potion("Potion Of Door", "DoorLocate")),
+
+    Recipe("demise_flask", "Demise Flask", "alchemist", 3, {"glass": 1, "organizers_demise": 2}, "potion",
+           "Crushed thorns that hum with magic. Organizers caught in it take root.",
+           f"Thrown: {DEMISE_FLASK_DAMAGE} magic damage where it lands; Organizers become Plant Organizers",
+           makeItem=potion("Demise Flask", "Magic", DEMISE_FLASK_DAMAGE)),
 
     Recipe("smoke_bomb", "Smoke Bomb", "alchemist", 3, {"glass": 1, "shadowfern": 2, "coal": 1}, "potion",
            "Burning fern and a lot of smoke.", f"Thrown: a smoke cloud for {SMOKE_TURNS} turns", makeItem=potion("Smoke Bomb", "Smoke", SMOKE_TURNS)),

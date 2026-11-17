@@ -14,6 +14,8 @@ Growth works like Conway's Game of Life, with some randomness. Every GROW_TURNS 
     kind that takes it over around it is replaced by that kind with TAKEOVER_CHANCE, if the invader can grow
     on that floor. Tended plants hold their ground. The takeovers make loops (on Stone: Glowcap beats
     Bloodcap, Bloodcap beats Shadowfern, Shadowfern beats Glowcap), so no plant wins a floor for good.
+Kinds marked "conway" follow Conway's rules exactly instead: born with exactly 3 neighbors, a wild one dies
+with fewer than 2 or more than 3. Kinds marked "wild": False never appear in wild patches.
 A plant tile is [8, visibility, Plant]. Each kind says whether it can be walked through ("walkable", by
 you and by enemies) and whether it blocks sight ("blocksSight"). Standing inside a plant that is both
 walkable and blocks sight hides you: enemies only notice you if they're right next to you.
@@ -36,6 +38,15 @@ PLANTS = {
     "shadowfern": {"name": "Shadowfern", "floors": ("Stone", "Wood"), "herb": "shadowfern", "seed": "shadowfern_spores",
                    "walkable": True, "blocksSight": True,
                    "colors": {"c": (62, 116, 76), "C": (112, 170, 112), "s": (34, 58, 40)}},
+    # Sown by Plant Organizers as Game of Life gliders (organizers.py). It follows Conway's rules exactly
+    # ("conway"), so a glider really crawls across the wood. It never grows wild ("wild": False), any
+    # Organizer that touches it becomes a Plant Organizer, and it deals magic damage every turn to
+    # anything else standing in it (gameManager.stepDemise).
+    "organizers_demise": {"name": "Organizer's Demise", "floors": ("Wood",), "herb": "organizers_demise",
+                          "seed": "organizers_demise_seed", "walkable": True, "blocksSight": False,
+                          "conway": True, "wild": False,
+                          "note": "Deals magic damage to anything standing in it, except Organizers",
+                          "colors": {"c": (122, 58, 132), "C": (196, 112, 200), "s": (62, 30, 70)}},
 }
 
 GROW_TURNS = 10                    # a growth step happens this often
@@ -87,6 +98,15 @@ def floorOf(i, rooms):
     return "Sand"
 
 
+def isConway(kind):
+    return PLANTS[kind].get("conway", False)
+
+
+def wildKinds(floor=None):
+    """The kinds that grow in wild patches (on this floor type, if given)."""
+    return [k for k, info in PLANTS.items() if info.get("wild", True) and (floor is None or floor in info["floors"])]
+
+
 def canGrow(kind, i, grid, rooms):
     return i in grid and grid[i][0] == 0 and floorOf(i, rooms) in PLANTS[kind]["floors"]
 
@@ -117,7 +137,7 @@ def step(grid, rooms, rowLength, birth=1.0, death=DEATH_CHANCE, maxPlants=MAX_PL
     for (j, kind), n in counts.items():
         if j in births or room <= 0 or not canGrow(kind, j, grid, rooms):
             continue
-        if random.random() < BIRTH_CHANCE.get(n, 0) * birth:
+        if isConway(kind) and n == 3 or not isConway(kind) and random.random() < BIRTH_CHANCE.get(n, 0) * birth:
             births[j] = kind
             room -= 1
     takeovers = {}
@@ -133,7 +153,7 @@ def step(grid, rooms, rowLength, birth=1.0, death=DEATH_CHANCE, maxPlants=MAX_PL
                 break
     for i, plant in plantsHere.items():
         n = counts.get((i, plant.kind), 0)
-        if i not in takeovers and not plant.planted and (n < 2 or n > 3) and random.random() < death:
+        if i not in takeovers and not plant.planted and (n < 2 or n > 3) and (isConway(plant.kind) or random.random() < death):
             deaths.append(i)
     for j, kind in list(births.items()) + list(takeovers.items()):
         grid[j] = [8, grid[j][1], Plant(kind)]
@@ -166,7 +186,10 @@ def addPatch(grid, rooms, rowLength, kind=None, avoid=()):
         if not floors:
             return 0
         start = random.choice(floors)
-        k = kind or random.choice([k for k, info in PLANTS.items() if floorOf(start, rooms) in info["floors"]])
+        kinds = [kind] if kind else wildKinds(floorOf(start, rooms))
+        if not kinds:
+            continue
+        k = random.choice(kinds)
         placed = growPatch(grid, rooms, rowLength, start, k, avoid)
         if placed >= 2:
             return placed
@@ -177,7 +200,7 @@ def placeWild(grid, rooms, rowLength, numberOfSpots, avoid=(), everyKind=False):
     """Wild patches on a new floor (at least MIN_PATCHES). With everyKind, one patch of every plant that can
     grow on this floor comes first (the first floor, so every herb can be found from the start)."""
     if everyKind:
-        for kind in PLANTS:
+        for kind in wildKinds():
             addPatch(grid, rooms, rowLength, kind, avoid)
     expected = WILD_PATCHES * numberOfSpots / 10000
     patches = max(MIN_PATCHES, int(expected) + (1 if random.random() < expected % 1 else 0))
@@ -213,5 +236,7 @@ def takenOverBy(kind):
 
 def plantDescription(kind):
     info = PLANTS[kind]
-    text = f"Grows on {info['floors'][0]} and {info['floors'][1]} floors, {traits(kind)}"
+    floors = " and ".join(info["floors"])
+    text = f"Grows on {floors} floor{'s' if len(info['floors']) > 1 else ''}, {traits(kind)}"
+    text += f". {info['note']}" if "note" in info else ""
     return text + (f". {takesOver(kind)}" if takesOver(kind) else "")

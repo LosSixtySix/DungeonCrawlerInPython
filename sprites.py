@@ -115,12 +115,55 @@ UNSEALED_COLORS = {"v": (20, 14, 24), "V": (42, 30, 50), "y": (138, 106, 42), "Y
 SHARD_FRAMES = 60          # frames in one full turn of the shards
 SHARD_TURN_SECONDS = 6     # how long one full turn takes
 
+# Organizers: a hooded builder carrying a brick, with its pattern stitched on its back ("E", rows 4-6).
+# The four kinds share the body; each has its own robe color and emblem.
+def organizerPicture(emblem):
+    body = [
+        "..........",
+        "...kkkk...",
+        "..kHHHHk..",
+        ".kcHffHck.",
+        "kcc....cck",
+        "kcc....cck",
+        "kcc....cck",
+        ".kccccccbk",
+        "..kkkkkkB.",
+        "..........",
+    ]
+    rows = [list(r) for r in body]
+    for y, line in enumerate(emblem):
+        for x, ch in enumerate(line):
+            rows[4 + y][3 + x] = "E" if ch == "E" else "c"
+    return ["".join(r) for r in rows]
+
+
+ORGANIZER_EMBLEMS = {  # 4 wide, 3 tall
+    "spiral": ["EEEE", "cEcE", "EEcE"],
+    "circle": ["cEEc", "EccE", "cEEc"],
+    "square": ["EEEE", "EccE", "EEEE"],
+    "plant": ["ccEE", "cEEc", "Eccc"],
+}
+ORGANIZER_ROBES = {  # robe, hood, emblem
+    "spiral": ((52, 112, 120), (32, 70, 76), (220, 206, 150)),
+    "circle": ((70, 66, 140), (44, 40, 92), (220, 206, 150)),
+    "square": ((140, 74, 48), (90, 46, 30), (220, 206, 150)),
+    "plant": ((70, 108, 54), (44, 70, 34), (196, 112, 200)),
+}
+
+
+def organizerColors(pattern):
+    robe, hood, emblem = ORGANIZER_ROBES[pattern]
+    return {"c": robe, "H": hood, "E": emblem, "f": (40, 32, 30), "b": (168, 92, 64), "B": (120, 64, 44)}
+
+
 # enemy name (as in enemies.py) -> (picture, colors). Enemies not listed are still drawn as a square.
 ENEMY_SPRITES = {
     "Goblin": (GOBLIN, GOBLIN_COLORS),
     "Dire Rat": (DIRE_RAT, DIRE_RAT_COLORS),
     "Dire Mole": (DIRE_MOLE, DIRE_MOLE_COLORS),
     "Goblin Chieftan": (GOBLIN_CHIEFTAIN, GOBLIN_CHIEFTAIN_COLORS),   # spelled as in enemies.py
+    **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
+       for pattern, emblem in ORGANIZER_EMBLEMS.items()},
 }
 
 # Chest colors are the same on every floor: (body color, stud color). Each chest randomly gets one of
@@ -314,6 +357,18 @@ PLANT_SPRITES = {  # all seen from above, like the rest of the map
         ".k.kcck.k.",
         "...kCck...",
         "....kk....",
+    ],
+    "organizers_demise": [  # a knot of purple thorns
+        "k...kk...k",
+        ".k.kCck.k.",
+        "..kcCcck..",
+        ".kcCsscCk.",
+        "kCcsCCscCk",
+        "kCcsCCscCk",
+        ".kcCsscCk.",
+        "..kccCck..",
+        ".k.kcCk.k.",
+        "k...kk...k",
     ],
     "shadowfern": [  # fronds spreading out from a dark middle
         "C...cC...C",

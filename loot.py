@@ -77,6 +77,10 @@ ENEMY_LOOT = {
     "Dire Rat": [("hide", 40, (1, 1))],
     "Dire Mole": [("mole_claw", 30, (1, 1)), ("stone", 50, (1, 2)), ("relic:mole_claws", 1, (1, 1))],
     "Unsealed": [("void_shard", 50, (1, 1)), ("gold", 100, (10, 20))],
+    "Spiral Organizer": [("stone", 60, (1, 3)), ("bone", 20, (1, 1))],
+    "Circle Organizer": [("sand", 60, (1, 3)), ("bone", 20, (1, 1))],
+    "Square Organizer": [("wood", 60, (1, 3)), ("bone", 20, (1, 1))],
+    "Plant Organizer": [("organizers_demise_seed", 60, (1, 2)), ("wood", 40, (1, 2)), ("relic:thornward_gloves", 8, (1, 1))],
 }
 
 # The tabs of the Loot Table window, in order

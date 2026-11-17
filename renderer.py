@@ -881,7 +881,11 @@ class renderer():
         surface.fill((*color[:3], alpha))
         return surface
 
+    MAGIC_PURPLE, MAGIC_LIGHT = (176, 84, 196), (236, 190, 244)
+
     def effectColor(self, effect):
+        if effect == "Magic":
+            return self.MAGIC_PURPLE
         return self.color("enemy") if effect == "Fire" else self.color("font")
 
     FIRE_RED, FIRE_ORANGE, FIRE_YELLOW = (196, 48, 28), (240, 128, 40), (255, 222, 120)
@@ -937,6 +941,15 @@ class renderer():
                 d = reach * (0.4 + 0.75 * grow)
                 spot = (int(c + math.cos(angle) * d), int(c + math.sin(angle) * d))
                 pygame.draw.circle(surface, (*self.FIRE_YELLOW, fade), spot, max(1, int(reach / 10)))
+        elif effect == "Magic":  # a ring of purple thorns bursting out from a pale flash
+            pygame.draw.circle(surface, (*self.MAGIC_LIGHT, int(200 * (1 - age))), (c, c), max(1, int(reach * 0.6 * (1 - grow) + 1)))
+            pygame.draw.circle(surface, (*self.MAGIC_PURPLE, fade), (c, c), max(2, int(reach * grow)), width=max(1, int(reach / 6)))
+            for k in range(6):
+                angle = k * math.pi / 3 + 0.5 * grow
+                inner, outer = reach * 0.3 * grow, reach * (0.5 + 0.6 * grow)
+                start = (int(c + math.cos(angle) * inner), int(c + math.sin(angle) * inner))
+                end = (int(c + math.cos(angle) * outer), int(c + math.sin(angle) * outer))
+                pygame.draw.line(surface, (*self.MAGIC_LIGHT, fade), start, end, max(1, int(reach / 8)))
         else:
             gray = themes.desaturate(list(self.color("font")), 0.9)
             for k in range(7):

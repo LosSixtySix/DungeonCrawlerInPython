@@ -21,6 +21,7 @@ RELICS = {
     "horned_crown": {"name": "Horned Crown", "slot": "Head", "etype": "Defense", "bonus": 1, "power": "goblin_fear"},
     "mole_claws": {"name": "Mole-King's Claws", "slot": "Gloves", "etype": "WallDamage", "bonus": 1, "power": "half_swings"},
     "hollow_blade": {"name": "Hollow Blade", "slot": "Hands", "etype": "Damage", "bonus": 8, "power": "lifedrinker"},
+    "thornward_gloves": {"name": "Thornward Gloves", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "demise_ward"},
 }
 
 # Relics that can be in a chest: (relic id, first floor, floor types it can appear on or None for any)
@@ -29,6 +30,7 @@ CHEST_RELICS = [
     ("seal_fragment", 0, {"All Gold"}),
     ("lantern", 5, None),
     ("hollow_blade", 8, None),
+    ("thornward_gloves", 2, None),
 ]
 RELIC_CHEST_CHANCE = 0.25  # chance that a floor has one relic chest (if any relic can appear there)
 
@@ -40,6 +42,7 @@ EFFECTS = {
     "goblin_fear": ("Dread", "Goblins sometimes flee instead of attacking"),
     "half_swings": ("Mole-King", "Breaking a wall takes half the swings"),
     "lifedrinker": ("Thirst", "1 in 4 hits heal 2 HP"),
+    "demise_ward": ("Thornward", "Gather Organizer's Demise, and stand in it unharmed"),
     "far_sight": ("Far Sight", "+3 vision"),
     "gold_double": ("Greed", "Gold walls pay double"),
     "gold_per_kill": ("Gilded", "+3 gold per kill"),

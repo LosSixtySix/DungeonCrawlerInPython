@@ -196,6 +196,10 @@ class PlayerClass():
         """Fire Resist from gear. Fire ignores Defense; only this takes damage off it."""
         return self.getequipmentBonus("FireRes")
 
+    def magicResistance(self):
+        """Magic Resist from gear. Magic ignores Defense; only this takes damage off it."""
+        return self.getequipmentBonus("MagicRes")
+
     def damageReduction(self):
         reduction = 0
         reduction += self.getequipmentBonus("Defense")

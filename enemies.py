@@ -46,7 +46,41 @@ class Unsealed(Enemy):
         self.allSight = True
         self.fireResistPercent = 0.8  # fire barely touches it
 
+class Organizer(Enemy):
+    """Breaks walls to make room, then builds a pattern of new walls there (see organizers.py, which runs
+    its turns). pattern says which: "spiral", "circle", "square" or "plant"."""
+    pattern = None
+
+    def __init__(self, name):
+        super().__init__(8, 8, 1, 2, 2, name, 12)
+        self.plan = None          # the pattern it's working on (organizers.layOut), or None while resting
+        self.built = set()        # walls of the patterns it has finished (organizers leave these alone)
+        self.rest = rand.randint(0, 8)
+        self.workOn = None        # what it's partway through: ("wall" / "wood" / "sow", tile)
+        self.progress = 0
+        self.stuck = 0
+        self.didSomething = False
+
+class SpiralOrganizer(Organizer):
+    pattern = "spiral"
+    def __init__(self):
+        super().__init__("Spiral Organizer")
+class CircleOrganizer(Organizer):
+    pattern = "circle"
+    def __init__(self):
+        super().__init__("Circle Organizer")
+class SquareOrganizer(Organizer):
+    pattern = "square"
+    def __init__(self):
+        super().__init__("Square Organizer")
+class PlantOrganizer(Organizer):
+    pattern = "plant"
+    def __init__(self):
+        super().__init__("Plant Organizer")
+
 lowerFloorEnemies = [Goblin,GoblinChief,DireRat,DireMole]
+organizers = [SpiralOrganizer, CircleOrganizer, SquareOrganizer, PlantOrganizer]
+ORGANIZER_CHANCE = 0.2  # each enemy on a new floor is an Organizer (of a random kind) this often
 
 if __name__ == "__main__":
     for i in range(0,5):
