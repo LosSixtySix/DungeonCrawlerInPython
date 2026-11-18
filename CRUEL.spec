@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller build for CRUEL. Build with:   python -m PyInstaller CRUEL.spec
 # Output is a folder, dist\CRUEL\, holding CRUEL.exe plus an _internal folder it needs.
-# Zip the whole dist\CRUEL folder to share it. Saves are not in it: they live in %APPDATA%\CRUEL.
+# To share it, run distribution\release.ps1: it builds, zips and publishes to players over Tailscale. Saves are not in it: they live in %APPDATA%\CRUEL.
 
 a = Analysis(
     ['lineOfSight.py'],

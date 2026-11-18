@@ -20,6 +20,8 @@ import relics
 import plants
 import organizers
 import devconsole
+import updater
+from version import VERSION
 from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES
 from renderer import renderer as rend, SWAY_FPS
 import pickle
@@ -148,6 +150,7 @@ class gameManager():
         self.drag = None
         self.peaceful = False  # developer console /peaceful: enemies ignore you and never attack
         self.console = devconsole.DevConsole(self)
+        self.updater = updater.Updater()  # checks for a newer build in the background
         self.goToTitle()
 
     # ----------------------------------------------------------------- display
@@ -226,7 +229,10 @@ class gameManager():
             mode = "Fullscreen" if self.pendingDisplay["fullscreen"] else "Windowed"
             return [f"Resolution:  {w} x {h}", f"Mode:  {mode}", "Apply", "Back"]
         options = ["Continue"] if os.path.exists(SAVE_FILE) else []
-        return options + ["New Game", "Attempts", "Settings", "Quit"]
+        options += ["New Game", "Attempts", "Settings"]
+        if self.updater.latest:
+            options.append(f"Update to v{self.updater.latest}")
+        return options + ["Quit"]
 
     def titleView(self):
         """(heading, hint, note) for the title screen page that's showing."""
@@ -235,7 +241,8 @@ class gameManager():
         if self.titlePage == "display":
             note = "A saved run only continues at the resolution it was started in" if os.path.exists(SAVE_FILE) else ""
             return "Display Settings", "Up/Down  choose      Left/Right  change      Enter  select      Esc  back", note
-        return "", "Up/Down  choose      Enter  select", ""
+        note = f"v{VERSION}  -  update available" if self.updater.latest else f"v{VERSION}"
+        return "", "Up/Down  choose      Enter  select", note
 
     def openTitlePage(self, page, sel=0):
         self.titlePage = page
@@ -506,9 +513,19 @@ class gameManager():
                 self.openAttempts()
             elif choice == "Settings":
                 self.openTitlePage("settings")
+            elif choice.startswith("Update to"):
+                self.startUpdate()
             else:
                 self.onQuit(None)
         elif key == pygame.K_ESCAPE:
+            self.onQuit(None)
+
+    def startUpdate(self):
+        """Hand over to the installer (see updater.py), which waits for the game to close, then updates and restarts it."""
+        problem = self.updater.startUpdate()
+        if problem:
+            self.titleMessage = problem
+        else:
             self.onQuit(None)
 
     def onSettingsKey(self, key, choice):
@@ -3153,6 +3170,10 @@ class gameManager():
             if self.scene in ("title", "attempts"):
                 if self.scene == "title" and self.titleFade < 255:
                     self.titleFade = min(255, self.titleFade + TITLE_FADE_STEP)
+                    self.change = True
+                if self.updater.takeChange():  # the update check found a newer version: show the button
+                    if self.scene == "title" and self.titlePage == "main" and self.titleSel == len(self.titleOptions()) - 2:
+                        self.titleSel += 1  # the button went in above Quit: keep Quit selected, not the update
                     self.change = True
                 for event in pygame.event.get():
                     self.EventDispatcher.dispatch(event)

@@ -7,3 +7,6 @@ attempts.json
 __pycache__/
 build/
 dist/
+
+# Built releases that tailscale serves (made by distribution/release.ps1)
+release/
