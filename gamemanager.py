@@ -76,6 +76,8 @@ PAUSE_ROWS = [("toggle", "Save on Exit"), ("toggle", "Generate Room"), ("toggle"
               ("toggle", "Animated Light"), ("choice", "Light Style"), ("page", "Hotkeys"), ("action", "Reset Windows"), ("action", "Quit to Title"),
               ("action", "Quit to Desktop")]
 HOTKEYS_PER_COLUMN = 9
+MIN_RESOLUTION = (1024, 720)  # smaller screens don't leave room for the windows
+WINDOW_SIZES = [(1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440)]  # offered in windowed mode when they fit
 POPUP_SECONDS = 1.2  # how long a "+2 Wood" popup takes to rise and fade
 POPUP_GAP = 450      # ms between two different popups on the same tile, so they don't draw over each other
 INVENTORY_COLUMNS = 5
@@ -122,20 +124,15 @@ class gameManager():
         pygame.init()
 
         pygame.display.set_icon(pygame.image.load(paths.resourcePath("icon.png")))  # made by makeIcon.py
-        self.win = pygame.display.set_mode((0, 0))
         pygame.display.set_caption("CRUEL")
         self.clock = pygame.time.Clock()
 
-        self.painter: rend = rend(self.win)
-
-        self.tileSize = self.painter.setTileSize(10)
-        self.rowLength = self.painter.rowLength
-
-        self.numberOfSpots = self.painter.rowLength * self.painter.columnLength
+        self.settings = Settings()
+        self.painter = None
+        self.applyDisplay()
 
         self.menuOptions = {"Generate Room": True, "Save on Exit": False, "Mini HUD": True, "Animated Light": True}
         self.loadMenuOptions(MENU_OPTIONS_FILE)
-        self.settings = Settings()
 
         # Holding a key repeats it (after KEY_REPEAT_DELAY ms, every KEY_REPEAT_INTERVAL ms), but only for keys
         # where that makes sense: see isRepeatable. keysHeld tells a repeat apart from a fresh press.
@@ -153,6 +150,53 @@ class gameManager():
         self.console = devconsole.DevConsole(self)
         self.goToTitle()
 
+    # ----------------------------------------------------------------- display
+
+    def desktopSize(self):
+        return tuple(pygame.display.get_desktop_sizes()[0])
+
+    def displaySize(self):
+        """The resolution from the settings, or the desktop's when none was picked."""
+        return tuple(self.settings.resolution) if self.settings.resolution else self.desktopSize()
+
+    def resolutionChoices(self, fullscreen):
+        """Resolutions the Display page cycles through, biggest first. Fullscreen can use any mode the monitor
+        supports; a window can't be bigger than the desktop."""
+        desktop = self.desktopSize()
+        modes = pygame.display.list_modes()
+        sizes = {tuple(m) for m in modes if m[0] >= MIN_RESOLUTION[0] and m[1] >= MIN_RESOLUTION[1]} if modes != -1 else set()
+        sizes.add(desktop)
+        if not fullscreen:
+            sizes |= {size for size in WINDOW_SIZES if size[0] < desktop[0] and size[1] < desktop[1]}
+            sizes = {size for size in sizes if size[0] <= desktop[0] and size[1] <= desktop[1]}
+        return sorted(sizes, reverse=True)
+
+    def applyDisplay(self):
+        """(Re)opens the game window with the resolution and mode from the settings. The map fills the screen,
+        so this also sets the map size. Only done before a run starts (at launch or from the title screen)."""
+        size = self.displaySize()
+        if self.painter is not None:
+            # Already open: SDL won't switch an open fullscreen window to a new resolution, so close the display
+            # and open it fresh. That forgets the icon, caption and key repeat, so they're set again.
+            pygame.display.quit()
+            pygame.display.init()
+            pygame.display.set_icon(pygame.image.load(paths.resourcePath("icon.png")))
+            pygame.display.set_caption("CRUEL")
+            pygame.key.set_repeat(KEY_REPEAT_DELAY, KEY_REPEAT_INTERVAL)
+            self.keysHeld.clear()
+        if self.settings.fullscreen:
+            self.win = pygame.display.set_mode(size, pygame.FULLSCREEN)
+        else:
+            os.environ["SDL_VIDEO_CENTERED"] = "1"
+            self.win = pygame.display.set_mode(size)
+        theme = self.painter.theme if self.painter is not None else None
+        self.painter: rend = rend(self.win)
+        self.tileSize = self.painter.setTileSize(10)
+        if theme is not None:
+            self.painter.setTheme(theme)
+        self.rowLength = self.painter.rowLength
+        self.numberOfSpots = self.painter.rowLength * self.painter.columnLength
+
     # ------------------------------------------------------------------ scenes
 
     def goToTitle(self, message=""):
@@ -161,6 +205,7 @@ class gameManager():
             self.console.toggle()
         self.titleMessage = message
         self.titleSel = 0
+        self.titlePage = "main"  # "main", "settings" or "display": the title stays, only the buttons change
         self.titleFade = 0  # 0 -> 255: "CRUEL" fades in, then the menu appears. Any key or click skips it.
         self.painter.setTheme(themes.randomTheme(rand.choice(list(themes.THEMES))))
         self.change = True
@@ -174,8 +219,30 @@ class gameManager():
         return False
 
     def titleOptions(self):
+        if self.titlePage == "settings":
+            return ["Display Settings", "Main Menu"]
+        if self.titlePage == "display":
+            w, h = self.pendingDisplay["resolution"]
+            mode = "Fullscreen" if self.pendingDisplay["fullscreen"] else "Windowed"
+            return [f"Resolution:  {w} x {h}", f"Mode:  {mode}", "Apply", "Back"]
         options = ["Continue"] if os.path.exists(SAVE_FILE) else []
-        return options + ["New Game", "Attempts", "Quit"]
+        return options + ["New Game", "Attempts", "Settings", "Quit"]
+
+    def titleView(self):
+        """(heading, hint, note) for the title screen page that's showing."""
+        if self.titlePage == "settings":
+            return "Settings", "Up/Down  choose      Enter  select      Esc  back", ""
+        if self.titlePage == "display":
+            note = "A saved run only continues at the resolution it was started in" if os.path.exists(SAVE_FILE) else ""
+            return "Display Settings", "Up/Down  choose      Left/Right  change      Enter  select      Esc  back", note
+        return "", "Up/Down  choose      Enter  select", ""
+
+    def openTitlePage(self, page, sel=0):
+        self.titlePage = page
+        self.titleSel = sel
+        self.titleMessage = ""
+        if page == "display":
+            self.pendingDisplay = {"resolution": self.displaySize(), "fullscreen": self.settings.fullscreen}
 
     def openAttempts(self):
         self.scene = "attempts"
@@ -422,20 +489,75 @@ class gameManager():
         move = self.direction(key)
         if move is not None and move[0] == 0:
             self.titleSel = max(0, min(len(options) - 1, self.titleSel + move[1]))
-        elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            return
+        if self.titlePage == "settings":
+            return self.onSettingsKey(key, options[self.titleSel])
+        if self.titlePage == "display":
+            return self.onDisplayKey(key, move)
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             choice = options[self.titleSel]
             if choice == "Continue":
                 if not self.continueGame():
-                    self.titleMessage = "That save could not be loaded"
+                    self.titleMessage = self.saveProblem()
                     self.titleSel = 0
             elif choice == "New Game":
                 self.newGame()
             elif choice == "Attempts":
                 self.openAttempts()
+            elif choice == "Settings":
+                self.openTitlePage("settings")
             else:
                 self.onQuit(None)
         elif key == pygame.K_ESCAPE:
             self.onQuit(None)
+
+    def onSettingsKey(self, key, choice):
+        enter = key in (pygame.K_RETURN, pygame.K_KP_ENTER)
+        if key == pygame.K_ESCAPE or (enter and choice == "Main Menu"):
+            self.openTitlePage("main")
+            self.titleSel = self.titleOptions().index("Settings")  # back on the button you came from
+        elif enter and choice == "Display Settings":
+            self.openTitlePage("display")
+
+    def onDisplayKey(self, key, move):
+        """Rows: Resolution, Mode, Apply, Back. Left/Right (or Enter) changes a value; nothing happens until Apply."""
+        enter = key in (pygame.K_RETURN, pygame.K_KP_ENTER)
+        step = move[0] if move is not None else (1 if enter else 0)
+        pending = self.pendingDisplay
+        if key == pygame.K_ESCAPE or (enter and self.titleSel == 3):
+            self.openTitlePage("settings")
+        elif self.titleSel == 0 and step:
+            choices = self.resolutionChoices(pending["fullscreen"])
+            index = choices.index(pending["resolution"]) if pending["resolution"] in choices else 0
+            # Right goes up a size, Left goes down (the list is biggest first); it wraps around at either end
+            pending["resolution"] = choices[(index - step) % len(choices)]
+        elif self.titleSel == 1 and step:
+            pending["fullscreen"] = not pending["fullscreen"]
+            choices = self.resolutionChoices(pending["fullscreen"])
+            if pending["resolution"] not in choices:  # e.g. a size only fullscreen offers: use the closest that fits
+                w, h = pending["resolution"]
+                pending["resolution"] = min(choices, key=lambda size: abs(size[0] - w) + abs(size[1] - h))
+        elif self.titleSel == 2 and enter:
+            if pending["resolution"] == self.displaySize() and pending["fullscreen"] == self.settings.fullscreen:
+                self.titleMessage = "Nothing to change"
+                return
+            self.settings.resolution = None if pending["resolution"] == self.desktopSize() else list(pending["resolution"])
+            self.settings.fullscreen = pending["fullscreen"]
+            self.settings.save()
+            self.applyDisplay()
+            self.titleMessage = "Display settings applied"
+
+    def saveProblem(self):
+        """Why the save didn't load, for the title screen."""
+        try:
+            with open(SAVE_FILE, "rb") as f:
+                data = pickle.load(f)
+            size = data.get("screenSize")
+            if data.get("version") == SAVE_VERSION and size and tuple(size) != self.displaySize():
+                return f"That save was made at {size[0]} x {size[1]}. Switch to it in Settings > Display to continue"
+        except Exception:
+            pass
+        return "That save could not be loaded"
 
     def onAttemptsKey(self, key):
         move = self.direction(key)
@@ -2677,6 +2799,7 @@ class gameManager():
         data = {
             "version": SAVE_VERSION,
             "mapSize": (self.rowLength, self.painter.columnLength),
+            "screenSize": (self.painter.screenWidth, self.painter.screenHeight),  # so the title can say what Continue needs
             "level": self.level,
             "deepest": self.deepest,
             "levelGrids": self.levelGrids,
@@ -2985,7 +3108,7 @@ class gameManager():
 
     def draw(self, lightOnly=False):
         if self.scene == "title":
-            self.painter.drawTitle(self.titleOptions(), self.titleSel, self.titleMessage, self.titleFade)
+            self.painter.drawTitle(self.titleOptions(), self.titleSel, self.titleMessage, self.titleFade, *self.titleView())
             return
         if self.scene == "attempts":
             self.painter.drawAttempts(self.attemptList, self.attemptScroll)

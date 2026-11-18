@@ -273,10 +273,11 @@ class renderer():
 
     # ----------------------------------------------------------- title screen
 
-    def drawTitle(self, options, selectedIndex, message="", fade=255):
+    def drawTitle(self, options, selectedIndex, message="", fade=255, heading="", hint="Up/Down  choose      Enter  select", note=""):
         """fade (0-255) is how far "CRUEL" has faded in. It's drawn the same way as the splash messages
         (drawMessage), run in reverse: a black veil and the title text both go from invisible to full together.
-        The menu only appears once the fade reaches 255, and the veil stays so nothing jumps when it does."""
+        The menu only appears once the fade reaches 255, and the veil stays so nothing jumps when it does.
+        heading names the page under the title (e.g. "Settings"); note is a muted line above the hint."""
         W, H = self.screenWidth, self.screenHeight
         font, muted, select, boxLine = self.color("font"), self.color("muted"), self.color("select"), self.color("boxLine")
         alpha = max(0, min(255, int(fade)))
@@ -294,17 +295,23 @@ class renderer():
         titleWidth = self.titleFont.size("CRUEL")[0]
         ruleY = titleY + self.titleFont.get_height() // 2 + 6
         pygame.draw.rect(self.win, boxLine, pygame.Rect(W // 2 - titleWidth // 2, ruleY, titleWidth, 2))
+        if heading:
+            self.blitText(self.win, heading.upper(), self.titleHintFont, font, W // 2, ruleY + 28, align="center")
         if message:
-            self.blitText(self.win, message, self.titleHintFont, self.color("enemy"), W // 2, ruleY + 34, align="center")
+            self.blitText(self.win, message, self.titleHintFont, self.color("enemy"), W // 2, ruleY + (56 if heading else 34), align="center")
 
-        startY = int(H * 0.62)
+        startY = max(int(H * 0.62), ruleY + 100) if heading else int(H * 0.62)  # leave room for the heading and message
+        bottom = H - 90 - (32 if note else 0)
+        spacing = min(58, (bottom - startY) // max(1, len(options) - 1))  # squeeze together on short screens
         for index, option in enumerate(options):
-            y = startY + index * 58
+            y = startY + index * spacing
             selected = index == selectedIndex
             label = f">  {option}  <" if selected else option
             self.blitText(self.win, label, self.titleOptionFont, select if selected else font, W // 2, y, align="center")
 
-        self.blitText(self.win, "Up/Down  choose      Enter  select", self.titleHintFont, muted, W // 2, H - 40, align="center")
+        if note:
+            self.blitText(self.win, note, self.titleHintFont, muted, W // 2, H - 72, align="center")
+        self.blitText(self.win, hint, self.titleHintFont, muted, W // 2, H - 40, align="center")
         pygame.display.flip()
 
     # ---------------------------------------------------------- attempts list

@@ -3,7 +3,8 @@ import pygame
 import paths
 
 """
-Player settings that should survive between runs: the hotkeys and where each window was dragged to.
+Player settings that should survive between runs: the hotkeys, where each window was dragged to and the display
+(resolution, fullscreen or windowed).
 They are stored as JSON (plain text you can open and read), separate from the pickled save game,
 because they belong to the player rather than to one run of the dungeon.
 """
@@ -47,6 +48,8 @@ class Settings():
         self.hotkeys = dict(DEFAULT_HOTKEYS)
         self.windowPositions = {}  # window id -> [x, y] of its top-left corner, only for windows the player moved
         self.lightStyle = "sway"   # how the light animates: "sway" or "flicker"
+        self.resolution = None     # [width, height] of the game, or None to match the desktop
+        self.fullscreen = True     # False: a normal window
         self.load()
 
     def load(self):
@@ -63,10 +66,16 @@ class Settings():
                 self.windowPositions[windowId] = pos
         if data.get("lightStyle") in LIGHT_STYLES:
             self.lightStyle = data["lightStyle"]
+        resolution = data.get("resolution")
+        if isinstance(resolution, list) and len(resolution) == 2 and all(isinstance(n, int) and n > 0 for n in resolution):
+            self.resolution = resolution
+        if isinstance(data.get("fullscreen"), bool):
+            self.fullscreen = data["fullscreen"]
 
     def save(self):
         with open(self.fileName, "w") as f:
-            json.dump({"hotkeys": self.hotkeys, "windowPositions": self.windowPositions, "lightStyle": self.lightStyle}, f, indent=2)
+            json.dump({"hotkeys": self.hotkeys, "windowPositions": self.windowPositions, "lightStyle": self.lightStyle,
+                       "resolution": self.resolution, "fullscreen": self.fullscreen}, f, indent=2)
 
     def keyName(self, key):
         name = pygame.key.name(key)
