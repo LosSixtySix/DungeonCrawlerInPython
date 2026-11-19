@@ -171,6 +171,23 @@ GOBLIN_BUILDER = [
 ]
 GOBLIN_BUILDER_COLORS = {**GOBLIN_COLORS, "M": (150, 154, 162), "w": (110, 80, 52)}
 
+# Goblin Farmer, from above: a wide straw hat (banded in its faction's cloth) hides its head, ears and hands poke out
+# under the brim, and it carries a hoe.
+GOBLIN_FARMER = [
+    "...kkkk...",
+    ".kkyyyykk.",
+    ".kyYYYYyk.",
+    "kyYbbbbYyk",
+    "kyYbYYbYyk",
+    ".kyYYYYyk.",
+    ".hkkyykkhw",
+    "..kcccck.w",
+    "...kccck.w",
+    "........MM",
+]
+GOBLIN_FARMER_COLORS = {**GOBLIN_COLORS, "y": (186, 152, 80), "Y": (222, 192, 118), "b": (62, 52, 40),
+                        "M": (150, 154, 162), "w": (110, 80, 52)}
+
 # Expansion factions: the Goblin, Goblin Chieftain and Goblin Builder pictures in each faction's colors (only cloth
 # and armor change). Ids match expansion.LOOKS.
 EXPANSION_LOOKS = {
@@ -190,6 +207,8 @@ def factionPictures(look):
         "Goblin": (GOBLIN, {**GOBLIN_COLORS, **colors["goblin"]}),
         "Goblin Chieftan": (GOBLIN_CHIEFTAIN, {**GOBLIN_CHIEFTAIN_COLORS, **colors["chief"]}),
         "Goblin Builder": (GOBLIN_BUILDER, {**GOBLIN_BUILDER_COLORS, **colors["goblin"], "M": colors["mallet"]}),
+        "Goblin Farmer": (GOBLIN_FARMER, {**GOBLIN_FARMER_COLORS, **colors["goblin"], "b": colors["goblin"]["c"],
+                                          "M": colors["mallet"]}),
     }
 
 
@@ -232,6 +251,7 @@ ENEMY_SPRITES = {
     "Dire Mole": (DIRE_MOLE, DIRE_MOLE_COLORS),
     "Goblin Chieftan": (GOBLIN_CHIEFTAIN, GOBLIN_CHIEFTAIN_COLORS),   # spelled as in enemies.py
     "Goblin Builder": (GOBLIN_BUILDER, GOBLIN_BUILDER_COLORS),
+    "Goblin Farmer": (GOBLIN_FARMER, GOBLIN_FARMER_COLORS),
     **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
        for pattern, emblem in ORGANIZER_EMBLEMS.items()},
 }

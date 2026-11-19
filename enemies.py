@@ -58,6 +58,12 @@ class GoblinBuilder(Enemy):
         self.task = None   # what it's building (expansion.planTask)
         self.rest = 0
 
+class GoblinFarmer(Enemy):
+    """Grows Game of Life plots of plants for an Expansion camp and keeps them alive (see expansion.py)."""
+    def __init__(self):
+        super().__init__(7, 8, 1, 1, 1, "Goblin Farmer", 6)
+        self.rest = 0
+
 class Organizer(Enemy):
     """Breaks walls to make room, then builds a pattern of new walls there (see organizers.py, which runs
     its turns). pattern says which: "spiral", "circle", "square" or "plant"."""

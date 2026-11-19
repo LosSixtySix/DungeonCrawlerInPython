@@ -140,6 +140,17 @@ def isDemise(tile):
     return tile[0] == 8 and len(tile) > 2 and tile[2].kind == DEMISE
 
 
+def passable(tile, demise=True):
+    """Can an enemy step onto this tile? Open floor, an item pile or a plant it can walk through (moveTo keeps the
+    pile or plant underneath it, like the chase in gameManager). demise=False keeps it out of Organizer's Demise,
+    which hurts everything but Organizers."""
+    if tile[0] in (0, 9):
+        return True
+    if tile[0] == 8 and len(tile) > 2 and tile[2].walkable:
+        return demise or tile[2].kind != DEMISE
+    return False
+
+
 def reachable(gm, start):
     """Walking distances (over open floor) from start, and the tile each was reached from."""
     import expansion  # (here, not at the top: expansion imports this module)
@@ -152,7 +163,7 @@ def reachable(gm, start):
             if dist[i] >= SEARCH_REACH:
                 continue
             for j in table[i]:
-                if j not in dist and grid[j][0] == 0:
+                if j not in dist and passable(grid[j]):
                     dist[j] = dist[i] + 1
                     came[j] = i
                     nxt.append(j)
@@ -332,16 +343,20 @@ def finish(org):
 def wander(gm, i):
     if rand.random() < 0.5:
         return i
-    open_ = [j for j in gm.neighbors(i) if gm.grid[j][0] == 0]
+    open_ = [j for j in gm.neighbors(i) if passable(gm.grid[j])]
     return moveTo(gm, i, rand.choice(open_)) if open_ else i
 
 
 def moveTo(gm, i, j):
-    """Steps from i onto the open floor tile j (the organizer itself was already taken off i)."""
+    """Steps from i onto tile j (the unit itself was already taken off i): open floor, or an item pile or walkable
+    plant (see passable), which stays underneath it until it moves on."""
     if i in gm.enemyOccupiedItemSpaces:
         gm.grid[i] = gm.enemyOccupiedItemSpaces.pop(i)
     else:
         gm.grid[i][0] = 0
+    if gm.grid[j][0] != 0:
+        gm.enemyOccupiedItemSpaces[j] = gm.grid[j]
+        gm.grid[j] = [0, gm.grid[j][1]]
     gm.grid[j][0] = 5
     return j
 
@@ -455,7 +470,7 @@ def digToward(gm, i, org, target, context):
         if manhattan(gm, j, target) >= manhattan(gm, i, target):
             break
         tile = gm.grid[j]
-        if tile[0] == 0:
+        if passable(tile):
             return moveTo(gm, i, j)
         if tile[0] == 2 and j not in teamWalls(context, org):
             hitWall(gm, i, org, j)
@@ -530,7 +545,7 @@ def build(gm, i, org, dist, came, context):
                 choices.append((t not in plan["insideOnly"], dist[s], t, s))
     if not choices:
         if i in todo:  # standing on the last spot where a wall goes: step off it
-            off = [j for j in gm.neighbors(i) if gm.grid[j][0] == 0]
+            off = [j for j in gm.neighbors(i) if passable(gm.grid[j])]
             off.sort(key=lambda j: (j in plan["wallSet"], j not in plan["outside"]))
             return (moveTo(gm, i, off[0]) if off else i), False
         open_ = [t for t in todo if gm.grid[t][0] == 0]
