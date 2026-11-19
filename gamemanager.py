@@ -173,6 +173,7 @@ class gameManager():
         self.windowDrawOrder = []
         self.drag = None
         self.peaceful = False  # developer console /peaceful: enemies ignore you and never attack
+        self.autoPlay = None   # developer console /play: {"ms", "next"} while turns pass on their own
         self.console = devconsole.DevConsole(self)
         self.updater = updater.Updater()  # checks for a newer build in the background
         self.goToTitle()
@@ -452,6 +453,11 @@ class gameManager():
         if self.crafting is not None:  # busy crafting: Esc stops it, every other key waits
             if key == pygame.K_ESCAPE:
                 self.stopCrafting(f"Stopped making {self.crafting['recipe'].name}")
+            return
+        if getattr(self, "autoPlay", None) is not None:  # watching (/play): Esc stops it, every other key waits
+            if key == pygame.K_ESCAPE:
+                self.autoPlay = None
+                self.console.write("good", "Stopped: your turn again")
             return
         if self.throwing is not None:  # aiming a throw: arrows move the target, Enter throws, Esc puts it away
             return self.onThrowKey(key)
@@ -1058,6 +1064,16 @@ class gameManager():
     def stopCrafting(self, message):
         self.crafting = None
         self.craftMessage = message
+        self.change = True
+
+    def stepAutoPlay(self, now):
+        """Developer console /play: one turn passes every autoPlay["ms"] without you doing anything, so you can watch
+        the floor play out. Not while the pause menu is open or you're crafting (that has its own turns)."""
+        play = getattr(self, "autoPlay", None)
+        if play is None or self.pausePage is not None or self.crafting is not None or now < play["next"]:
+            return
+        play["next"] = now + play["ms"]
+        self.enemyTurn()
         self.change = True
 
     def stepCrafting(self, now):
@@ -3429,6 +3445,7 @@ class gameManager():
             self.grid[self.playerPositionFlat][0] = 1
 
             self.stepCrafting(pygame.time.get_ticks())
+            self.stepAutoPlay(pygame.time.get_ticks())
 
             if self.enemyMove:
                 self.change = True

@@ -31,7 +31,9 @@ all belong to it. Goblins that were already on the floor are "wild" (no faction)
   Bonfire         lights the camp (BONFIRE_LIGHT_RADIUS, through the firelight system) and draws wild goblins in
                   to fight the faction.
   Squads          3 Goblins and a Chief. New goblins wait at the bonfire until they make a squad; a squad short of
-                  members takes them first. Squads hunt anything that isn't their faction (you, wild goblins, other
+                  members takes them first. While a squad waits at the bonfire for more goblins, it breaks walls
+                  within CLEAR_RADIUS of its bonfires and in its unfinished huts (helping the builders); it never
+                  builds or changes floors. Squads hunt anything that isn't their faction (you, wild goblins, other
                   factions, any other enemy). With nothing to fight they go on gathering missions: the chief leads
                   them to a random spot anywhere on the floor (at least MISSION_MIN from home) and back, and they
                   gather whatever they pass, there and back. Back home they stash what they brought.
@@ -86,6 +88,7 @@ SQUAD_GOBLINS = 3           # plus a chief
 SIGHT = 6                   # how far a squad member spots a target
 CHASE_LIMIT = 15            # a squad drops a target this far from its leader
 PATROL_RADIUS = 15
+CLEAR_RADIUS = 6            # squads waiting for more goblins break the walls this close to their bonfires
 MISSION_MIN = 25            # a gathering mission goes at least this far (walking) from home...
 MISSION_TURNS = 400         # ...and a leg of it (there, or back) that takes longer than this is cut short
 FOLLOW_DISTANCE = 2
@@ -356,6 +359,16 @@ def moved(ctx, unit, position):
     ctx["pos"][id(unit)] = position
 
 
+def makeWay(gm, ctx, i, t, f):
+    """A builder at i needs tile t, where someone is standing. One of its own goblins gets moved off (nudge); if it
+    can't be (it's boxed in, often by the builders themselves), the builder steps away instead so it can get out.
+    Returns where the builder is now."""
+    if nudge(gm, ctx, t, f):
+        return i
+    away = [n for n in gm.neighbors(i) if organizers.passable(gm.grid[n], demise=False) and n not in gm.neighbors(t)]
+    return organizers.moveTo(gm, i, rand.choice(away)) if away else i
+
+
 def nudge(gm, ctx, t, f):
     """Moves a goblin of faction f off tile t onto a free tile beside it (a builder needs t). True if t is clear."""
     tile = gm.grid[t]
@@ -540,8 +553,41 @@ def takeTurn(gm, i, unit, ctx):
         position = soldierTurn(gm, i, unit, ctx)
     if slotsUsed(unit) > CARRY_SLOTS:
         dropExtra(gm, unit, position)
+    if position == i and not (unit.name == "Goblin Builder" and getattr(unit, "task", None)):
+        position = stepOffClear(gm, ctx, i, unit)
     moved(ctx, unit, position)
     return position
+
+
+def keepClear(gm, ctx, f):
+    """Tiles f's goblins shouldn't stand still on: its huts' doorways, and the spots in unfinished huts where walls,
+    chests or a spawner still have to go. Worked out once a turn."""
+    cache = ctx.setdefault("clear", {})
+    if f.id not in cache:
+        tiles = set()
+        for h in f.huts:
+            r = h.get("radius", 3)
+            tiles |= {t for t in (offsetTile(gm, h["center"], dx, dy) for dx, dy in ((0, -r), (0, r), (-r, 0), (r, 0)))
+                      if t is not None}
+            if not h["done"]:
+                tiles |= {t for t in h["walls"] if gm.grid[t][0] != 2}
+                tiles |= {t for t in h.get("chests", ()) if gm.grid[t][0] != 3}
+                if h.get("kind", "hut") == "hut":
+                    tiles.add(h["center"])
+        cache[f.id] = tiles
+    return cache[f.id]
+
+
+def stepOffClear(gm, ctx, i, unit):
+    """A goblin that ended its turn standing still in a doorway or on a build spot steps off it, if it can."""
+    f = faction(gm, unit)
+    if f is None:
+        return i
+    clear = keepClear(gm, ctx, f)
+    if i not in clear:
+        return i
+    off = [n for n in gm.neighbors(i) if organizers.passable(gm.grid[n], demise=False) and n not in clear]
+    return organizers.moveTo(gm, i, rand.choice(off)) if off else i
 
 
 def faction(gm, unit):
@@ -643,10 +689,11 @@ def soldierTurn(gm, i, unit, ctx):
         joinSquad(gm, unit, f)
         squad = unit.squad
     protected = f.walls()
-    target = squadTarget(gm, squad, ctx, unit, i)
+    target = squadTarget(gm, squad, ctx, unit, i) if migrating(f) is None else None
     if target:
         return step(gm, i, unit, target[1], protected, ctx)
-    if migrating(f) is not None:  # leaving after a schism: the leader heads for the new camp, the rest follow it
+    if migrating(f) is not None:  # leaving after a schism: the leader heads for the new camp, the rest follow it.
+        # They don't stop to hunt anything on the way (they still fight whatever is right beside them, takeTurn).
         leader = squadLeader(squad)
         leaderAt = None if leader is unit else find(gm, ctx, leader)
         if leaderAt is None:
@@ -672,6 +719,10 @@ def soldierTurn(gm, i, unit, ctx):
             position = mineTurn(gm, i, unit, squad, f, home, ctx)
             if position is not None:
                 return position
+    if not squad.marching:  # waiting at the bonfire for more goblins: clear the walls round the camp meanwhile
+        position = clearTurn(gm, i, unit, f, ctx)
+        if position is not None:
+            return position
     leader = squadLeader(squad)
     leaderAt = i if leader is unit else (find(gm, ctx, leader) if leader is not None else None)
     if leader is unit or leaderAt is None:
@@ -843,8 +894,6 @@ def raidTurn(gm, i, unit, squad, f, ctx):
     gm.grid[target] = [0, tile[1]]
     if left or gold:
         gm.placeItems(target, left, gold)
-    if tile[1] == 1:
-        gm.addPopup("Raided!", target)
     squad.raid = None
     squad.hauling = squadLoad(squad) >= HAUL_AT  # home only once it's full enough
     return i
@@ -886,8 +935,6 @@ def takeFrom(gm, unit, t):
             tile[2].items, tile[2].gold = left, gold
         else:
             gm.grid[t] = [0, tile[1]]
-    if tile[1] == 1:
-        gm.addPopup("Looted", t)
     gm.change = True
 
 
@@ -1053,9 +1100,59 @@ def harvestBy(gm, unit, t):
     for materialId, amount in loot.roll(loot.PLANT_LOOT, tile[2].name):
         unit.materials[materialId] = unit.materials.get(materialId, 0) + amount
     gm.grid[t] = [0, tile[1]]
-    if tile[1] == 1:
-        gm.addPopup("Picked", t)
     gm.change = True
+
+
+def wallsToClear(gm, ctx, f):
+    """Walls f's waiting squads break: the ones in its unfinished huts the builders have to break, then any within
+    CLEAR_RADIUS of its bonfires that aren't hut walls, farm plots, Organizer patterns, someone else's ground or the
+    map's edge. Worked out once a turn."""
+    cache = ctx.setdefault("toClear", {})
+    if f.id in cache:
+        return cache[f.id]
+    walls = set()
+    for h in f.huts:
+        if not h["done"]:
+            walls |= {t for t in h["floor"] if gm.grid[t][0] == 2 and not floored(gm, h, t)}
+    claimed, protected, R = claimedTiles(gm), f.walls(), gm.rowLength
+    for b in f.bonfires:
+        for dy in range(-CLEAR_RADIUS, CLEAR_RADIUS + 1):
+            for dx in range(-CLEAR_RADIUS, CLEAR_RADIUS + 1):
+                t = offsetTile(gm, b, dx, dy)
+                if t is None or gm.grid[t][0] != 2 or t in claimed or t in protected or dist(gm, t, b) > CLEAR_RADIUS:
+                    continue
+                if t % R in (0, R - 1) or t < R or t + R >= gm.numberOfSpots:
+                    continue  # (the map's edge stays)
+                walls.add(t)
+    cache[f.id] = walls
+    return walls
+
+
+def clearTurn(gm, i, unit, f, ctx):
+    """A goblin waiting at the bonfire breaks the nearest wall to clear (wallsToClear). None if there's none (or it's
+    full: what walls give goes in its pockets)."""
+    if roomFor(unit) <= 0 or not f.bonfires:
+        return None
+    walls = wallsToClear(gm, ctx, f)
+    t = getattr(unit, "clearing", None)
+    if t is None or t not in walls or gm.grid[t][0] != 2:
+        aside = setAside(gm, unit)
+        taken = ctx.setdefault("clearTaken", set())
+        standing = [w for w in walls if gm.grid[w][0] == 2 and w not in aside]  # (some may be broken this turn)
+        options = [w for w in standing if w not in taken] or standing
+        unit.clearing = t = min(options, key=lambda w: dist(gm, w, i)) if options else None
+    if t is None:
+        return None
+    ctx.setdefault("clearTaken", set()).add(t)
+    if t in gm.neighbors(i):
+        digWall(gm, i, unit, t, unit.wallDamage)
+        if gm.grid[t][0] != 2:
+            unit.clearing = None
+        return i
+    if tooLong(gm, unit, t, GATHER_GIVE_UP):
+        unit.clearing = None
+        return None
+    return step(gm, i, unit, t, f.walls(), ctx)
 
 
 def onMission(squad):
@@ -1424,8 +1521,7 @@ def buildHut(gm, i, b, f, task, ctx):
                 claimWall(gm, hut, t, f.look)
             return position
         if there and gm.grid[t][0] != 0:  # one of its own goblins standing there: shoo it
-            nudge(gm, ctx, t, f)
-            return position
+            return makeWay(gm, ctx, i, t, f)
         if there and work(hut, ("wall", t), WALL_TURNS):
             gm.grid[t] = [2, gm.grid[t][1], gm.createWall(t, gm.rooms)]
             paintHutWall(gm, hut, t, f.look)
@@ -1443,8 +1539,8 @@ def buildHut(gm, i, b, f, task, ctx):
         return i
     if gm.grid[c][0] == 5:  # someone standing in the middle: shoo them if it's one of ours, else wait
         if c in gm.neighbors(i):
-            nudge(gm, ctx, c, f)
-        return i
+            return makeWay(gm, ctx, i, c, f)
+        return goNextTo(gm, i, b, c, f, ctx)[0]
     position, there = goNextTo(gm, i, b, c, f, ctx)
     if there and work(hut, ("spawner", c), SPAWNER_TURNS):
         place(gm, c, Structure("spawner", f.id, hut=c))
@@ -1764,8 +1860,7 @@ def buildChests(gm, i, b, f, hut, ctx):
     t = pick(gm, hut, b, todo, i)
     position, there = goNextTo(gm, i, b, t, f, ctx)
     if there and gm.grid[t][0] != 0:  # one of its own goblins standing there: shoo it
-        nudge(gm, ctx, t, f)
-        return position
+        return makeWay(gm, ctx, i, t, f)
     if there and work(hut, ("chest", t), CHEST_TURNS):
         gm.grid[t] = [3, gm.grid[t][1], CampChest(f.id, f.look)]
         chests(gm, f).add(t)
@@ -1862,8 +1957,6 @@ def schism(gm, f, units):
     for p in farms(f):
         if p.get("farmer") in goers:
             p["farmer"] = None
-    if gm.grid[start][1] == 1:
-        gm.addPopup("Schism!", start)
     gm.change = True
 
 

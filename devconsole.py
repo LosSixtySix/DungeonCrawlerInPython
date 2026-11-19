@@ -22,6 +22,7 @@ with the other matches beside it. Tab fills in the match; pressing Tab again mov
 """
 
 LOG_LIMIT = 400  # oldest lines are dropped past this many
+PLAY_TURN_MS = 150  # /play: how often a turn passes, unless a speed is given
 
 
 def snakeCase(name):
@@ -74,6 +75,7 @@ class DevConsole():
             "enemy": (self.cmdEnemy, "/enemy", "Lists every kind of enemy and its id. Also /enemies"),
             "peaceful": (self.cmdPeaceful, "/peaceful [on|off]", "Enemies ignore you and never attack (toggles with no word)"),
             "reveal": (self.cmdReveal, "/reveal [on|off]", "See the whole floor, enemies included (toggles with no word)"),
+            "play": (self.cmdPlay, "/play [off|ms]", "Turns pass on their own so you can watch (Esc or /play stops; ms per turn, default 150)"),
             "events": (self.cmdEvents, "/events", "Lists the floor events and this floor's event, if any"),
             "event": (self.cmdEvent, "/event <id>", "Starts a floor event now (ids: /events)"),
             "orefloor": (self.cmdOreFloor, "/orefloor <type> [mother]", "Makes the next new floor an ore floor (types: /orefloor)"),
@@ -81,7 +83,7 @@ class DevConsole():
         }
         self.aliases = {"additem": "give", "add": "give", "enemies": "enemy", "item": "items", "aggro": "peaceful", "map": "reveal", "seeall": "reveal", "?": "help"}
         self.arguments = {"give": lambda: list(itemCatalog()), "peaceful": lambda: ["on", "off"],
-                          "reveal": lambda: ["on", "off"],
+                          "reveal": lambda: ["on", "off"], "play": lambda: ["off"],
                           "event": lambda: list(events.EVENTS),
                           "orefloor": lambda: list(oreFloorIds())}  # what autofill offers
         self.write("info", "Developer console. Type /help for the commands")
@@ -346,6 +348,23 @@ class DevConsole():
         gm.setPositionsVisible()
         gm.change = True
         self.write("good", "Whole floor revealed" if gm.revealMap else "Back to your own sight (what you saw stays remembered)")
+
+    def cmdPlay(self, args):
+        gm = self.gm
+        word = args[0].lower() if args else None
+        if word == "off" or (word is None and getattr(gm, "autoPlay", None) is not None):
+            gm.autoPlay = None
+            self.write("good", "Stopped: your turn again")
+            return
+        ms = PLAY_TURN_MS
+        if word not in (None, "on"):
+            try:
+                ms = max(10, int(word))
+            except ValueError:
+                self.write("error", "Usage: /play [off|ms per turn]")
+                return
+        gm.autoPlay = {"ms": ms, "next": 0}
+        self.write("good", f"Watching: a turn every {ms} ms. Esc or /play stops")
 
     def cmdClear(self, _args):
         self.log = []
