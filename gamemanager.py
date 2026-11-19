@@ -23,7 +23,7 @@ import devconsole
 import updater
 from version import VERSION
 from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES
-from renderer import renderer as rend, SWAY_FPS
+from renderer import renderer as rend, SWAY_FPS, FIRE_LIGHT_RADIUS
 import pickle
 
 """
@@ -2054,6 +2054,64 @@ class gameManager():
             t += .1
         return positions
 
+    def seeThroughForPlayer(self, position):
+        """The same rule your vision uses: open floor, item piles and short plants don't block it."""
+        tile = self.grid[position]
+        return tile[0] in (0, 1, 9) or (tile[0] == 8 and not tile[2].blocksSight)
+
+    def lightAround(self, fire):
+        """The tiles a fire lights: rays out to FIRE_LIGHT_RADIUS, stopping at (and lighting) the first thing
+        that blocks sight. The fire's own tile always lights, whatever is burning there."""
+        lit, R = set(), self.rowLength
+        fx, fy = fire % R, fire // R
+        t = 0
+        while t < 2 * math.pi:
+            for r in range(1, FIRE_LIGHT_RADIUS + 1):
+                x, y = round(r * math.cos(t) + fx), round(r * math.sin(t) + fy)
+                if not 0 <= x < R:
+                    break
+                p = x + y * R
+                if p not in self.grid:
+                    break
+                lit.add(p)
+                if p != fire and not self.seeThroughForPlayer(p):
+                    break
+            t += .1
+        lit.add(fire)
+        return lit
+
+    def lineOfSight(self, start, end):
+        """True if nothing that blocks your sight stands on the straight line between two tiles."""
+        R = self.rowLength
+        x0, y0, x1, y1 = start % R, start // R, end % R, end // R
+        dx, dy = abs(x1 - x0), -abs(y1 - y0)
+        sx, sy = (1 if x0 < x1 else -1), (1 if y0 < y1 else -1)
+        err = dx + dy
+        while (x0, y0) != (x1, y1):
+            e2 = 2 * err
+            if e2 >= dy:
+                err += dy
+                x0 += sx
+            if e2 <= dx:
+                err += dx
+                y0 += sy
+            if (x0, y0) == (x1, y1):
+                return True
+            if not self.seeThroughForPlayer(x0 + y0 * R):
+                return False
+        return True
+
+    def updateFireLight(self):
+        """Which tiles the fires light, as {tile: the nearest fire lighting it}."""
+        R = self.rowLength
+        self.fireLight = {}
+        best = {}
+        for fire in self.fires:
+            for p in self.lightAround(fire):
+                d = (p % R - fire % R) ** 2 + (p // R - fire // R) ** 2
+                if p not in best or d < best[p]:
+                    best[p], self.fireLight[p] = d, fire
+
     def setPositionsVisible(self):
         visiblePositions = self.rayCircleVision(self.playerPositionFlat, self.player.getVisionRange(), 1)
         for i in self.grid.keys():
@@ -2061,6 +2119,11 @@ class gameManager():
                 self.grid[i][1] = 2
         for position in visiblePositions:
             self.grid[position][1] = 1
+        # Firelight: tiles a fire lights are visible too, from any distance, if nothing blocks your line of sight
+        self.updateFireLight()
+        for position in self.fireLight:
+            if position not in visiblePositions and self.lineOfSight(self.playerPositionFlat, position):
+                self.grid[position][1] = 1
         if self.player.hasEffect("see_enemies"):
             for position in self.EnemyPositions:
                 if position in self.grid and self.grid[position][0] == 5:
@@ -3218,6 +3281,7 @@ class gameManager():
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly,
+            fireLight=getattr(self, "fireLight", {}),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 

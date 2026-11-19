@@ -16,6 +16,12 @@ SWAY_FPS = 10       # how many times a second the light moves (a stepped, retro 
 SWAY_AMOUNT = 0.9   # how far the center can drift, in tiles (from -0.45 to +0.45)
 SWAY_SPEED = 1.2    # how fast it drifts
 
+# Firelight: each fire lights the tiles around it (gameManager.setPositionsVisible works out which ones you can
+# see). They're drawn bright with a warm tint that fades with distance, and the light sways like yours does.
+FIRE_LIGHT_RADIUS = 3
+FIRE_TINT = (240, 128, 40)
+FIRE_TINT_ALPHA = 82          # the tint's strength on the fire's own tile (0-255); it fades to nothing at the edge
+
 # Ore glints ("Twinkle"): every vein tile in your light twinkles on its own timer. Three of its flecks flash
 # one after another, and the first throws a tiny four-point star onto the wall around it.
 GLINT_FPS = 30                # how often a twinkling tile is redrawn
@@ -184,7 +190,7 @@ class renderer():
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
-             console=None, glintOnly=False):
+             console=None, glintOnly=False, fireLight=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -192,12 +198,15 @@ class renderer():
         lightTime: seconds, for the animated light. lightStyle: "sway", "flicker" or None (not animated).
         lightOnly: only the light moved, so just redraw the lit tiles instead of the whole map.
         glintOnly: only ore glints changed, so just redraw the twinkling vein tiles (see glintsDue).
+        fireLight: {tile: the fire lighting it} for tiles in reach of a fire's light (see FIRE_LIGHT_RADIUS).
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill(self.color("fog"))
         self.blood = blood or {}  # map position -> how much blood is on that floor tile (0-1)
         self.bloodDry = bloodDry or {}
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
+        self.lightStyleNow = lightStyle  # fires sway the same way (see fireLevel)
+        self.fireLight = fireLight or {}
         light = self.lightShape(lightTime, lightStyle)
         if glintOnly:
             self.redrawGlints(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
@@ -1290,8 +1299,30 @@ class renderer():
             lightX = playerPosition % self.rowLength + offsetX
             lightY = playerPosition // self.rowLength + offsetY
             level = self.lightLevel(x, y, lightX, lightY, visionRange * reach)
+            fire = getattr(self, "fireLight", {}).get(i)
+            if fire is not None:  # firelight: whichever light is brighter here wins
+                fireLevel, distance = self.fireLevel(x, y, fire)
+                level = None if level is None or fireLevel is None else min(level, fireLevel)
+                alpha = int(FIRE_TINT_ALPHA * max(0.0, 1 - distance / (FIRE_LIGHT_RADIUS + 1)))
+                if alpha > 0:
+                    self.mapSurface.blit(self.fireTint(alpha), (x * ts, y * ts))
             if level is not None and self.shades:
                 self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
+
+    def fireLevel(self, x, y, fire):
+        """(dither level, distance) for tile x, y in the light of the fire at position fire. Each fire's light sways
+        like yours (lightShape, with the same Light Style), on its own timing so they don't all move together."""
+        offsetX, offsetY, reach = self.lightShape(self.lightTime + (fire % 97) * 0.37, getattr(self, "lightStyleNow", None))
+        fx, fy = fire % self.rowLength + offsetX, fire // self.rowLength + offsetY
+        distance = math.hypot(x - fx, y - fy)
+        return self.lightLevel(x, y, fx, fy, (FIRE_LIGHT_RADIUS + 0.5) * reach), distance
+
+    def fireTint(self, alpha):
+        cache = self.__dict__.setdefault("fireTints", {})
+        alpha = alpha // 6 * 6  # a handful of steps is plenty, and keeps the cache small
+        if (alpha, self.tileSize) not in cache:
+            cache[(alpha, self.tileSize)] = self.tint(FIRE_TINT, alpha)
+        return cache[(alpha, self.tileSize)]
 
     def drawTile(self, grid, i, x, y, rooms, playerDirection, memorized):
         ts = self.tileSize
