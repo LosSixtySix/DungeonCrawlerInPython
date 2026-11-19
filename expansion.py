@@ -52,6 +52,7 @@ BONFIRE_LIGHT_RADIUS = 5
 BONFIRE_TURNS = 4           # a builder's turns to light a bonfire
 FLOOR_TURNS = 1             # ...to floor one tile with Stone
 WALL_TURNS = 2              # ...to build one hut wall
+CLAIM_TURNS = 1             # ...to make a wall already standing where a hut wall goes into one (no ore veins)
 SPAWNER_TURNS = 8           # ...to build a spawner
 BUILDER_REST = (10, 20)
 BREAK_DAMAGE = 40           # a builder's hit on a wall in its way (one hit for any plain wall)
@@ -96,8 +97,8 @@ FIRST_LOOKS = LOOKS[:3]
 
 GOBLIN_NAMES = ("Goblin", "Goblin Chieftan")
 
-# The hut: offsets from its center. A 7x7 square with the corners left out, 1 or 2 entrances in the middle of its
-# sides, a 5x5 room inside and the spawner in the middle. The Stone floor covers it and a 1-tile border.
+# The hut: offsets from its center. A 7x7 square with the corners left out, an entrance in the middle of each of
+# its 4 sides, a 5x5 room inside and the spawner in the middle. The Stone floor covers it and a 1-tile border.
 HUT_SIDES = [(0, -3), (0, 3), (-3, 0), (3, 0)]
 HUT_FLOOR = [(dx, dy) for dy in range(-4, 5) for dx in range(-4, 5)]
 HUT_INSIDE = [(dx, dy) for dy in range(-2, 3) for dx in range(-2, 3) if (dx, dy) != (0, 0)]
@@ -106,6 +107,19 @@ HUT_INSIDE = [(dx, dy) for dy in range(-2, 3) for dx in range(-2, 3) if (dx, dy)
 def hutWalls(doors):
     return [(dx, dy) for dy in range(-3, 4) for dx in range(-3, 4)
             if max(abs(dx), abs(dy)) == 3 and not (abs(dx) == 3 and abs(dy) == 3) and (dx, dy) not in doors]
+
+
+def paintHutWall(gm, hut, t, look):
+    """Paints the hut wall at t in a faction's colors: the renderer draws its mortar joints in the look's cloak color
+    (renderer.drawMortar). wall.paint is (look, side of the hut it's on, parity): the joints are turned to face out
+    of the hut and alternate from one wall tile to the next, like laid stone. It keeps its paint when its faction
+    dies out, so an abandoned camp still shows whose it was."""
+    w = gm.grid[t][2]
+    for dx, dy in hutWalls(()):
+        if offsetTile(gm, hut["center"], dx, dy) == t:
+            side = "n" if dy == -3 else "s" if dy == 3 else "w" if dx == -3 else "e"
+            w.paint = (look, side, (dx + dy) % 2)
+            return
 
 
 # ---------------------------------------------------------------- state
@@ -932,7 +946,7 @@ def bonfireSpot(gm, center, near_, low, high, avoid=None, needRoom=None):
 
 
 def layOutHut(gm, center, claimed):
-    doors = rand.sample(HUT_SIDES, rand.choice((1, 2)))
+    doors = HUT_SIDES  # an entrance in the middle of every side
     floor = [offsetTile(gm, center, dx, dy) for dx, dy in HUT_FLOOR]
     if None in floor:
         return None
@@ -994,15 +1008,36 @@ def isStone(gm, t):
 
 
 def floored(gm, hut, t):
-    """True once tile t of the hut is Stone floor (or one of the hut's own walls, built on it)."""
-    return t in gm.rooms["Stone"] and (gm.grid[t][0] != 2 or t in hut["walls"])
+    """True once tile t of the hut is Stone floor. A wall standing where one of the hut's walls goes counts: the
+    builder claims it later instead of breaking it (see needsWall), unless it's an ore vein or gold, which it breaks
+    so their ore isn't lost."""
+    tile = gm.grid[t]
+    if tile[0] == 2 and t in hut["walls"]:
+        return not isOre(tile)
+    return t in gm.rooms["Stone"] and tile[0] != 2
+
+
+def needsWall(gm, hut, t):
+    """Does hut wall spot t still need work? Built (painted) walls are done; any other wall there gets claimed."""
+    tile = gm.grid[t]
+    return t not in hut["skip"] and not (tile[0] == 2 and getattr(tile[2], "paint", None))
+
+
+def claimWall(gm, hut, t, look):
+    """The wall standing at t becomes one of the hut's walls: a fresh Stone Wall in the faction's colors."""
+    for room in gm.rooms.values():
+        room.discard(t)
+    gm.rooms["Stone"].add(t)
+    gm.grid[t] = [2, gm.grid[t][1], gm.createWall(t, gm.rooms)]
+    paintHutWall(gm, hut, t, look)
+    gm.change = True
 
 
 def hutStage(gm, hut):
     """What a hut needs next: every floor tile Stone first, then every wall, then the spawner."""
     if any(not floored(gm, hut, t) for t in hut["floor"]):
         return "floor"
-    if any(gm.grid[t][0] != 2 and t not in hut["skip"] for t in hut["walls"]):
+    if any(needsWall(gm, hut, t) for t in hut["walls"]):
         return "walls"
     return "spawner"
 
@@ -1043,7 +1078,10 @@ def buildHut(gm, i, b, f, task, ctx):
         todo = []
         for t in hut["walls"]:
             kind = gm.grid[t][0]
-            if kind == 2 or t in hut["skip"]:
+            if not needsWall(gm, hut, t):
+                continue
+            if kind == 2:  # a wall already standing here: claim it
+                todo.append(t)
                 continue
             if kind in (3, 4, 6, 7, 9, CAMP):  # something there now: leave a gap
                 hut["skip"].add(t)
@@ -1056,11 +1094,16 @@ def buildHut(gm, i, b, f, task, ctx):
             return organizers.wander(gm, i)
         t = pick(gm, hut, b, todo, i)
         position, there = goNextTo(gm, i, b, t, f, ctx)
+        if gm.grid[t][0] == 2:
+            if there and work(hut, ("claim", t), CLAIM_TURNS):
+                claimWall(gm, hut, t, f.look)
+            return position
         if there and gm.grid[t][0] != 0:  # one of its own goblins standing there: shoo it
             nudge(gm, ctx, t, f)
             return position
         if there and work(hut, ("wall", t), WALL_TURNS):
             gm.grid[t] = [2, gm.grid[t][1], gm.createWall(t, gm.rooms)]
+            paintHutWall(gm, hut, t, f.look)
             gm.change = True
         return position
     # the spawner, in the middle: every builder on the hut helps
@@ -1272,6 +1315,10 @@ def split(gm, f):
     new.first = far
     new.huts = [h for h in f.huts if side(h["center"])]
     f.huts = [h for h in f.huts if not side(h["center"])]
+    for h in new.huts:  # their walls are repainted in the new colors
+        for t in h["walls"]:
+            if gm.grid[t][0] == 2 and getattr(gm.grid[t][2], "paint", None):
+                paintHutWall(gm, h, t, new.look)
     for t in camp(gm)["structures"]:
         s = gm.grid[t][2] if gm.grid[t][0] == CAMP else None
         if s is not None and s.faction == f.id and side(t):

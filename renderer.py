@@ -994,7 +994,8 @@ class renderer():
             return self.paintWall(wall, color, memorized, glintAt)
         if not hasattr(self, "wallCache"):
             self.clearTileCaches()
-        key = (id(wall), tuple(color), memorized, len(wall.brokenPoints), getattr(wall, "corruptedBy", None), self.tileSize)
+        key = (id(wall), tuple(color), memorized, len(wall.brokenPoints), getattr(wall, "corruptedBy", None),
+               getattr(wall, "paint", None), self.tileSize)
         return self.cached(self.wallCache, key, lambda: (wall, self.paintWall(wall, color, memorized, None)))[1]
 
     def paintWall(self, wall, color, memorized, glintAt) -> pygame.Surface:
@@ -1015,10 +1016,39 @@ class renderer():
         if kind:
             self.drawVines(canvas, kind, memorized)
         brokenColor = [max(0, c - 100) for c in color]
+        # (the edge goes on before the cracks: they're the same color, so a crack on the edge looks the same)
+        pygame.draw.rect(canvas, brokenColor, pygame.Rect(0, 0, self.tileSize, self.tileSize), width=2)
+        paint = getattr(wall, "paint", None)
+        if paint:  # over the edge, so the joints run on from one wall tile to the next
+            self.drawMortar(canvas, paint, memorized)
         for point in wall.brokenPoints:
             pygame.draw.rect(canvas, brokenColor, pygame.Rect(point[0], point[1], 1, 1))
-        pygame.draw.rect(canvas, brokenColor, pygame.Rect(0, 0, self.tileSize, self.tileSize), width=2)
         return canvas
+
+    # A painted hut wall (expansion.paintHutWall) is drawn as laid stone blocks with the joints between them in its
+    # faction's cloak color. On a 10x10 grid, as for the hut's north wall (u along the wall, v from the outside in):
+    # a joint 2 wide along the whole wall, and one across it in each half, alternating with parity. Turned for the
+    # other sides.
+    MORTAR = {0: ((0, 4, 10, 2), (6, 0, 2, 4), (2, 6, 2, 4)), 1: ((0, 4, 10, 2), (2, 0, 2, 4), (6, 6, 2, 4))}
+
+    def drawMortar(self, canvas, paint, memorized):
+        look, side, parity = paint
+        looks = sprites.EXPANSION_LOOKS
+        color = list(looks.get(look, looks[expansion.LOOKS[0]])["goblin"]["c"])
+        if memorized:
+            color = themes.remembered(color, self.theme.colors["fog"])
+        ts = self.tileSize
+        cell = lambda n: round(n * ts / 10)
+        for u, v, w, h in self.MORTAR[parity]:
+            if side == "n":
+                x, y, W, H = u, v, w, h
+            elif side == "s":
+                x, y, W, H = 10 - u - w, 10 - v - h, w, h
+            elif side == "w":
+                x, y, W, H = v, 10 - u - w, h, w
+            else:
+                x, y, W, H = 10 - v - h, u, h, w
+            canvas.fill(color, pygame.Rect(cell(x), cell(y), cell(x + W) - cell(x), cell(y + H) - cell(y)))
 
     # ------------------------------------------------------------ ore glints
 
@@ -1458,7 +1488,7 @@ class renderer():
             extra = (playerDirection, getattr(obj, "look", None), getattr(obj, "kind", None))
         elif kind == 2:
             glint = self.glintPhase(i, self.frameTicks) if not memorized and isinstance(obj, walls.OreVein) else None
-            extra = (obj.name, len(obj.brokenPoints), getattr(obj, "corruptedBy", None), glint)
+            extra = (obj.name, len(obj.brokenPoints), getattr(obj, "corruptedBy", None), getattr(obj, "paint", None), glint)
         elif kind == 3:
             extra = getattr(obj, "look", None)
         elif kind == 9:
