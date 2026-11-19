@@ -7,6 +7,7 @@ import loot
 import recipes
 import relics
 import resources
+import wall
 
 """
 The developer console. ~ (the key left of 1) opens and closes it while playing. Type a command and press Enter;
@@ -25,6 +26,11 @@ LOG_LIMIT = 400  # oldest lines are dropped past this many
 def snakeCase(name):
     """GoblinChief -> goblin_chief"""
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def oreFloorIds():
+    """{"copper_lode": "Copper Lode", ...}: the ids /orefloor takes."""
+    return {name.lower().replace(" ", "_"): name for name in wall.ORE_FLOORS}
 
 
 def itemCatalog():
@@ -66,10 +72,12 @@ class DevConsole():
             "items": (self.cmdItems, "/items [filter]", "Lists every item id, or only those matching filter"),
             "enemy": (self.cmdEnemy, "/enemy", "Lists every kind of enemy and its id. Also /enemies"),
             "peaceful": (self.cmdPeaceful, "/peaceful [on|off]", "Enemies ignore you and never attack (toggles with no word)"),
+            "orefloor": (self.cmdOreFloor, "/orefloor <type> [mother]", "Makes the next new floor an ore floor (types: /orefloor)"),
             "clear": (self.cmdClear, "/clear", "Clears the console"),
         }
         self.aliases = {"additem": "give", "add": "give", "enemies": "enemy", "item": "items", "aggro": "peaceful", "?": "help"}
-        self.arguments = {"give": lambda: list(itemCatalog()), "peaceful": lambda: ["on", "off"]}  # what autofill offers
+        self.arguments = {"give": lambda: list(itemCatalog()), "peaceful": lambda: ["on", "off"],
+                          "orefloor": lambda: list(oreFloorIds())}  # what autofill offers
         self.write("info", "Developer console. Type /help for the commands")
 
     # ------------------------------------------------------------------ open / close
@@ -280,6 +288,20 @@ class DevConsole():
                 if tile and tile[0] == 5 and len(tile) > 2:
                     tile[2].lastPlayerPosition = None
         self.write("good", "Peaceful: enemies ignore you" if gm.peaceful else "Peaceful off: enemies hunt you again")
+
+    def cmdOreFloor(self, args):
+        ids = oreFloorIds()
+        if not args or args[0].lower() not in ids:
+            if args:
+                self.write("error", f"No ore floor \"{args[0]}\"")
+            self.write("head", "Ore floors (add \"mother\" for a Motherlode)")
+            for floorId, name in ids.items():
+                self.write("info", f"  {floorId:<20} {name} (from floor {wall.ORE_FLOORS[name]['first']})")
+            return
+        name = ids[args[0].lower()]
+        motherlode = len(args) > 1 and args[1].lower() in ("mother", "motherlode")
+        self.gm.forcedOreFloor = (name, motherlode)
+        self.write("good", f"The next new floor will be {'a Motherlode ' if motherlode else ''}{name}. Take the stairs down")
 
     def cmdClear(self, _args):
         self.log = []

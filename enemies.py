@@ -55,7 +55,10 @@ class Organizer(Enemy):
     def __init__(self, name):
         super().__init__(8, 8, 1, 2, 2, name, 12)
         self.plan = None          # the pattern it's working on (organizers.layOut), or None while resting
-        self.built = set()        # walls of the patterns it has finished (organizers leave these alone)
+        self.built = set()        # walls of the patterns it has finished (its own team leaves these alone)
+        self.placed = set()       # walls it built itself and that are still standing (see organizers.wallBroken)
+        self.aggro = None         # what broke one of its walls: "player" or that enemy. It hunts it down
+        self.aggroTurns = 0
         self.rest = rand.randint(0, 8)
         self.workOn = None        # what it's partway through: ("wall" / "wood" / "sow", tile)
         self.progress = 0

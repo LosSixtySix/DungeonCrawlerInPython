@@ -15,6 +15,15 @@ DITHER_AMOUNTS = (0.125, 0.25)  # "Soft" from the Dithered Light page
 SWAY_FPS = 10       # how many times a second the light moves (a stepped, retro feel)
 SWAY_AMOUNT = 0.9   # how far the center can drift, in tiles (from -0.45 to +0.45)
 SWAY_SPEED = 1.2    # how fast it drifts
+
+# Ore glints ("Twinkle"): every vein tile in your light twinkles on its own timer. Three of its flecks flash
+# one after another, and the first throws a tiny four-point star onto the wall around it.
+GLINT_FPS = 30                # how often a twinkling tile is redrawn
+GLINT_PERIOD = (3000, 7000)   # ms between one tile's twinkles (random per tile, so a wall of ore shimmers)
+GLINT_LENGTH = 560            # ms one twinkle lasts
+GLINT_STAGGER = 130           # ms between the three flecks
+GLINT_FLASH = 240             # ms each fleck's flash takes to fade
+GLINT_WHITE = (255, 255, 255)
 # Flicker: the light's reach jumps in and out a little, like a flame in a draft.
 FLICKER_AMOUNT = 0.28  # how much the reach changes (from -14% to +14%)
 FLICKER_SPEED = 6      # how fast it changes
@@ -175,13 +184,14 @@ class renderer():
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
-             console=None):
+             console=None, glintOnly=False):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
         pause: dict describing the pause menu, or None when it's closed.
         lightTime: seconds, for the animated light. lightStyle: "sway", "flicker" or None (not animated).
         lightOnly: only the light moved, so just redraw the lit tiles instead of the whole map.
+        glintOnly: only ore glints changed, so just redraw the twinkling vein tiles (see glintsDue).
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill(self.color("fog"))
@@ -189,7 +199,9 @@ class renderer():
         self.bloodDry = bloodDry or {}
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
         light = self.lightShape(lightTime, lightStyle)
-        if lightOnly:
+        if glintOnly:
+            self.redrawGlints(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
+        elif lightOnly:
             self.redrawLitTiles(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
         else:
             self.mapSurface.fill(self.color("fog"))
@@ -906,7 +918,8 @@ class renderer():
     # where the ore flecks sit in a vein tile: (x, y, also draw the pixel to the right, highlight above)
     VEIN_FLECKS = [(3, 3, True, True), (6, 4, False, True), (4, 6, True, True), (2, 5, False, False), (6, 7, True, False), (5, 2, False, False)]
 
-    def drawWall(self, wall, color, memorized=False) -> pygame.Surface:
+    def drawWall(self, wall, color, memorized=False, glintAt=None) -> pygame.Surface:
+        """glintAt: the tile's position, for a vein in view (it twinkles, see GLINT_*)."""
         canvas = pygame.Surface((self.tileSize, self.tileSize))
         canvas.fill(color)
         if isinstance(wall, walls.OreVein):
@@ -918,11 +931,75 @@ class renderer():
                 canvas.fill(ore, pygame.Rect(x, y, 2 if wide else 1, 1))
                 if lit:
                     canvas.fill(shine, pygame.Rect(x, y - 1, 1, 1))
+            if glintAt is not None and not memorized:
+                self.drawGlint(canvas, glintAt, ore, shine, color)
         brokenColor = [max(0, c - 100) for c in color]
         for point in wall.brokenPoints:
             pygame.draw.rect(canvas, brokenColor, pygame.Rect(point[0], point[1], 1, 1))
         pygame.draw.rect(canvas, brokenColor, pygame.Rect(0, 0, self.tileSize, self.tileSize), width=2)
         return canvas
+
+    # ------------------------------------------------------------ ore glints
+
+    def glintTimer(self, i):
+        """(period, phase, fleck order) for the tile at i: random, but always the same for that tile."""
+        timers = self.__dict__.setdefault("glintTimers", {})
+        if i not in timers:
+            rng = random.Random(i)
+            order = list(range(len(self.VEIN_FLECKS)))
+            rng.shuffle(order)
+            timers[i] = (rng.uniform(*GLINT_PERIOD), rng.uniform(0, GLINT_PERIOD[1]), order)
+        return timers[i]
+
+    def glintPhase(self, i, now):
+        """(cycle, ms into the twinkle) if the tile at i is twinkling at time now, else None."""
+        period, phase, _ = self.glintTimer(i)
+        t = (now + phase) % period
+        return (int((now + phase) // period), t) if t < GLINT_LENGTH else None
+
+    def drawGlint(self, canvas, i, ore, shine, wallColor):
+        state = self.glintPhase(i, pygame.time.get_ticks())
+        if state is None:
+            return
+        cycle, t = state
+        order = self.glintTimer(i)[2]
+        start = (cycle * 3) % len(order)  # a different three flecks each time
+
+        def light(base, b):  # brighten toward the shine color, then on to white
+            return themes.mix(list(base), list(shine), b * 2) if b < 0.5 else themes.mix(list(shine), list(GLINT_WHITE), b * 2 - 1)
+
+        for k in range(3):
+            u = (t - k * GLINT_STAGGER) / GLINT_FLASH
+            if not 0 < u < 1:
+                continue
+            b = (1 - u) ** 2  # flash, then fade
+            x, y, wide, lit = self.VEIN_FLECKS[order[(start + k) % len(order)]]
+            canvas.fill(light(ore, b), pygame.Rect(x, y, 2 if wide else 1, 1))
+            if lit:
+                canvas.fill(light(shine, b), pygame.Rect(x, y - 1, 1, 1))
+            if k == 0 and b > 0.35:  # the star, blended over the wall around the first fleck
+                star = themes.mix(list(wallColor), themes.mix(list(shine), list(GLINT_WHITE), b), b)
+                points = [(-1, 0), (1, 0), (0, -1), (0, 1)] + ([(-2, 0), (2, 0), (0, -2), (0, 2)] if b > 0.8 else [])
+                for dx, dy in points:
+                    if 0 <= x + dx < self.tileSize and 0 <= y + dy < self.tileSize:
+                        canvas.fill(star, pygame.Rect(x + dx, y + dy, 1, 1))
+
+    def glintsDue(self, grid, now):
+        """Called every frame: True when a vein tile in view has started, is in the middle of, or just finished
+        a twinkle at this GLINT_FPS step (those are the tiles redrawGlints redraws)."""
+        step = now * GLINT_FPS // 1000
+        if step == getattr(self, "glintStep", None):
+            return False
+        self.glintStep = step
+        active = {i for i in getattr(self, "litVeins", ()) if grid.get(i, (None, 0))[1] == 1 and self.glintPhase(i, now) is not None}
+        self.glintDirty = active | getattr(self, "glintActive", set())
+        self.glintActive = active
+        return bool(self.glintDirty)
+
+    def redrawGlints(self, grid, rooms, playerDirection, playerPosition, visionRange, light):
+        for i in getattr(self, "glintDirty", ()):
+            if grid.get(i, (None, 0))[1] == 1:
+                self.drawLitTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
 
     def drawAimline(self, aimLine):
         if aimLine is None:
@@ -1191,6 +1268,8 @@ class renderer():
             if visibility == 1:
                 self.litTiles.append(i)
             self.drawLitTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+        # the ore veins in view: these twinkle (see glintsDue)
+        self.litVeins = [i for i in self.litTiles if grid[i][0] == 2 and isinstance(grid[i][2], walls.OreVein)]
 
     def redrawLitTiles(self, grid, rooms, playerDirection, playerPosition, visionRange, light):
         """Only the light moved: redraw the tiles in view (from the last full draw) with the new light."""
@@ -1232,7 +1311,7 @@ class renderer():
             case 2:  # Wall
                 w = grid[i][2]
                 color = self.roomWallColor(i, rooms, memorized) if isinstance(w, walls.OreVein) else self.wallColor(w.name, memorized)
-                self.mapSurface.blit(self.drawWall(w, color, memorized), (x * ts, y * ts))
+                self.mapSurface.blit(self.drawWall(w, color, memorized, None if memorized else i), (x * ts, y * ts))
             # Chests and doors: the floor first (it shows through the pictures' transparent pixels and
             # shadows), then the picture. They keep their full color even when remembered.
             case 3:  # Chest: walnut, mahogany or burnt umber (the same on every floor)

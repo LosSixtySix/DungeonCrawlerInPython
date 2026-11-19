@@ -273,6 +273,8 @@ class gameManager():
         self.deepest = 0  # deepest floor reached this run, for the Attempts list
         self.levelGrids = []
         self.doorPositions = []
+        self.motherlodes = set()  # floors that rolled a Motherlode (see wall.MOTHERLODE_CHANCE)
+        self.forcedOreFloor = None  # developer console /orefloor: (floor type, motherlode) for the next new floor
         self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
         self.enemyOccupiedItemSpaces = {}
 
@@ -1459,6 +1461,7 @@ class gameManager():
 
     def breakWall(self, position):
         """A wall was broken: it becomes floor and its materials go straight into the pouch."""
+        organizers.wallBroken(self, position, "player")  # if an Organizer built it, it may come after you
         tile = self.grid[position]
         name = tile[2].name
         if name == "Gold Wall" and self.proportion == "All Gold":
@@ -1589,6 +1592,7 @@ class gameManager():
     def enemyBrokeWall(self, position, enemy):
         """An enemy broke a wall: it's floor now. The enemy always keeps any gold in it, and with POCKET_CHANCE
         the wall's other materials too."""
+        organizers.wallBroken(self, position, enemy)
         broken = self.grid[position].pop()
         self.grid[position][0] = 0
         drops = loot.rollWall(broken.name, 1)
@@ -1711,6 +1715,8 @@ class gameManager():
         self.setTheme(themes.randomTheme(self.proportion))
         self.enemyOccupiedItemSpaces = {}
         self.level += 1
+        if self.newFloorMotherlode:
+            self.motherlodes.add(self.level)
         self.deepest = max(self.deepest, self.level)
         event = events.roll(self.level)
         if event:
@@ -1719,6 +1725,15 @@ class gameManager():
         self.PlaceNextLevelDoor()
         self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
         self.afterLevelChange()
+
+    def floorTypeName(self):
+        return f"Motherlode ({self.proportion})" if self.level in self.motherlodes else self.proportion
+
+    def floorSubtitle(self):
+        """The second line of the "Floor N" message: the theme, plus the floor type on an ore floor."""
+        if self.proportion in wall.ORE_FLOORS:
+            return f"{self.floorTypeName()}  -  {self.theme.name}"
+        return self.theme.name
 
     def afterLevelChange(self):
         self.player.wardReady = True
@@ -1816,7 +1831,9 @@ class gameManager():
         if addStartingItem:
             grid[self.playerPositionFlat - 1] = [3, 0, [items.startingPick]]
         # The first floor is always Mixed, so every starting material (and every herb) is there to find
-        rooms, proportion, nodes = self.createRooms(CER.createNodes(grid, self.rowLength, 5), "Mixed" if depth == 0 else None)
+        oreFloor, motherlode = (None, False) if depth == 0 else self.pickOreFloor(depth)
+        self.newFloorMotherlode = motherlode
+        rooms, proportion, nodes = self.createRooms(CER.createNodes(grid, self.rowLength, 5), "Mixed" if depth == 0 else oreFloor)
         for room in nodes:
             caveIn = rand.randint(0, 100)
             if caveIn == 0:
@@ -1827,7 +1844,10 @@ class gameManager():
             ListOfEnemyPositions = self.placeRandomEnemies(grid, 5)
         self.placeRandomItems(grid, items.createRandomStatItems(3), 10, self.playerPositionFlat - 1)
         self.createObjects(grid, rooms)
-        self.placeVeins(grid, proportion, depth)
+        if proportion in wall.ORE_FLOORS:
+            self.placeOreFloorVeins(grid, proportion, depth, motherlode)
+        else:
+            self.placeVeins(grid, proportion, depth)
         if depth == 0:  # at least one Coal and one Copper vein on the first floor
             for veinClass in (wall.CoalVein, wall.CopperVein):
                 walls = [i for i, tile in grid.items() if tile[0] == 2 and not isinstance(tile[2], wall.OreVein)]
@@ -1858,8 +1878,41 @@ class gameManager():
             for _ in range(clusters):
                 self.growVein(grid, rand.choice(walls), veinClass, rand.randint(2, 5))
 
+    def pickOreFloor(self, depth):
+        """(ore floor type, motherlode) for a new floor at this depth, or (None, False) for a normal floor."""
+        if self.forcedOreFloor:
+            forced, self.forcedOreFloor = self.forcedOreFloor, None
+            return forced
+        if rand.random() >= wall.ORE_FLOOR_CHANCE:
+            return None, False
+        unlocked = {name: spec["weight"] for name, spec in wall.ORE_FLOORS.items() if depth >= spec["first"]}
+        if not unlocked:
+            return None, False
+        name = rand.choices(list(unlocked), weights=list(unlocked.values()))[0]
+        return name, rand.random() < wall.MOTHERLODE_CHANCE
+
+    def placeOreFloorVeins(self, grid, proportion, depth, motherlode):
+        """Fills an ore floor (wall.ORE_FLOORS): a random share of its walls become veins, a third of them coal
+        on metal floors. Each vein is 2 to 2^depth tiles (capped by wall.MAX_VEIN_SIZE and by what's left)."""
+        spec = wall.ORE_FLOORS[proportion]
+        walls = [i for i, tile in grid.items() if tile[0] == 2]
+        ores = {cls: weight for cls, weight in spec["ores"].items() if depth >= wall.VEIN_FIRST_FLOOR.get(cls, 0)}
+        if not walls or not ores:
+            return
+        low, high = wall.MOTHERLODE_DENSITY if motherlode else wall.ORE_FLOOR_DENSITY
+        budget = int(len(walls) * rand.uniform(low, high))
+        coal = int(budget * wall.COAL_SHARE) if spec["coal"] else 0
+        biggest = min(2 ** min(depth, 9), wall.MAX_VEIN_SIZE)
+        for veinClass, amount in ((wall.CoalVein, coal), (None, budget - coal)):
+            misses = 0  # a start on a wall that's already a vein places nothing; give up after many in a row
+            while amount > 0 and misses < 200:
+                cls = veinClass or rand.choices(list(ores), weights=list(ores.values()))[0]
+                placed = self.growVein(grid, rand.choice(walls), cls, rand.randint(2, max(2, min(biggest, amount))))
+                amount -= placed
+                misses = 0 if placed else misses + 1
+
     def growVein(self, grid, start, veinClass, size):
-        """Spreads a vein from start through neighboring walls until it has size tiles."""
+        """Spreads a vein from start through neighboring walls until it has size tiles. Returns how many it placed."""
         frontier, placed = [start], 0
         while frontier and placed < size:
             i = frontier.pop(rand.randrange(len(frontier)))
@@ -1871,6 +1924,7 @@ class gameManager():
             for neighbor in (i - 1, i + 1, i - self.rowLength, i + self.rowLength):
                 if neighbor in grid and (abs(neighbor - i) != 1 or self.sameRow(i, neighbor)):
                     frontier.append(neighbor)
+        return placed
 
     def getRoomType(self, position, rooms):
         for key in rooms.keys():
@@ -1935,9 +1989,13 @@ class gameManager():
                              "All Gold": Gold, "Mixed": Mixed}
         if proportion is None:
             proportion = rand.choice(list(randomProportions))
+        if proportion in wall.ORE_FLOORS:  # ore floors have their own room mix (wall.ORE_FLOORS "rooms")
+            numbers = {"Stone": 0, "Wood": 1, "Gold": 2, "Sand": 3}
+            randomProportions[proportion] = [numbers[room] for room, weight in wall.ORE_FLOORS[proportion]["rooms"].items()
+                                             for _ in range(weight)]
 
         roomNames = {0: "Stone", 1: "Wood", 2: "Gold", 3: "Sand"}
-        if proportion == "Mixed":  # a Mixed floor always has some of every room type
+        if proportion in ("Mixed", "Geode"):  # these always have some of every room type
             rand.shuffle(emptyNodes)
             for roomName in ("Stone", "Wood", "Gold", "Sand"):
                 if emptyNodes:
@@ -2652,8 +2710,9 @@ class gameManager():
 
     def MoveEnemies(self):
         listOfNewPositions = set()
+        self.movedEnemies = listOfNewPositions  # so an Organizer can find an enemy that already moved this turn
         organizerContext = organizers.gather(self)
-        for i in self.EnemyPositions:
+        for i in list(self.EnemyPositions):  # a copy: an Organizer can kill an enemy partway through
             if self.grid[i][0] != 5 or len(self.grid[i]) < 3:
                 continue  # stale position, the enemy is no longer here
             currentEnemy: enemies.Enemy = self.grid[i].pop()
@@ -2757,7 +2816,9 @@ class gameManager():
 
             self.grid[finalPosition].append(currentEnemy)
             listOfNewPositions.add(finalPosition)
-        self.EnemyPositions = listOfNewPositions
+        # leave out anyone an Organizer killed after it had already moved
+        self.EnemyPositions = {p for p in listOfNewPositions if self.grid[p][0] == 5 and len(self.grid[p]) > 2}
+        self.movedEnemies = set()
 
     # ----------------------------------------------------------------- items
 
@@ -2826,7 +2887,8 @@ class gameManager():
             "player": self.player,
             "goldwallCount": self.goldWallCount,
             "addUnsealed": self.addUnsealed,
-            "floorEvents": self.floorEvents
+            "floorEvents": self.floorEvents,
+            "motherlodes": self.motherlodes,
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -2846,6 +2908,7 @@ class gameManager():
             self.deepest = data.get("deepest", self.level)
             self.levelGrids = data["levelGrids"]
             self.floorEvents = data.get("floorEvents", {})
+            self.motherlodes = data.get("motherlodes", set())
             self.doorPositions = data["doorPositions"]
             self.playerPositionFlat = data["playerPositionFlat"]
             self.currentLocation = data["currentLocation"]
@@ -2946,7 +3009,7 @@ class gameManager():
                             ("Damage", f"{minDamage} - {maxDamage}"), ("Vision", player.getVisionRange()),
                             ("Effects", ", ".join(relics.effectName(t) for t in player.effects()) or "None")]
         elif windowId == "room":
-            spec["rows"] = [("Floor Type", self.proportion), ("Theme", self.theme.name),
+            spec["rows"] = [("Floor Type", self.floorTypeName()), ("Theme", self.theme.name),
                             ("Room Type", self.getRoomType(self.playerPositionFlat, self.rooms) or "-"),
                             ("Floor", self.level), ("Event", events.name(self.activeEvent()) if self.activeEvent() else "-"),
                             ("Standing On", self.currentPosition), ("Looking At", self.lookingAt())]
@@ -3123,7 +3186,7 @@ class gameManager():
         now = pygame.time.get_ticks()
         return [(text, position, (now - start) / 1000 / POPUP_SECONDS) for text, position, start in self.popups if start <= now]
 
-    def draw(self, lightOnly=False):
+    def draw(self, lightOnly=False, glintOnly=False):
         if self.scene == "title":
             self.painter.drawTitle(self.titleOptions(), self.titleSel, self.titleMessage, self.titleFade, *self.titleView())
             return
@@ -3132,7 +3195,7 @@ class gameManager():
             return
 
         messageKey, messageText = None, None
-        messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"Floor {self.level}\n{self.theme.name}",
+        messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"Floor {self.level}\n{self.floorSubtitle()}",
                         "brokenSealMessage": "The Seal is Broken",
                         "eventMessage": events.name(self.activeEvent()) if self.activeEvent() else ""}
         for key, active in self.messageBools.items():
@@ -3154,7 +3217,7 @@ class gameManager():
             aimLine=self.aimLine, throws=self.throwView(), hud=hud,
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
-            lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly,
+            lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly,
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
@@ -3254,6 +3317,8 @@ class gameManager():
             elif self.lightChange:
                 self.draw(lightOnly=True)  # only the light moved: redraw just the lit tiles
                 self.lightChange = False
+            elif self.painter.glintsDue(self.grid, pygame.time.get_ticks()):
+                self.draw(glintOnly=True)  # only ore glints changed: redraw just those vein tiles
 
         pygame.quit()
 

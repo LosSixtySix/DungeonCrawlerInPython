@@ -19,8 +19,14 @@ while and starts another pattern somewhere else. They only attack you when you'r
                     around it) becomes a Plant Organizer. Anything else standing in the plant takes
                     magic damage every turn (gameManager.stepDemise).
 
-An organizer never breaks walls of a finished pattern (its own or another organizer's) and picks spots that
-don't overlap other patterns, doors, chests or stations. Rings and squares keep their doorway open (it's cleared
+Teams: every Organizer of one kind (all the Spiral Organizers, all the Circle ones...) is on the same team.
+It never breaks its team's walls (finished or planned), but another team's walls are fair game when they're
+in its way. Each one remembers the walls it built itself ("placed"). When one of them is broken by anyone
+else and the organizer is within AGGRO_RANGE, it goes after whatever broke it (you or another enemy) and
+fights it until it's dead, out of reach, or CHASE_TURNS have gone by, then goes back to work. Plant Organizers
+don't build walls, so they never get angry about them.
+
+Every organizer picks spots that don't overlap other patterns (any team's), doors, chests or stations. Rings and squares keep their doorway open (it's cleared
 like the rest of the room, never built on), and the organizer still builds every wall from a tile it can walk
 out from, so it never walls itself in.
 """
@@ -35,6 +41,10 @@ SITE_TRIES = 30          # spots tried when looking for room for a new pattern
 SITE_DISTANCE = (3, 12)  # how far away (in tiles, each way) a new pattern's center can be
 STUCK_LIMIT = 25         # turns without getting anything done before it gives up on a pattern
 SEARCH_REACH = 30        # how far (in steps) it looks for a way to walk to its work
+
+AGGRO_RANGE = 10         # an organizer this close (in steps) to one of its broken walls goes after the breaker
+CHASE_GIVE_UP = 20       # ...and gives up if the breaker gets this far away
+CHASE_TURNS = 80         # ...or after this many turns
 
 SPIRAL_LEGS = (3, 5)
 CIRCLE_RADIUS = (5, 6)
@@ -156,20 +166,44 @@ def firstStep(came, start, goal):
 
 # ---------------------------------------------------------------- each turn
 
+def team(org):
+    return org.pattern
+
+
+def teamWalls(context, org):
+    """The walls this organizer's team keeps safe: their finished and planned walls."""
+    return context["protected"].setdefault(team(org), set())
+
+
+def placedBy(org):
+    if not hasattr(org, "placed"):  # organizers from saves made before they kept track
+        org.placed, org.aggro, org.aggroTurns = set(), None, 0
+    return org.placed
+
+
+def organizersOnFloor(gm):
+    """(position, organizer) for every organizer on the grid, including ones that already moved this turn."""
+    for p in set(gm.EnemyPositions) | getattr(gm, "movedEnemies", set()):
+        tile = gm.grid.get(p)
+        if tile and tile[0] == 5 and len(tile) > 2 and isinstance(tile[2], enemies.Organizer):
+            yield p, tile[2]
+
+
 def gather(gm):
-    """What every organizer on the floor has claimed, worked out once a turn: finished and planned walls
-    (never broken by an organizer), every tile any plan covers (no overlapping plans), and where the
+    """What every organizer on the floor has claimed, worked out once a turn: each team's finished and planned
+    walls (never broken by that team), every tile any plan covers (no overlapping plans), and where the
     organizers that aren't Plant Organizers are (what the gliders are aimed at)."""
-    protected, claimed, targets = set(), set(), []
+    protected, claimed, targets = {}, set(), []
     for p in gm.EnemyPositions:
         tile = gm.grid.get(p)
         if not tile or tile[0] != 5 or len(tile) < 3 or not isinstance(tile[2], enemies.Organizer):
             continue
         org = tile[2]
-        protected |= org.built
+        mine = protected.setdefault(team(org), set())
+        mine |= org.built
         claimed |= org.built
         if org.plan:
-            protected |= org.plan["wallSet"]
+            mine |= org.plan["wallSet"]
             claimed |= org.plan["footprint"]
         if not isinstance(org, enemies.PlantOrganizer):
             targets.append(p)
@@ -186,6 +220,9 @@ def takeTurn(gm, i, org, context):
     if gm.playerPositionFlat in gm.neighbors(i):
         gm.hitPlayer(org, i)
         return i, org
+    placedBy(org)
+    if org.aggro is not None:  # one of its walls was broken: hunt down whatever did it (the pattern waits)
+        return chase(gm, i, org, context), org
     if org.plan is None:
         if org.rest > 0:
             org.rest -= 1
@@ -196,7 +233,7 @@ def takeTurn(gm, i, org, context):
             org.rest = 10
             return wander(gm, i), org
         context["claimed"] |= org.plan["footprint"]
-        context["protected"] |= org.plan["wallSet"]
+        teamWalls(context, org).update(org.plan["wallSet"])
     position, finished = work(gm, i, org, context)
     if finished:
         finish(org)
@@ -207,6 +244,68 @@ def takeTurn(gm, i, org, context):
     else:
         org.stuck = 0
     return position, org
+
+
+# ---------------------------------------------------------------- broken walls and chasing
+
+def wallBroken(gm, position, breaker):
+    """A wall at position was broken by breaker ("player" or an enemy). The organizer that built it forgets it,
+    and goes after the breaker if it's close enough."""
+    for p, org in organizersOnFloor(gm):
+        if position not in placedBy(org):
+            continue
+        org.placed.discard(position)
+        if breaker is org or isinstance(org, enemies.PlantOrganizer):
+            continue
+        if manhattan(gm, p, position) <= AGGRO_RANGE and org.aggro is None:
+            org.aggro, org.aggroTurns = breaker, 0
+            if gm.grid[p][1] == 1:
+                gm.addPopup("Enraged!", p)
+
+
+def aggroPosition(gm, org):
+    """Where the thing it's hunting is, or None if it's gone (dead, or you in peaceful mode)."""
+    if org.aggro == "player":
+        return None if gm.peaceful else gm.playerPositionFlat
+    for p in set(gm.EnemyPositions) | getattr(gm, "movedEnemies", set()):
+        tile = gm.grid.get(p)
+        if tile and tile[0] == 5 and len(tile) > 2 and tile[2] is org.aggro:
+            return p
+    return None
+
+
+def calmDown(org):
+    org.aggro, org.aggroTurns = None, 0
+
+
+def chase(gm, i, org, context):
+    """Walks (or digs) toward what broke its wall and attacks it once it's alongside. Returns where it is now."""
+    target = aggroPosition(gm, org)
+    org.aggroTurns += 1
+    if target is None or manhattan(gm, i, target) > CHASE_GIVE_UP or org.aggroTurns > CHASE_TURNS:
+        calmDown(org)
+        return i
+    if target in gm.neighbors(i):
+        attack(gm, i, org, target)
+        return i
+    dist, came = reachable(gm, i)
+    spots = [s for s in gm.neighbors(target) if s in dist]
+    if spots:
+        return moveTo(gm, i, firstStep(came, i, min(spots, key=lambda s: dist[s])))
+    return digToward(gm, i, org, target, context)
+
+
+def attack(gm, i, org, target):
+    if org.aggro == "player":
+        gm.hitPlayer(org, i)
+        return
+    enemy = gm.grid[target][2]
+    enemy.hp -= org.damage
+    gm.bleed(target)
+    gm.change = True
+    if enemy.hp <= 0:
+        gm.killEnemy(target, killer=org)  # it takes the killer's share of what the enemy carried
+        calmDown(org)
 
 
 def overgrow(gm, position):
@@ -316,7 +415,7 @@ def work(gm, i, org, context):
 
     # 1. Make room: break the walls and pull up the plants where the pattern goes
     toClear = [t for t in plan["clear"] | plan["wallSet"]
-               if (gm.grid[t][0] == 2 and t not in plan["wallSet"] and t not in context["protected"])
+               if (gm.grid[t][0] == 2 and t not in plan["wallSet"] and t not in teamWalls(context, org))
                or (gm.grid[t][0] == 8 and not (plan["cells"] and isDemise(gm.grid[t]) and t in plan["cells"]))]
     if toClear:
         return goWork(gm, i, org, toClear, lambda t: gm.neighbors(t), clearTile, dist, came, context), False
@@ -356,7 +455,7 @@ def digToward(gm, i, org, target, context):
         tile = gm.grid[j]
         if tile[0] == 0:
             return moveTo(gm, i, j)
-        if tile[0] == 2 and j not in context["protected"]:
+        if tile[0] == 2 and j not in teamWalls(context, org):
             hitWall(gm, i, org, j)
             return i
     return i
@@ -447,6 +546,7 @@ def build(gm, i, org, dist, came, context):
     org.didSomething = True
     if org.progress >= BUILD_TURNS:
         gm.grid[t] = [2, gm.grid[t][1], gm.createWall(t, gm.rooms)]
+        placedBy(org).add(t)
         org.workOn, org.progress = None, 0
         gm.change = True
     return i, False

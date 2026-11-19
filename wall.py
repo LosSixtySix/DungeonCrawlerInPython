@@ -129,3 +129,47 @@ VEIN_SPAWNS = [
     (RubyVein, 5, {"All Gold": 1.0, "Mostly Stone": 0.3, "Mixed": 0.2}),
     (AmethystVein, 5, {"All Gold": 1.0, "Mixed": 0.2}),
 ]
+
+# The first floor each vein can appear on (from VEIN_SPAWNS). Ore floors respect these too.
+VEIN_FIRST_FLOOR = {veinClass: firstFloor for veinClass, firstFloor, _ in VEIN_SPAWNS}
+
+
+# ---------------------------------------------------------------- ore floors
+# Rare floor types thick with one ore or gem (or a mix). They replace the normal floor type, have their own
+# themes (themes.py) and room mix, and skip VEIN_SPAWNS: gamemanager.placeOreFloorVeins fills them instead.
+#
+#   first   first floor it can appear on (the depth gate of its ore; a Mixed floor's earliest ore)
+#   weight  how likely it is, against the other ore floors unlocked at that depth
+#   ores    {vein class: weight}. Each vein picks one; ores still locked at this depth are left out
+#   coal    True: COAL_SHARE of the ore is coal (smelting takes 2 ore + 1 coal)
+#   rooms   room mix, as weights for each room type (like createRooms' floor types)
+ORE_FLOOR_CHANCE = 0.06            # chance a new floor (from floor 1) is an ore floor
+ORE_FLOOR_DENSITY = (0.15, 0.35)   # share of the floor's walls turned to ore, random in this range
+MOTHERLODE_CHANCE = 0.02           # chance an ore floor is a Motherlode instead (about 1 floor in 800)
+MOTHERLODE_DENSITY = (0.50, 0.70)
+COAL_SHARE = 1 / 3
+MAX_VEIN_SIZE = 512                # veins are 2 to 2^depth tiles, never more than this
+
+ORE_FLOORS = {
+    "Copper Lode": {"first": 1, "weight": 3, "ores": {CopperVein: 1}, "coal": True,
+                    "rooms": {"Stone": 20, "Sand": 5, "Wood": 2, "Gold": 1}},
+    "Iron Lode": {"first": 2, "weight": 3, "ores": {IronVein: 1}, "coal": True,
+                  "rooms": {"Stone": 20, "Wood": 4, "Sand": 2, "Gold": 1}},
+    "Silver Lode": {"first": 4, "weight": 2, "ores": {SilverVein: 1}, "coal": True,
+                    "rooms": {"Stone": 14, "Gold": 5, "Sand": 2, "Wood": 1}},
+    "Mixed Lode": {"first": 2, "weight": 2, "ores": {CopperVein: 4, IronVein: 3, SilverVein: 1.5}, "coal": True,
+                   "rooms": {"Stone": 18, "Sand": 4, "Wood": 3, "Gold": 2}},
+    "Jade Grotto": {"first": 3, "weight": 1, "ores": {JadeVein: 1}, "coal": False,
+                    "rooms": {"Wood": 18, "Stone": 4, "Sand": 2, "Gold": 1}},
+    "Peridot Grotto": {"first": 3, "weight": 1, "ores": {PeridotVein: 1}, "coal": False,
+                       "rooms": {"Sand": 22, "Stone": 3, "Wood": 2, "Gold": 1}},
+    "Rose Quartz Grotto": {"first": 4, "weight": 1, "ores": {RoseQuartzVein: 1}, "coal": False,
+                           "rooms": {"Stone": 20, "Sand": 3, "Wood": 2, "Gold": 1}},
+    "Ruby Grotto": {"first": 5, "weight": 1, "ores": {RubyVein: 1}, "coal": False,
+                    "rooms": {"Stone": 12, "Gold": 6, "Sand": 2, "Wood": 1}},
+    "Amethyst Grotto": {"first": 5, "weight": 1, "ores": {AmethystVein: 1}, "coal": False,
+                        "rooms": {"Stone": 12, "Gold": 6, "Sand": 2, "Wood": 1}},
+    "Geode": {"first": 3, "weight": 1.5, "coal": False,
+              "ores": {JadeVein: 4, PeridotVein: 4, RoseQuartzVein: 3, RubyVein: 2, AmethystVein: 2},
+              "rooms": {"Stone": 1, "Wood": 1, "Sand": 1, "Gold": 1}},
+}
