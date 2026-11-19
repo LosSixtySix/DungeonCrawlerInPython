@@ -116,6 +116,7 @@ class renderer():
         self.theme = theme
         self.colorDict = theme.colors
         self.clearTileCaches()  # a new theme (and every new or revisited floor sets one): the cached pictures are stale
+        self.drawnGrid = None    # ...and so is everything on the map: the next frame redraws every tile
         self.buildShades()
 
     # Pictures that cost a lot to draw and rarely change are kept between frames: walls (until they're chipped or
@@ -203,6 +204,7 @@ class renderer():
         self.columnLength = self.screenHeight // tileSize
         mapW, mapH = self.rowLength * tileSize, self.columnLength * tileSize
         self.mapSurface = pygame.Surface((mapW, mapH))
+        self.drawnGrid = None  # a new map surface: the next frame redraws every tile
         self.mapOffset = ((self.screenWidth - mapW) // 2, (self.screenHeight - mapH) // 2)
         self.buildShades()
         return tileSize
@@ -223,7 +225,7 @@ class renderer():
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
-             console=None, glintOnly=False, fireLight=None, smoke=None):
+             console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -231,10 +233,14 @@ class renderer():
         lightTime: seconds, for the animated light. lightStyle: "sway", "flicker" or None (not animated).
         lightOnly: only the light moved, so just redraw the lit tiles instead of the whole map.
         glintOnly: only ore glints changed, so just redraw the twinkling vein tiles (see glintsDue).
+        overlayOnly: nothing on the map changed (only popups, messages, flames and the like), so the map is kept
+        and only its animated tiles (bonfires, the Unsealed) are brought up to date.
+        Whichever it is, a tile is only redrawn when its look changed since it was last drawn (see tileSignature).
         fireLight: {tile: (the fire lighting it, its light radius)} for tiles in reach of a fire's or bonfire's light.
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill(self.color("fog"))
+        self.frameTicks = pygame.time.get_ticks()  # one clock reading for the whole frame (glints, bonfire flames)
         self.blood = blood or {}  # map position -> how much blood is on that floor tile (0-1)
         self.bloodDry = bloodDry or {}
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
@@ -242,14 +248,29 @@ class renderer():
         self.fireLight = fireLight or {}
         self.smokeHere = smoke or {}  # Smoke Bomb smoke: whoever stands in it isn't drawn
         light = self.lightShape(lightTime, lightStyle)
-        if glintOnly:
-            self.redrawGlints(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
-        elif lightOnly:
-            self.redrawLitTiles(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
+        if getattr(self, "drawnGrid", None) is not grid:  # a different floor (or the first frame): start over
+            self.resetMap()
+            self.drawnGrid = grid
+            glintOnly = lightOnly = overlayOnly = False
+        oldAim = getattr(self, "aimDrawn", set())
+        for t in oldAim:  # the aim line is painted on the map: the tiles it covered get redrawn
+            self.tileSigs.pop(t, None)
+        args = (grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
+        if lightOnly:
+            self.redrawLitTiles(*args)  # (every tile in view: that covers the animated ones too)
+        elif glintOnly or overlayOnly:  # time moves on: twinkling ore, bonfire flames and the Unsealed keep moving
+            for i in set(getattr(self, "animatedTiles", ())) | set(getattr(self, "litVeins", ())):
+                self.refreshTile(*args[:1], i, *args[1:])
         else:
-            self.mapSurface.fill(self.color("fog"))
-            self.renderScreen(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
+            self.renderScreen(*args)
+        for t in oldAim:  # put back what the last aim line covered (whatever kind of frame this is)
+            if t in grid:
+                if grid[t][1] == 0:
+                    self.fillTile(self.color("fog"), t % self.rowLength, t // self.rowLength)
+                else:
+                    self.refreshTile(*args[:1], t, *args[1:])
         self.drawAimline(aimLine)
+        self.aimDrawn = set(aimLine or ())
         self.win.blit(self.mapSurface, self.mapOffset)
         if throws is not None:
             self.drawThrows(throws)
@@ -1018,7 +1039,7 @@ class renderer():
         return (int((now + phase) // period), t) if t < GLINT_LENGTH else None
 
     def drawGlint(self, canvas, i, ore, shine, wallColor):
-        state = self.glintPhase(i, pygame.time.get_ticks())
+        state = self.glintPhase(i, getattr(self, "frameTicks", pygame.time.get_ticks()))
         if state is None:
             return
         cycle, t = state
@@ -1059,7 +1080,7 @@ class renderer():
     def redrawGlints(self, grid, rooms, playerDirection, playerPosition, visionRange, light):
         for i in getattr(self, "glintDirty", ()):
             if grid.get(i, (None, 0))[1] == 1:
-                self.drawLitTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+                self.refreshTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
 
     def drawVines(self, canvas, kind, memorized):
         plantColors = plants.PLANTS[kind]["colors"]
@@ -1355,25 +1376,111 @@ class renderer():
         names = self.COLOR_NAMES[("wall", memorized)]
         return self.colorDict.get(names.get(room, ""), self.colorDict[names["Stone"]])
 
+    # The map surface is kept from frame to frame. Each tile remembers a signature of everything that decides how
+    # it looks (tileSignature); a frame only redraws the tiles whose signature changed. A new floor, theme or tile
+    # size starts over (resetMap). Anything drawn on the map outside this (the aim line) clears its tiles' signatures.
+    LIGHT_EXEMPT = (1, 3, 5, 6, 7, 8, 9, expansion.CAMP)  # never dithered by the light, so they stand out
+
+    def resetMap(self):
+        self.tileSigs = {}
+        self.aimDrawn = set()
+        self.animatedTiles = []
+        if self.mapSurface is not None and getattr(self, "theme", None) is not None:
+            self.mapSurface.fill(self.color("fog"))
+
     def renderScreen(self, grid: dict, rooms, playerDirection, playerPosition, visionRange, light=(0, 0, 1)):
+        if not hasattr(self, "tileSigs"):
+            self.resetMap()
         self.litTiles = []  # tiles in view, remembered so the swaying light can redraw just these
-        for i in grid.keys():
-            visibility = grid[i][1]
+        animated = []
+        sigs = self.tileSigs
+        for i, tile in grid.items():
+            visibility = tile[1]
             if visibility == 0:
+                if i in sigs:  # (seen before, unseen now: back to fog)
+                    del sigs[i]
+                    self.fillTile(self.color("fog"), i % self.rowLength, i // self.rowLength)
                 continue
             if visibility == 1:
                 self.litTiles.append(i)
-            self.drawLitTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+                if tile[0] == 5 and len(tile) > 2 and tile[2].name == "Unsealed":
+                    animated.append(i)
+            if tile[0] == expansion.CAMP and tile[2].kind == "bonfire":  # its flames move, seen or remembered
+                animated.append(i)
+            self.refreshTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+        self.animatedTiles = animated
         # the ore veins in view: these twinkle (see glintsDue)
         self.litVeins = [i for i in self.litTiles if grid[i][0] == 2 and isinstance(grid[i][2], walls.OreVein)]
 
     def redrawLitTiles(self, grid, rooms, playerDirection, playerPosition, visionRange, light):
-        """Only the light moved: redraw the tiles in view (from the last full draw) with the new light."""
+        """Only the light moved: bring the tiles in view (from the last full draw) up to date with the new light."""
         for i in getattr(self, "litTiles", []):
             if grid[i][1] == 1:
-                self.drawLitTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+                self.refreshTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+
+    def refreshTile(self, grid, i, rooms, playerDirection, playerPosition, visionRange, light):
+        """Redraws tile i if its look changed since it was last drawn."""
+        signature, lighting = self.tileSignature(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+        if self.tileSigs.get(i) != signature:
+            self.paintTile(grid, i, rooms, playerDirection, lighting)
+            self.tileSigs[i] = signature
 
     def drawLitTile(self, grid, i, rooms, playerDirection, playerPosition, visionRange, light):
+        """Redraws tile i whatever its signature says."""
+        signature, lighting = self.tileSignature(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+        self.paintTile(grid, i, rooms, playerDirection, lighting)
+        self.tileSigs[i] = signature
+
+    def tileLighting(self, i, x, y, playerPosition, visionRange, light):
+        """(dither level, fire tint alpha) for a tile in view: the brighter of your light and any fire's."""
+        offsetX, offsetY, reach = light
+        lightX = playerPosition % self.rowLength + offsetX
+        lightY = playerPosition // self.rowLength + offsetY
+        level = self.lightLevel(x, y, lightX, lightY, visionRange * reach)
+        alpha = 0
+        fire = getattr(self, "fireLight", {}).get(i)
+        if fire is not None:  # firelight: whichever light is brighter here wins
+            fireLevel, distance = self.fireLevel(x, y, fire)
+            level = None if level is None or fireLevel is None else min(level, fireLevel)
+            alpha = int(FIRE_TINT_ALPHA * max(0.0, 1 - distance / (fire[1] + 1)))
+        return level, alpha
+
+    def tileSignature(self, grid, i, rooms, playerDirection, playerPosition, visionRange, light):
+        """(signature, lighting) for tile i. The signature holds everything paintTile's result depends on, so two
+        equal signatures always mean the same picture."""
+        tile = grid[i]
+        kind, visibility = tile[0], tile[1]
+        memorized = visibility == 2
+        obj = tile[2] if len(tile) > 2 else None
+        blood = self.blood.get(i) if self.blood else None
+        extra = None
+        if kind == 1:
+            extra = (playerDirection, getattr(obj, "look", None), getattr(obj, "kind", None))
+        elif kind == 2:
+            glint = self.glintPhase(i, self.frameTicks) if not memorized and isinstance(obj, walls.OreVein) else None
+            extra = (obj.name, len(obj.brokenPoints), getattr(obj, "corruptedBy", None), glint)
+        elif kind == 3:
+            extra = getattr(obj, "look", None)
+        elif kind == 9:
+            extra = obj.look
+        elif kind == 7:
+            extra = (obj.id, obj.hp, obj.claimed)
+        elif kind == 8:
+            extra = obj.kind
+        elif kind == expansion.CAMP:
+            extra = (obj.kind, obj.hp, self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"])
+                     if obj.kind == "bonfire" else None)
+        elif kind == 5 and not memorized and obj is not None:
+            extra = (obj.name, getattr(obj, "look", None), i in getattr(self, "smokeHere", {}),
+                     sprites.shardFrameFor(getattr(self, "lightTime", 0.0)) if obj.name == "Unsealed" else None)
+        lighting = None
+        if not memorized and kind not in self.LIGHT_EXEMPT:
+            lighting = self.tileLighting(i, i % self.rowLength, i // self.rowLength, playerPosition, visionRange, light)
+        signature = (kind, visibility, id(obj), self.roomOf(i, rooms), blood,
+                     self.bloodDry.get(i) if blood else None, extra, lighting)
+        return signature, lighting
+
+    def paintTile(self, grid, i, rooms, playerDirection, lighting):
         ts = self.tileSize
         memorized = grid[i][1] == 2
         x = i % self.rowLength
@@ -1381,18 +1488,10 @@ class renderer():
         self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
         # Dithered light only on tiles in view (remembered tiles stay as they are). The player, enemies,
         # chests and the door back up are never dithered so they stand out; pits are part of the floor, so they are.
-        if not memorized and grid[i][0] not in (1, 3, 5, 6, 7, 8, 9, expansion.CAMP):
-            offsetX, offsetY, reach = light
-            lightX = playerPosition % self.rowLength + offsetX
-            lightY = playerPosition // self.rowLength + offsetY
-            level = self.lightLevel(x, y, lightX, lightY, visionRange * reach)
-            fire = getattr(self, "fireLight", {}).get(i)
-            if fire is not None:  # firelight: whichever light is brighter here wins
-                fireLevel, distance = self.fireLevel(x, y, fire)
-                level = None if level is None or fireLevel is None else min(level, fireLevel)
-                alpha = int(FIRE_TINT_ALPHA * max(0.0, 1 - distance / (fire[1] + 1)))
-                if alpha > 0:
-                    self.mapSurface.blit(self.fireTint(alpha), (x * ts, y * ts))
+        if lighting is not None:
+            level, alpha = lighting
+            if alpha > 0:
+                self.mapSurface.blit(self.fireTint(alpha), (x * ts, y * ts))
             if level is not None and self.shades:
                 self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
 
@@ -1465,7 +1564,7 @@ class renderer():
                 self.floorFill(i, rooms, memorized, x, y)
                 piece = grid[i][2]
                 if piece.kind == "bonfire":
-                    frame = pygame.time.get_ticks() // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"])
+                    frame = self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"])
                     self.mapSurface.blit(self.sprites["bonfire"][frame], (x * ts, y * ts))
                 else:
                     self.mapSurface.blit(self.sprites["spawner"], (x * ts, y * ts))

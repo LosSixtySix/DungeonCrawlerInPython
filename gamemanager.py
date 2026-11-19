@@ -1386,6 +1386,8 @@ class gameManager():
             color = self.painter.colorDict[self.selectedColor]
             if 0 <= color[self.colorIndex] + event.y <= 255:
                 color[self.colorIndex] += event.y
+                self.painter.clearTileCaches()  # the theme's colors changed in place: redraw every tile
+                self.painter.drawnGrid = None
         self.change = True
 
     # ------------------------------------------------------------- gameplay
@@ -3343,7 +3345,7 @@ class gameManager():
         now = pygame.time.get_ticks()
         return [(text, position, (now - start) / 1000 / POPUP_SECONDS) for text, position, start in self.popups if start <= now]
 
-    def draw(self, lightOnly=False, glintOnly=False):
+    def draw(self, lightOnly=False, glintOnly=False, overlayOnly=False):
         if self.scene == "title":
             self.painter.drawTitle(self.titleOptions(), self.titleSel, self.titleMessage, self.titleFade, *self.titleView())
             return
@@ -3374,7 +3376,7 @@ class gameManager():
             aimLine=self.aimLine, throws=self.throwView(), hud=hud,
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
-            lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly,
+            lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly, overlayOnly=overlayOnly,
             fireLight=getattr(self, "fireLight", {}),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
             smoke=self.smoke,
@@ -3405,7 +3407,7 @@ class gameManager():
                 continue
 
             if True in self.messageBools.values():
-                self.change = True
+                self.overlayChange = True  # a big message fading: only the overlays change
 
             pressed = pygame.key.get_pressed()
             self.aim = bool(pressed[self.settings.hotkeys["aim"]])
@@ -3458,13 +3460,13 @@ class gameManager():
                 step = pygame.time.get_ticks() * ANIM_FPS // 1000
                 if step != self.animStep:
                     self.animStep = step
-                    self.change = True
+                    self.overlayChange = True  # flames, bursts and flecks are drawn over the map; bonfires redraw themselves
 
             # Popups rise and fade, so they need redrawing every frame until they're gone
             if self.popups:
                 now = pygame.time.get_ticks()
                 self.popups = [p for p in self.popups if (now - p[2]) / 1000 < POPUP_SECONDS]
-                self.change = True
+                self.overlayChange = True
 
             if self.change:
                 self.setLookPosition()
@@ -3473,9 +3475,14 @@ class gameManager():
                 self.draw()
                 self.change = False
                 self.lightChange = False
+                self.overlayChange = False
             elif self.lightChange:
                 self.draw(lightOnly=True)  # only the light moved: redraw just the lit tiles
                 self.lightChange = False
+                self.overlayChange = False
+            elif getattr(self, "overlayChange", False):
+                self.draw(overlayOnly=True)  # nothing on the map changed: keep it, redraw what's drawn over it
+                self.overlayChange = False
             elif self.painter.glintsDue(self.grid, pygame.time.get_ticks()):
                 self.draw(glintOnly=True)  # only ore glints changed: redraw just those vein tiles
 
