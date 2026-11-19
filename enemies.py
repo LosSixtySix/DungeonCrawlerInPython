@@ -19,6 +19,10 @@ class Enemy():
         self.gold = goldWorth
         self.maxHp = hp  # for bleeding at low health
         self.materials = {}  # materials pocketed from walls it broke: {material id: amount}. You get some back by killing it
+        self.faction = None  # the Expansion faction it fights for (expansion.py), or None: wild
+        self.look = None     # its faction's colors (sprites.EXPANSION_LOOKS)
+        self.foe = None      # an enemy that hit it: it fights back (expansion.otherTurn)
+        self.rally = None    # a bonfire it's marching to (wild goblins, expansion.stepCamp)
 
     def CanDig(self):
         if self.wallDamage > 0:
@@ -46,6 +50,13 @@ class Unsealed(Enemy):
         super().__init__(10, 3, 2, 3, 3, "Unsealed", 25)
         self.allSight = True
         self.fireResistPercent = 0.8  # fire barely touches it
+
+class GoblinBuilder(Enemy):
+    """Builds an Expansion camp: bonfires, huts and spawners (see expansion.py, which runs its turns)."""
+    def __init__(self):
+        super().__init__(8, 8, 1, 2, 1, "Goblin Builder", 8)
+        self.task = None   # what it's building (expansion.planTask)
+        self.rest = 0
 
 class Organizer(Enemy):
     """Breaks walls to make room, then builds a pattern of new walls there (see organizers.py, which runs

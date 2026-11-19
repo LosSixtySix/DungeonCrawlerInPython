@@ -142,6 +142,8 @@ def isDemise(tile):
 
 def reachable(gm, start):
     """Walking distances (over open floor) from start, and the tile each was reached from."""
+    import expansion  # (here, not at the top: expansion imports this module)
+    table, grid = expansion.neighborTable(gm), gm.grid
     dist, came = {start: 0}, {}
     frontier = [start]
     while frontier:
@@ -149,8 +151,8 @@ def reachable(gm, start):
         for i in frontier:
             if dist[i] >= SEARCH_REACH:
                 continue
-            for j in gm.neighbors(i):
-                if j not in dist and gm.grid[j][0] == 0:
+            for j in table[i]:
+                if j not in dist and grid[j][0] == 0:
                     dist[j] = dist[i] + 1
                     came[j] = i
                     nxt.append(j)
@@ -393,7 +395,7 @@ def layOut(gm, center, org, context):
         plan["walls"] = sorted(plan["wallSet"])
     if footprint & context["claimed"] or gm.playerPositionFlat in footprint:
         return None
-    if any(gm.grid[t][0] in (3, 4, 6, 7, 9) for t in footprint):  # no chests, item piles, doors or stations in the way
+    if any(gm.grid[t][0] in (3, 4, 6, 7, 9, 10) for t in footprint):  # no chests, piles, doors, stations or camp pieces
         return None
     plan["footprint"] = footprint
     plan["clear"] = footprint - plan["wallSet"]
@@ -500,7 +502,7 @@ def escapes(gm, plan, spot, newWall):
         if s in plan["outside"] or s not in plan["footprint"]:
             return True
         for n in gm.neighbors(s):
-            if n not in seen and n != newWall and gm.grid[n][0] not in (2, 7):
+            if n not in seen and n != newWall and gm.grid[n][0] not in (2, 7, 10):
                 seen.add(n)
                 frontier.append(n)
     return False
@@ -513,7 +515,7 @@ def build(gm, i, org, dist, came, context):
         kind = gm.grid[t][0]
         if kind == 2 or t in plan["skip"]:
             continue
-        if kind in (3, 4, 6, 7, 9):  # something dropped or placed there since: leave a gap
+        if kind in (3, 4, 6, 7, 9, 10):  # something dropped or placed there since: leave a gap
             plan["skip"].add(t)
             continue
         todo.append(t)

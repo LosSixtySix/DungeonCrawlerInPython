@@ -134,7 +134,7 @@ def gear(etype, name, slot, scaling="strength"):
 
 
 FIRE_FLASK_DAMAGE = 5
-SMOKE_TURNS = 5
+SMOKE_TURNS = 12  # a Smoke Bomb's cloud lingers this long (it thins out over its last SMOKE_THIN_TURNS)
 DEMISE_FLASK_DAMAGE = 5
 BOMB_FLASK_DAMAGE = 10
 BOMB_WALL_DAMAGE = 20

@@ -3,6 +3,7 @@ import re
 import pygame
 
 import enemies
+import events
 import loot
 import recipes
 import relics
@@ -72,11 +73,14 @@ class DevConsole():
             "items": (self.cmdItems, "/items [filter]", "Lists every item id, or only those matching filter"),
             "enemy": (self.cmdEnemy, "/enemy", "Lists every kind of enemy and its id. Also /enemies"),
             "peaceful": (self.cmdPeaceful, "/peaceful [on|off]", "Enemies ignore you and never attack (toggles with no word)"),
+            "events": (self.cmdEvents, "/events", "Lists the floor events and this floor's event, if any"),
+            "event": (self.cmdEvent, "/event <id>", "Starts a floor event now (ids: /events)"),
             "orefloor": (self.cmdOreFloor, "/orefloor <type> [mother]", "Makes the next new floor an ore floor (types: /orefloor)"),
             "clear": (self.cmdClear, "/clear", "Clears the console"),
         }
         self.aliases = {"additem": "give", "add": "give", "enemies": "enemy", "item": "items", "aggro": "peaceful", "?": "help"}
         self.arguments = {"give": lambda: list(itemCatalog()), "peaceful": lambda: ["on", "off"],
+                          "event": lambda: list(events.EVENTS),
                           "orefloor": lambda: list(oreFloorIds())}  # what autofill offers
         self.write("info", "Developer console. Type /help for the commands")
 
@@ -288,6 +292,31 @@ class DevConsole():
                 if tile and tile[0] == 5 and len(tile) > 2:
                     tile[2].lastPlayerPosition = None
         self.write("good", "Peaceful: enemies ignore you" if gm.peaceful else "Peaceful off: enemies hunt you again")
+
+    def cmdEvents(self, _args):
+        self.write("head", f"Floor events ({events.EVENT_CHANCE:.0%} of floors from floor {events.FIRST_FLOOR}, one picked at random)")
+        for eventId, event in events.EVENTS.items():
+            self.write("info", f"  {eventId:<20} {event['name']:<20} {event.get('description', '')}")
+        current = self.gm.floorEvents.get(self.gm.level)
+        if current is None:
+            self.write("info", "  This floor has no event")
+        elif current["active"]:
+            self.write("good", f"  This floor: {events.name(current['id'])} (active)")
+        else:
+            self.write("good", f"  This floor: {events.name(current['id'])} (in {current['turnsLeft']} turns)")
+
+    def cmdEvent(self, args):
+        if not args or args[0].lower() not in events.EVENTS:
+            if args:
+                self.write("error", f"No event \"{args[0]}\"")
+            return self.cmdEvents(args)
+        eventId = args[0].lower()
+        gm = self.gm
+        gm.floorEvents[gm.level] = {"id": eventId, "turnsLeft": 0, "active": True}
+        gm.messageBools["eventMessage"] = True
+        gm.painter.fade = 255
+        gm.change = True
+        self.write("good", f"{events.name(eventId)} has started on this floor")
 
     def cmdOreFloor(self, args):
         ids = oreFloorIds()

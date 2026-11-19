@@ -156,12 +156,61 @@ def organizerColors(pattern):
     return {"c": robe, "H": hood, "E": emblem, "f": (40, 32, 30), "b": (168, 92, 64), "B": (120, 64, 44)}
 
 
+# Goblin Builder: the Goblin with a mallet where its blade would be
+GOBLIN_BUILDER = [
+    "..........",
+    "...kkkk...",
+    "..kCccCk..",
+    ".kcckkcck.",
+    ".hhkhhkhh.",
+    ".kckHHkcMM",
+    ".kcckkchMM",
+    "..kcccck.w",
+    "...kkkk..w",
+    "..........",
+]
+GOBLIN_BUILDER_COLORS = {**GOBLIN_COLORS, "M": (150, 154, 162), "w": (110, 80, 52)}
+
+# Expansion factions: the Goblin, Goblin Chieftain and Goblin Builder pictures in each faction's colors (only cloth
+# and armor change). Ids match expansion.LOOKS.
+EXPANSION_LOOKS = {
+    "warpaint": {"goblin": {"c": (150, 38, 34), "C": (96, 22, 22)}, "chief": {"r": (36, 34, 40), "f": (150, 38, 34), "i": (96, 22, 22)}, "mallet": (150, 154, 162)},
+    "ashen": {"goblin": {"c": (176, 170, 156), "C": (124, 118, 106)}, "chief": {"r": (198, 192, 176), "f": (120, 112, 100), "i": (150, 142, 128)}, "mallet": (120, 124, 132)},
+    "ochre": {"goblin": {"c": (176, 132, 40), "C": (120, 88, 26)}, "chief": {"r": (40, 62, 120), "f": (176, 132, 40), "i": (26, 40, 82)}, "mallet": (150, 154, 162)},
+    "nightcult": {"goblin": {"c": (92, 52, 140), "C": (60, 32, 96)}, "chief": {"r": (52, 30, 72), "f": (120, 80, 170), "i": (70, 40, 100)}, "mallet": (150, 154, 162)},
+    "tidewater": {"goblin": {"c": (40, 132, 130), "C": (24, 88, 86)}, "chief": {"r": (22, 70, 66), "f": (40, 132, 130), "i": (16, 48, 46)}, "mallet": (150, 154, 162)},
+    "ember": {"goblin": {"c": (214, 104, 30), "C": (150, 66, 18)}, "chief": {"r": (70, 66, 64), "f": (214, 104, 30), "i": (44, 42, 40)}, "mallet": (150, 154, 162)},
+}
+
+
+def factionPictures(look):
+    """{enemy name: (picture, colors)} for one faction look."""
+    colors = EXPANSION_LOOKS[look]
+    return {
+        "Goblin": (GOBLIN, {**GOBLIN_COLORS, **colors["goblin"]}),
+        "Goblin Chieftan": (GOBLIN_CHIEFTAIN, {**GOBLIN_CHIEFTAIN_COLORS, **colors["chief"]}),
+        "Goblin Builder": (GOBLIN_BUILDER, {**GOBLIN_BUILDER_COLORS, **colors["goblin"], "M": colors["mallet"]}),
+    }
+
+
+# Camp pieces, top down. Spawner: a goblin den seen from above, a dark pit ringed with sharpened stakes, eyes
+# glinting inside. Bonfire: a ring of stones round crossed logs, the fire's bright core in the middle (two frames).
+SPAWNER = ["..w.WW.w..", ".WwkkkkwW.", ".wkddddkw.", "WkddDDddkW", "WkdDgDgdkW", "wkdDDDDdkw", "WkddDDddkW", ".wkddddkw.", ".WwkkkkwW.", "..w.WW.w.."]
+SPAWNER_COLORS = {"w": (126, 90, 54), "W": (86, 60, 38), "d": (24, 18, 14), "D": (54, 26, 20), "g": (232, 192, 72)}
+BONFIRE = [
+    ["...SsSs...", ".sSkkkkSs.", ".SkwrrwkS.", "SkwrYYrwkS", "skrYyyYrks", "SkrYyyYrkS", "skwrYYrwks", ".SkwrrwkS.", ".sSkkkkSs.", "...sSsS..."],
+    ["...SsSs...", ".sSkkkkSs.", ".SkwrYwkS.", "SkwYYyrwkS", "skrYyyYrks", "SkrYyYYrkS", "skwrYrrwks", ".SkwrrwkS.", ".sSkkkkSs.", "...sSsS..."],
+]
+BONFIRE_COLORS = {"S": (146, 148, 156), "s": (100, 102, 110), "w": (112, 76, 44), "r": (196, 48, 28), "Y": (240, 128, 40), "y": (255, 222, 120)}
+BONFIRE_FRAME_MS = 180
+
 # enemy name (as in enemies.py) -> (picture, colors). Enemies not listed are still drawn as a square.
 ENEMY_SPRITES = {
     "Goblin": (GOBLIN, GOBLIN_COLORS),
     "Dire Rat": (DIRE_RAT, DIRE_RAT_COLORS),
     "Dire Mole": (DIRE_MOLE, DIRE_MOLE_COLORS),
     "Goblin Chieftan": (GOBLIN_CHIEFTAIN, GOBLIN_CHIEFTAIN_COLORS),   # spelled as in enemies.py
+    "Goblin Builder": (GOBLIN_BUILDER, GOBLIN_BUILDER_COLORS),
     **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
        for pattern, emblem in ORGANIZER_EMBLEMS.items()},
 }
@@ -560,6 +609,10 @@ def buildSprites(colors, tileSize):
         "doorUp": makeSurface(MOONBEAM, roles(colors, colors["doorPrev"]), tileSize),
         "stations": {sid: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for sid, (rows, fixed) in STATION_SPRITES.items()},
         "plants": {kind: makeShadowed(rows, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind, rows in PLANT_SPRITES.items()},
+        "factions": {(name, look): makeShadowed(rows, enemyRoles(colors, fixed), tileSize)
+                     for look in EXPANSION_LOOKS for name, (rows, fixed) in factionPictures(look).items()},
+        "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
+        "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],
     }
 
 

@@ -21,7 +21,8 @@ class Wall():
     def takeDamage(self,damage,tilesize):
         # hardness is the most damage a single hit can do, so a better pick helps up to that limit
         total = min(damage, self.hardness)
-        proportion = int(total/self.hp * (tilesize**2))
+        # a Dire Mole burrowing through can wear a wall down to 0 HP without breaking it: the next hit breaks it
+        proportion = int(total/self.hp * (tilesize**2)) if self.hp > 0 else tilesize ** 2
         self.brokenPoints = self.brokenPoints.union(getRandomPoints((1,tilesize-1),(1,tilesize-1),proportion))
         self.hp -= total
 

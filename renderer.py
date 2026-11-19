@@ -6,6 +6,7 @@ import paths
 import themes
 import sprites
 import wall as walls
+import expansion
 
 
 # Dithered light: tiles in view get a pattern of dark pixels the further they are from the player.
@@ -19,6 +20,7 @@ SWAY_SPEED = 1.2    # how fast it drifts
 # Firelight: each fire lights the tiles around it (gameManager.setPositionsVisible works out which ones you can
 # see). They're drawn bright with a warm tint that fades with distance, and the light sways like yours does.
 FIRE_LIGHT_RADIUS = 3
+SMOKE_THIN_TURNS = 4          # Smoke Bomb smoke fades out over its last this many turns
 FIRE_TINT = (240, 128, 40)
 FIRE_TINT_ALPHA = 82          # the tint's strength on the fire's own tile (0-255); it fades to nothing at the edge
 
@@ -97,7 +99,22 @@ class renderer():
     def setTheme(self, theme):
         self.theme = theme
         self.colorDict = theme.colors
+        self.clearTileCaches()  # a new theme (and every new or revisited floor sets one): the cached pictures are stale
         self.buildShades()
+
+    # Pictures that cost a lot to draw and rarely change are kept between frames: walls (until they're chipped or
+    # the floor changes) and blood (by its look). Twinkling ore isn't cached. Cleared with every theme/floor change.
+    TILE_CACHE_LIMIT = 6000
+
+    def clearTileCaches(self):
+        self.wallCache, self.bloodCache = {}, {}
+
+    def cached(self, cache, key, make):
+        if key not in cache:
+            if len(cache) > self.TILE_CACHE_LIMIT:
+                cache.clear()
+            cache[key] = make()
+        return cache[key]
 
     def buildShades(self):
         """Pre-draws the dither tiles for this theme. The pattern is lined up to the whole map, and because
@@ -190,7 +207,7 @@ class renderer():
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
-             console=None, glintOnly=False, fireLight=None):
+             console=None, glintOnly=False, fireLight=None, smoke=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -198,7 +215,7 @@ class renderer():
         lightTime: seconds, for the animated light. lightStyle: "sway", "flicker" or None (not animated).
         lightOnly: only the light moved, so just redraw the lit tiles instead of the whole map.
         glintOnly: only ore glints changed, so just redraw the twinkling vein tiles (see glintsDue).
-        fireLight: {tile: the fire lighting it} for tiles in reach of a fire's light (see FIRE_LIGHT_RADIUS).
+        fireLight: {tile: (the fire lighting it, its light radius)} for tiles in reach of a fire's or bonfire's light.
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill(self.color("fog"))
@@ -207,6 +224,7 @@ class renderer():
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
         self.lightStyleNow = lightStyle  # fires sway the same way (see fireLevel)
         self.fireLight = fireLight or {}
+        self.smokeHere = smoke or {}  # Smoke Bomb smoke: whoever stands in it isn't drawn
         light = self.lightShape(lightTime, lightStyle)
         if glintOnly:
             self.redrawGlints(grid, rooms, player.playerDirection, playerPosition, player.getVisionRange(), light)
@@ -909,11 +927,16 @@ class renderer():
         """A big centered message; a second line (after a newline) is drawn smaller under it."""
         first, _, second = message.partition("\n")
         alpha = max(0, int(self.fade))
-        canvas = pygame.Surface((self.screenWidth, self.screenHeight), pygame.SRCALPHA)
+        canvas = getattr(self, "messageCanvas", None)
+        if canvas is None or canvas.get_size() != (self.screenWidth, self.screenHeight):
+            canvas = self.messageCanvas = pygame.Surface((self.screenWidth, self.screenHeight), pygame.SRCALPHA)
         canvas.fill((0, 0, 0, alpha))
-        text = self.SplashScreenFont.render(first, True, self.color("font"))
+        key = (message, tuple(self.color("font")), tuple(self.color("select")))
+        if getattr(self, "messageText", (None,))[0] != key:
+            self.messageText = (key, self.SplashScreenFont.render(first, True, self.color("font")),
+                                self.titleOptionFont.render(second, True, self.color("select")) if second else None)
+        _, text, sub = self.messageText
         text.set_alpha(alpha)
-        sub = self.titleOptionFont.render(second, True, self.color("select")) if second else None
         total = text.get_height() + (sub.get_height() + 6 if sub else 0)
         top = self.screenHeight // 2 - total // 2
         canvas.blit(text, (self.screenWidth // 2 - text.get_width() // 2, top))
@@ -928,7 +951,16 @@ class renderer():
     VEIN_FLECKS = [(3, 3, True, True), (6, 4, False, True), (4, 6, True, True), (2, 5, False, False), (6, 7, True, False), (5, 2, False, False)]
 
     def drawWall(self, wall, color, memorized=False, glintAt=None) -> pygame.Surface:
-        """glintAt: the tile's position, for a vein in view (it twinkles, see GLINT_*)."""
+        """glintAt: the tile's position, for a vein in view (it twinkles, see GLINT_*). The picture is cached
+        until the wall gets chipped (the cache holds the wall too, so its id can't be reused by another)."""
+        if glintAt is not None and isinstance(wall, walls.OreVein):
+            return self.paintWall(wall, color, memorized, glintAt)
+        if not hasattr(self, "wallCache"):
+            self.clearTileCaches()
+        key = (id(wall), tuple(color), memorized, len(wall.brokenPoints), self.tileSize)
+        return self.cached(self.wallCache, key, lambda: (wall, self.paintWall(wall, color, memorized, None)))[1]
+
+    def paintWall(self, wall, color, memorized, glintAt) -> pygame.Surface:
         canvas = pygame.Surface((self.tileSize, self.tileSize))
         canvas.fill(color)
         if isinstance(wall, walls.OreVein):
@@ -1147,7 +1179,20 @@ class renderer():
             ts = self.tileSize
             self.drawBlood(pygame.Rect(x * ts, y * ts, ts, ts), min(1.0, amount), i, memorized, self.bloodDry.get(i, 0))
 
-    def drawBlood(self, rect, amount, seed, memorized,dry=0):
+    def drawBlood(self, rect, amount, seed, memorized, dry=0):
+        """Blood on a floor tile. Its picture is cached by look (rounded a little, so it changes in small steps
+        as it dries)."""
+        if not hasattr(self, "bloodCache"):
+            self.clearTileCaches()
+        key = (seed, round(amount, 2), round(dry, 2), memorized, rect.w)
+
+        def make():
+            picture = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+            self.paintBlood(picture, pygame.Rect(0, 0, rect.w, rect.h), key[1], seed, memorized, key[2])
+            return picture
+        self.mapSurface.blit(self.cached(self.bloodCache, key, make), rect)
+
+    def paintBlood(self, surface, rect, amount, seed, memorized, dry):
         rng = random.Random(seed)
         w = rect.w
         colors = (themes.mix(self.BLOOD_DARK, self.DRIED_DARK, dry),
@@ -1157,18 +1202,18 @@ class renderer():
             fog = self.theme.colors["fog"]
             colors = tuple(themes.remembered(list(c), fog) for c in colors)
         dark, mid, light = colors
-        old = self.mapSurface.get_clip()
-        self.mapSurface.set_clip(rect)
+        old = surface.get_clip()
+        surface.set_clip(rect)
         spots = [(rect.x + w * rng.uniform(0.2, 0.8), rect.y + w * rng.uniform(0.2, 0.8), rng.uniform(0.6, 1.0))
                  for _ in range(2 + int(amount * 4))]
         for x, y, size in spots:
-            pygame.draw.circle(self.mapSurface, dark, (x, y), max(1, w * (0.12 + 0.4 * amount) * size))
+            pygame.draw.circle(surface, dark, (x, y), max(1, w * (0.12 + 0.4 * amount) * size))
         for x, y, size in spots:
-            pygame.draw.circle(self.mapSurface, mid, (x, y), max(1, w * (0.08 + 0.32 * amount) * size))
+            pygame.draw.circle(surface, mid, (x, y), max(1, w * (0.08 + 0.32 * amount) * size))
         if amount > 0.35 and dry < .5:
             x, y, _ = spots[0]
-            pygame.draw.circle(self.mapSurface, light, (x - w * 0.08, y - w * 0.08), 1)
-        self.mapSurface.set_clip(old)
+            pygame.draw.circle(surface, light, (x - w * 0.08, y - w * 0.08), 1)
+        surface.set_clip(old)
 
     def drawParticles(self, spurts, flecks):
         """Blood spurts (a few red specks flying off whatever was hurt) and wall flecks (chips flying off the
@@ -1210,8 +1255,12 @@ class renderer():
             self.drawFlames(self.screenTile(position), time, position * 2.9, creature=True)
         if throws["smoke"]:
             smoke = self.smokeTile()
-            for position in throws["smoke"]:
-                self.win.blit(smoke[position % len(smoke)], self.screenTile(position))
+            for position, turns in throws["smoke"].items():
+                tile = smoke[position % len(smoke)]
+                if turns < SMOKE_THIN_TURNS:  # thinning out over its last few turns
+                    tile = tile.copy()
+                    tile.set_alpha(int(255 * turns / SMOKE_THIN_TURNS))
+                self.win.blit(tile, self.screenTile(position))
         for shot in throws["flying"]:
             self.drawBlast(shot["landing"], shot["area"], shot["effect"], shot["turns"], 40, time)
             rect = self.screenTile(shot["at"])  # the potion itself, partway along its arc
@@ -1247,26 +1296,33 @@ class renderer():
     def fillTile(self, color, x, y):
         pygame.draw.rect(self.mapSurface, color, pygame.Rect(x * self.tileSize, y * self.tileSize, self.tileSize, self.tileSize))
 
-    def floorColor(self, i, rooms, memorized):
-        prefix = "memFloor" if memorized else "floor"
-        for room in ("Stone", "Wood", "Gold"):
+    ROOM_ORDER = ("Stone", "Wood", "Gold")  # a tile in none of these is Sand
+    COLOR_NAMES = {(prefix, memorized): {room: ("mem" + prefix.capitalize() if memorized else prefix) + room
+                                         for room in ("Stone", "Wood", "Gold", "Sand")}
+                   for prefix in ("floor", "wall") for memorized in (False, True)}
+
+    def roomOf(self, i, rooms):
+        for room in self.ROOM_ORDER:
             if i in rooms[room]:
-                return self.color(prefix + room)
-        return self.color(prefix + "Sand")
+                return room
+        return "Sand"
+
+    def floorColor(self, i, rooms, memorized):
+        return self.colorDict[self.COLOR_NAMES[("floor", memorized)][self.roomOf(i, rooms)]]
 
     def roomWallColor(self, i, rooms, memorized):
         """The wall color of the room a tile is in (veins are drawn in their room's wall color)."""
-        prefix = "memWall" if memorized else "wall"
-        for room in ("Stone", "Wood", "Gold"):
-            if i in rooms[room]:
-                return self.color(prefix + room)
-        return self.color(prefix + "Sand")
+        return self.colorDict[self.COLOR_NAMES[("wall", memorized)][self.roomOf(i, rooms)]]
+
+    WALL_ROOMS = {}  # wall name -> its room ("Stone Wall" -> "Stone"), filled in as walls are seen
 
     def wallColor(self, name, memorized):
         # wall names are "Stone Wall", "Wood Wall", "Sand Wall", "Gold Wall"
-        room = name.split(" ")[0]
-        prefix = "memWall" if memorized else "wall"
-        return self.theme.colors.get(prefix + room, self.color(prefix + "Stone"))
+        room = self.WALL_ROOMS.get(name)
+        if room is None:
+            room = self.WALL_ROOMS[name] = name.split(" ")[0]
+        names = self.COLOR_NAMES[("wall", memorized)]
+        return self.colorDict.get(names.get(room, ""), self.colorDict[names["Stone"]])
 
     def renderScreen(self, grid: dict, rooms, playerDirection, playerPosition, visionRange, light=(0, 0, 1)):
         self.litTiles = []  # tiles in view, remembered so the swaying light can redraw just these
@@ -1294,7 +1350,7 @@ class renderer():
         self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
         # Dithered light only on tiles in view (remembered tiles stay as they are). The player, enemies,
         # chests and the door back up are never dithered so they stand out; pits are part of the floor, so they are.
-        if not memorized and grid[i][0] not in (1, 3, 5, 6, 7, 8, 9):
+        if not memorized and grid[i][0] not in (1, 3, 5, 6, 7, 8, 9, expansion.CAMP):
             offsetX, offsetY, reach = light
             lightX = playerPosition % self.rowLength + offsetX
             lightY = playerPosition // self.rowLength + offsetY
@@ -1303,19 +1359,20 @@ class renderer():
             if fire is not None:  # firelight: whichever light is brighter here wins
                 fireLevel, distance = self.fireLevel(x, y, fire)
                 level = None if level is None or fireLevel is None else min(level, fireLevel)
-                alpha = int(FIRE_TINT_ALPHA * max(0.0, 1 - distance / (FIRE_LIGHT_RADIUS + 1)))
+                alpha = int(FIRE_TINT_ALPHA * max(0.0, 1 - distance / (fire[1] + 1)))
                 if alpha > 0:
                     self.mapSurface.blit(self.fireTint(alpha), (x * ts, y * ts))
             if level is not None and self.shades:
                 self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
 
     def fireLevel(self, x, y, fire):
-        """(dither level, distance) for tile x, y in the light of the fire at position fire. Each fire's light sways
-        like yours (lightShape, with the same Light Style), on its own timing so they don't all move together."""
-        offsetX, offsetY, reach = self.lightShape(self.lightTime + (fire % 97) * 0.37, getattr(self, "lightStyleNow", None))
-        fx, fy = fire % self.rowLength + offsetX, fire // self.rowLength + offsetY
+        """(dither level, distance) for tile x, y in the light of fire: (its position, its light radius). Each fire's
+        light sways like yours (lightShape, with the same Light Style), on its own timing so they don't all move together."""
+        source, radius = fire
+        offsetX, offsetY, reach = self.lightShape(self.lightTime + (source % 97) * 0.37, getattr(self, "lightStyleNow", None))
+        fx, fy = source % self.rowLength + offsetX, source // self.rowLength + offsetY
         distance = math.hypot(x - fx, y - fy)
-        return self.lightLevel(x, y, fx, fy, (FIRE_LIGHT_RADIUS + 0.5) * reach), distance
+        return self.lightLevel(x, y, fx, fy, (radius + 0.5) * reach), distance
 
     def fireTint(self, alpha):
         cache = self.__dict__.setdefault("fireTints", {})
@@ -1369,15 +1426,30 @@ class renderer():
                 picture = self.sprites["plants"].get(grid[i][2].kind)
                 if picture is not None:
                     self.mapSurface.blit(picture, (x * ts, y * ts))
+            case expansion.CAMP:  # A spawner or a bonfire (kept in full color when remembered, like stations)
+                self.floorFill(i, rooms, memorized, x, y)
+                piece = grid[i][2]
+                if piece.kind == "bonfire":
+                    frame = pygame.time.get_ticks() // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"])
+                    self.mapSurface.blit(self.sprites["bonfire"][frame], (x * ts, y * ts))
+                else:
+                    self.mapSurface.blit(self.sprites["spawner"], (x * ts, y * ts))
+                    if piece.hp < piece.maxHp:  # a damage bar along the bottom
+                        pygame.draw.rect(self.mapSurface, (40, 10, 10), pygame.Rect(x * ts + 1, y * ts + ts - 2, ts - 2, 1))
+                        pygame.draw.rect(self.mapSurface, self.color("enemy"), pygame.Rect(x * ts + 1, y * ts + ts - 2, max(1, (ts - 2) * piece.hp // piece.maxHp), 1))
             case 6:  # Door back to the previous level
                 self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))
             case 5 if not memorized:  # Enemy (enemies are not remembered)
                 self.floorFill(i, rooms, memorized, x, y)
                 name = grid[i][2].name if len(grid[i]) > 2 else ""
-                if name == "Unsealed":
+                if i in getattr(self, "smokeHere", {}):
+                    pass  # hidden in smoke: only the smoke shows
+                elif name == "Unsealed":
                     frame = sprites.shardFrameFor(getattr(self, "lightTime", 0.0))
                     self.mapSurface.blit(self.sprites["unsealed"][frame], (x * ts, y * ts))
+                elif (name, getattr(grid[i][2], "look", None)) in self.sprites["factions"]:  # an Expansion faction's colors
+                    self.mapSurface.blit(self.sprites["factions"][(name, grid[i][2].look)], (x * ts, y * ts))
                 elif name in self.sprites["enemies"]:
                     self.mapSurface.blit(self.sprites["enemies"][name], (x * ts, y * ts))
                 else:  # an enemy with no picture yet: a plain square

@@ -19,6 +19,7 @@ import recipes
 import relics
 import plants
 import organizers
+import expansion
 import devconsole
 import updater
 from version import VERSION
@@ -58,12 +59,13 @@ MENU_OPTIONS_FILE = paths.savePath("menuOpts.txt")
 # Frame rate cap, and how much the splash messages fade per frame
 FPS = 60
 # Each message starts at 255 and loses this much every frame: 255 / step / FPS = seconds on screen
-FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage": 1.5, "eventMessage": 1.5}
+FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage": 1.5, "eventMessage": 1.5, "schismMessage": 1.5}
 # The title fades in as the exact reverse of the "Escape" message fading out: same speed (about 4 seconds)
 TITLE_FADE_STEP = FADE_STEPS["escapeMessage"]
 KEY_REPEAT_DELAY = 250     # ms before a held key starts repeating
 KEY_REPEAT_INTERVAL = 90   # ms between repeats (about 11 a second)
 SAVE_FILE = paths.savePath("savegame.pkl")
+POUCH_FULL_MESSAGES = 3  # how many times "pouch full" shows for one material before it goes quiet (see give)
 SAVE_VERSION = 2  # 2: the map now fills the whole screen, so saves from the old smaller map can't load
 
 # Windows, in the order Tab cycles through them (after the "map" stop)
@@ -119,6 +121,28 @@ POOL = 0.25                # blood added each turn under someone at low health w
 SPILL = 0.3                # what a full tile spills into a floor tile next to it
 HIT_SPECK = 0.04           # every hit leaves a faint speck on the floor
 BLOOD_DRY = 1 / 150       # blood dries away by this much a turn (a full puddle lasts 150 turns)
+
+
+SEE_THROUGH = (0, 9, expansion.CAMP)  # tile types sight passes over (plants depend on the plant)
+_RAYS = {}
+
+
+def rayOffsets(reach, start=0):
+    """The vision rays out to reach: one every 0.1 radians, each a list of (dx, dy) steps from the center, nearest
+    first and without repeats. Worked out once per reach (they're the same for every tile)."""
+    key = (reach, start)
+    if key not in _RAYS:
+        rays, t = [], 0
+        while t < 2 * math.pi:
+            ray = []
+            for r in range(start, reach + 1):
+                point = (round(r * math.cos(t)), round(r * math.sin(t)))
+                if point not in ray:
+                    ray.append(point)
+            rays.append(ray)
+            t += .1
+        _RAYS[key] = rays
+    return _RAYS[key]
 
 
 class gameManager():
@@ -275,6 +299,7 @@ class gameManager():
         self.doorPositions = []
         self.motherlodes = set()  # floors that rolled a Motherlode (see wall.MOTHERLODE_CHANCE)
         self.forcedOreFloor = None  # developer console /orefloor: (floor type, motherlode) for the next new floor
+        self.camps = {}  # floor -> its Expansion camp state (expansion.camp)
         self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
         self.enemyOccupiedItemSpaces = {}
 
@@ -329,7 +354,7 @@ class gameManager():
         self.aimLine = None
 
         self.messageBools = {"escapeMessage": False, "floorLevelMessage": False, "brokenSealMessage": False,
-                             "eventMessage": False}
+                             "eventMessage": False, "schismMessage": False}
         self.painter.fade = 255
 
         self.rotate = False
@@ -1453,6 +1478,8 @@ class gameManager():
                 self.openWindow("items")
         elif tile[0] == 7:  # a crafting station
             self.onStationInteract(target)
+        elif tile[0] == expansion.CAMP:  # a spawner or bonfire: smash it / put it out
+            expansion.hitStructure(self, target)
         elif tile[0] == 8:  # a plant: harvest it
             self.harvestPlant(target)
         self.enemyMove = True
@@ -1618,13 +1645,23 @@ class gameManager():
             self.player.alterGold(amount)
             self.addPopup(f"+{amount} Gold", position)
             return amount
-        added = self.player.addMaterial(materialId, amount)
+        player = self.player
+        if not hasattr(player, "pouchFullShown"):  # players from saves made before this was counted
+            player.pouchFullShown = {}
+        if player.materials.get(materialId, 0) < player.pouchLimit:
+            player.pouchFullShown.pop(materialId, None)  # below the max again: the message can show again
+        added = player.addMaterial(materialId, amount)
         name = resources.materialName(materialId)
+        # "pouch full" shows at most POUCH_FULL_MESSAGES times for each material until it drops below the max
+        shown = player.pouchFullShown.get(materialId, 0)
+        full = added < amount and shown < POUCH_FULL_MESSAGES
+        if full:
+            player.pouchFullShown[materialId] = shown + 1
         if added == amount:
             self.addPopup(f"+{added} {name}", position)
         elif added:
-            self.addPopup(f"+{added} {name} (pouch full)", position)
-        else:
+            self.addPopup(f"+{added} {name}" + (" (pouch full)" if full else ""), position)
+        elif full:
             self.addPopup(f"{name} pouch full", position)
         return added
 
@@ -2029,45 +2066,42 @@ class gameManager():
         return flatRays
 
     def rayCircleVision(self, position, visionRange, selfNum, tremorSense=False) -> set:
+        """The tiles seen from position: rays every 0.1 radians out to visionRange, each stopping after the first
+        tile that can't be seen through (see rayOffsets for the rays themselves)."""
         positions = set()
-        h = position % self.rowLength
-        k = position // self.rowLength
-        smoke = self.smoke if selfNum == 5 and not tremorSense else {}  # smoke blinds enemies (tremor sense feels through it)
-        t = 0
-        while t < 2 * math.pi:
-            ray = []
-            for r in range(0, visionRange + 1):
-                point = (round(r * math.cos(t) + h), round(r * math.sin(t) + k))
-                if point not in ray:
-                    ray.append(point)
-            for p in ray:
-                flat = p[0] + (p[1] * self.rowLength)
-                if flat not in self.grid:
+        add = positions.add
+        R, grid = self.rowLength, self.grid
+        h, k = position % R, position // R
+        smoke = self.smoke if not tremorSense else {}  # smoke blinds everyone (tremor sense feels through it)
+        for ray in rayOffsets(visionRange):
+            for dx, dy in ray:
+                flat = h + dx + (k + dy) * R
+                tile = grid.get(flat)
+                if tile is None:
                     continue
-                positions.add(flat)
-                if flat in smoke:
-                    break  # an enemy sees into smoke but not through it (and sees nothing from inside it)
-                tile = self.grid[flat]
-                seeThrough = tile[0] in (0, 9) or (tile[0] == 8 and not tile[2].blocksSight)
-                if not (seeThrough or tile[0] == selfNum or tremorSense):
+                add(flat)
+                if flat in smoke and flat != position:
+                    break  # sight goes into smoke but not through it, so from inside it you only see the tiles beside you
+                if tremorSense:
+                    continue
+                kind = tile[0]
+                if not (kind in SEE_THROUGH or kind == selfNum or (kind == 8 and not tile[2].blocksSight)):
                     break
-            t += .1
         return positions
 
     def seeThroughForPlayer(self, position):
         """The same rule your vision uses: open floor, item piles and short plants don't block it."""
         tile = self.grid[position]
-        return tile[0] in (0, 1, 9) or (tile[0] == 8 and not tile[2].blocksSight)
+        return tile[0] in (0, 1, 9, expansion.CAMP) or (tile[0] == 8 and not tile[2].blocksSight)
 
-    def lightAround(self, fire):
-        """The tiles a fire lights: rays out to FIRE_LIGHT_RADIUS, stopping at (and lighting) the first thing
-        that blocks sight. The fire's own tile always lights, whatever is burning there."""
+    def lightAround(self, fire, radius=FIRE_LIGHT_RADIUS):
+        """The tiles a fire lights: rays out to radius, stopping at (and lighting) the first thing that blocks
+        sight. The fire's own tile always lights, whatever is burning there."""
         lit, R = set(), self.rowLength
         fx, fy = fire % R, fire // R
-        t = 0
-        while t < 2 * math.pi:
-            for r in range(1, FIRE_LIGHT_RADIUS + 1):
-                x, y = round(r * math.cos(t) + fx), round(r * math.sin(t) + fy)
+        for ray in rayOffsets(radius, start=1):
+            for dx, dy in ray:
+                x, y = fx + dx, fy + dy
                 if not 0 <= x < R:
                     break
                 p = x + y * R
@@ -2076,7 +2110,6 @@ class gameManager():
                 lit.add(p)
                 if p != fire and not self.seeThroughForPlayer(p):
                     break
-            t += .1
         lit.add(fire)
         return lit
 
@@ -2097,37 +2130,54 @@ class gameManager():
                 y0 += sy
             if (x0, y0) == (x1, y1):
                 return True
-            if not self.seeThroughForPlayer(x0 + y0 * R):
+            if not self.seeThroughForPlayer(x0 + y0 * R) or x0 + y0 * R in self.smoke:  # smoke blocks sight too
                 return False
         return True
 
+    def hiddenBySmoke(self, position):
+        """Anything standing in Smoke Bomb smoke can't be seen (it shows as smoke)."""
+        return position in self.smoke
+
     def updateFireLight(self):
-        """Which tiles the fires light, as {tile: the nearest fire lighting it}."""
+        """Which tiles the fires and bonfires light, as {tile: (the nearest fire lighting it, its light radius)}."""
         R = self.rowLength
         self.fireLight = {}
         best = {}
-        for fire in self.fires:
-            for p in self.lightAround(fire):
+        sources = [(fire, FIRE_LIGHT_RADIUS) for fire in self.fires] + \
+                  [(bonfire, expansion.BONFIRE_LIGHT_RADIUS) for bonfire in expansion.bonfires(self)]
+        for fire, radius in sources:
+            for p in self.lightAround(fire, radius):
                 d = (p % R - fire % R) ** 2 + (p // R - fire // R) ** 2
                 if p not in best or d < best[p]:
-                    best[p], self.fireLight[p] = d, fire
+                    best[p], self.fireLight[p] = d, (fire, radius)
 
     def setPositionsVisible(self):
         visiblePositions = self.rayCircleVision(self.playerPositionFlat, self.player.getVisionRange(), 1)
-        for i in self.grid.keys():
-            if self.grid[i][1] == 1:
-                self.grid[i][1] = 2
+        # what was in view last time goes back to remembered: just those tiles, unless this is a different floor
+        # (or a loaded game) since then, when every tile is checked
+        if getattr(self, "visibleGrid", None) is self.grid:
+            for i in self.visibleTiles:
+                if self.grid[i][1] == 1:
+                    self.grid[i][1] = 2
+        else:
+            for tile in self.grid.values():
+                if tile[1] == 1:
+                    tile[1] = 2
         for position in visiblePositions:
             self.grid[position][1] = 1
         # Firelight: tiles a fire lights are visible too, from any distance, if nothing blocks your line of sight
         self.updateFireLight()
-        for position in self.fireLight:
-            if position not in visiblePositions and self.lineOfSight(self.playerPositionFlat, position):
-                self.grid[position][1] = 1
+        if self.playerPositionFlat not in self.smoke:  # from inside smoke you can't see firelight out there
+            for position in self.fireLight:
+                if position not in visiblePositions and self.lineOfSight(self.playerPositionFlat, position):
+                    self.grid[position][1] = 1
         if self.player.hasEffect("see_enemies"):
             for position in self.EnemyPositions:
                 if position in self.grid and self.grid[position][0] == 5:
                     self.grid[position][1] = 1
+        self.visibleGrid = self.grid  # (see the top of this function)
+        self.visibleTiles = [i for i in set(visiblePositions) | set(self.fireLight) | set(self.EnemyPositions)
+                             if self.grid.get(i, (None, 0))[1] == 1]
         if self.player.seeDoor:
             self.grid[self.doorPositions[self.level]][1] = 2
             self.player.seeDoor = False
@@ -2671,7 +2721,8 @@ class gameManager():
     def animating(self):
         """True while something on screen moves: bursts, fire in view, something burning, or a throw that would
         land at once (its landing tile shows a little burst)."""
-        if self.explosions or self.spurts or self.flecks or any(self.grid[p][1] == 1 for p in self.fires):
+        if self.explosions or self.spurts or self.flecks or any(self.grid[p][1] == 1 for p in self.fires) \
+                or any(self.grid[p][1] == 1 for p in expansion.bonfires(self)):
             return True
         if getattr(self.player, "burnTurns", 0) > 0:
             return True
@@ -2709,7 +2760,7 @@ class gameManager():
             landing, area, turns = self.throwArea
             effect = self.player.inventory[self.throwing].effect
             aim = {"landing": landing, "area": area, "turns": turns, "effect": effect}
-        smoke = [p for p in self.smoke if self.grid[p][1] == 1]
+        smoke = {p: turns for p, turns in self.smoke.items() if self.grid[p][1] != 0}  # over remembered tiles too: sight stops at its edge
         now = pygame.time.get_ticks()
         burning = [p for p in self.EnemyPositions if p in self.grid and self.grid[p][1] == 1 and len(self.grid[p]) > 2
                    and getattr(self.grid[p][2], "burnTurns", 0) > 0]
@@ -2733,6 +2784,8 @@ class gameManager():
     def stepFloorEvent(self):
         """Counts down to this floor's event and fires it: its name shows big on screen."""
         event = self.floorEvents.get(self.level)
+        if event and event["active"] and event["id"] == "expansion" and not event.get("spawned"):
+            event["spawned"] = expansion.spawnWarband(self)  # tries again next turn if there's no room yet
         if not event or event["active"]:
             return
         event["turnsLeft"] -= 1
@@ -2745,6 +2798,7 @@ class gameManager():
     def enemyTurn(self):
         self.turnCount += 1
         self.MoveEnemies()
+        expansion.stepCamp(self)
         self.searingLight()
         self.stepBurning()
         self.stepDemise()
@@ -2775,6 +2829,7 @@ class gameManager():
         listOfNewPositions = set()
         self.movedEnemies = listOfNewPositions  # so an Organizer can find an enemy that already moved this turn
         organizerContext = organizers.gather(self)
+        campContext = expansion.beginTurn(self)
         for i in list(self.EnemyPositions):  # a copy: an Organizer can kill an enemy partway through
             if self.grid[i][0] != 5 or len(self.grid[i]) < 3:
                 continue  # stale position, the enemy is no longer here
@@ -2784,14 +2839,27 @@ class gameManager():
                 self.grid[finalPosition].append(currentEnemy)
                 listOfNewPositions.add(finalPosition)
                 continue
+            if getattr(currentEnemy, "faction", None) is not None:  # an Expansion faction's goblin (expansion.py)
+                finalPosition = expansion.takeTurn(self, i, currentEnemy, campContext)
+                self.grid[finalPosition].append(currentEnemy)
+                listOfNewPositions.add(finalPosition)
+                continue
+            finalPosition = expansion.otherTurn(self, i, currentEnemy, campContext)  # fighting back, or drawn to a bonfire
+            if finalPosition is not None:
+                self.grid[finalPosition].append(currentEnemy)
+                listOfNewPositions.add(finalPosition)
+                continue
             finalPosition = i
             passes = 0
             moving = True
+            sight = None  # what it can see from i: the same on every pass (nothing changes until it moves or digs)
             while moving:
                 passes += 1
                 if passes > 4:
                     break
-                visiblePositions = self.rayCircleVision(i, currentEnemy.visionRange, 5, currentEnemy.tremorSense)
+                if sight is None:
+                    sight = self.rayCircleVision(i, currentEnemy.visionRange, 5, currentEnemy.tremorSense)
+                visiblePositions = set(sight)
                 if currentEnemy.lastPlayerPosition is not None:
                     if currentEnemy.lastPlayerPosition == i or self.grid[currentEnemy.lastPlayerPosition][0] == 5:
                         currentEnemy.lastPlayerPosition = None
@@ -2952,6 +3020,7 @@ class gameManager():
             "addUnsealed": self.addUnsealed,
             "floorEvents": self.floorEvents,
             "motherlodes": self.motherlodes,
+            "camps": self.camps,
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -2972,6 +3041,7 @@ class gameManager():
             self.levelGrids = data["levelGrids"]
             self.floorEvents = data.get("floorEvents", {})
             self.motherlodes = data.get("motherlodes", set())
+            self.camps = data.get("camps", {})
             self.doorPositions = data["doorPositions"]
             self.playerPositionFlat = data["playerPositionFlat"]
             self.currentLocation = data["currentLocation"]
@@ -3049,6 +3119,9 @@ class gameManager():
         if tile[0] == 7:
             station = tile[2]
             return f"{station.name} ({station.hp}/{station.maxHp})" if station.claimed else f"{station.name} (unclaimed)"
+        if tile[0] == expansion.CAMP:
+            piece = tile[2]
+            return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
             return tile[2].name + (" (burning)" if getattr(tile[2], "burnTurns", 0) > 0 else "")
         return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up"}.get(tile[0], "Floor")
@@ -3180,7 +3253,7 @@ class gameManager():
             effect = {"Heal": f"Heals {item.bonus}" + (f" (+{bonus} from WIS)" if bonus else ""),
                       "DoorLocate": "Shows the way to the next floor",
                       "Fire": f"Thrown: {item.bonus} damage to everything where it lands, you included. Can set the ground and plants alight",
-                      "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Enemies can't see into it",
+                      "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Everything in it is hidden, and no one sees into or out of it",
                       "Magic": f"Thrown: {item.bonus} magic damage to everything where it lands, you included. "
                             "Organizers it hits become Plant Organizers instead",
                       "Explosive": f"Thrown: {item.bonus} damage to everything where it lands, you included. Breaks nearby walls"}.get(item.effect, item.effect)
@@ -3260,7 +3333,8 @@ class gameManager():
         messageKey, messageText = None, None
         messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"Floor {self.level}\n{self.floorSubtitle()}",
                         "brokenSealMessage": "The Seal is Broken",
-                        "eventMessage": events.name(self.activeEvent()) if self.activeEvent() else ""}
+                        "eventMessage": events.name(self.activeEvent()) if self.activeEvent() else "",
+                        "schismMessage": "Schism\nThe expansion splits in two"}
         for key, active in self.messageBools.items():
             if active:
                 messageKey, messageText = key, messageTexts[key]
@@ -3283,6 +3357,7 @@ class gameManager():
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly,
             fireLight=getattr(self, "fireLight", {}),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
+            smoke=self.smoke,
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
         if messageKey is not None and messageFinished:

@@ -19,6 +19,7 @@ DELAY = (15, 60)       # the event fires this many turns after you first arrive 
 EVENTS = {
     "overgrowth": {"name": "Overgrowth", "description": "Plants grow much faster and rarely wither",
                    "plants": {"growTurns": 3, "birth": 1.5, "death": 0.05, "maxPlants": 320}},
+    "expansion": {"name": "Expansion", "description": "A goblin war band arrives and builds a camp (expansion.py)"},
 }
 
 

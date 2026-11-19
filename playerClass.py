@@ -30,6 +30,7 @@ class PlayerClass():
         self.stations = set()    # crafting stations the player has made, e.g. {"workbench"} (see recipes.py)
         self.stationPlaced = {}  # heavy stations that are set up: station id -> (floor, map position)
         self.pouchLimit = resources.POUCH_LIMIT  # how many of each material fit (the Leather Pouch raises it)
+        self.pouchFullShown = {}  # material id -> times "pouch full" has shown since it filled (gameManager.give)
         self.wardReady = True    # Warded Chainmail: the first hit on each floor does nothing
         self.burnTurns = 0       # turns of burning left (fire can set you alight; see gameManager.applyFire)
 
