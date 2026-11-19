@@ -27,7 +27,11 @@ all belong to it. Goblins that were already on the floor are "wild" (no faction)
                   sprouts round them and keeps them alive, with seeds from the war chests; the rest of its harvest
                   goes back in them.
   Spawner         every SPAWN_TURNS makes a Goblin, Goblin Chief, Goblin Builder or Goblin Farmer (SPAWN_ODDS) on a free tile
-                  inside its hut. It waits while the hut is full.
+                  inside its hut, eating FOOD_PER_SPAWN of the food stocked in it. It waits while the hut is full
+                  or it's out of food. It holds SPAWNER_FOOD_MAX food and starts with SPAWNER_START_FOOD.
+  Food            FOOD: plant herbs and Raw Meat (a goblin gets KILL_MEAT when it kills anything). Squads haul it
+                  home with the rest of their loot, farmers store their harvest, and builders carry it from the war
+                  chests to any spawner that's running low (HUNGRY_AT); so do goblins waiting at the bonfire.
   Bonfire         lights the camp (BONFIRE_LIGHT_RADIUS, through the firelight system) and draws wild goblins in
                   to fight the faction.
   Squads          3 Goblins and a Chief. New goblins wait at the bonfire until they make a squad; a squad short of
@@ -94,8 +98,17 @@ MISSION_TURNS = 400         # ...and a leg of it (there, or back) that takes lon
 FOLLOW_DISTANCE = 2
 
 TOGETHER_HUTS = 2           # until a faction has this many finished huts, all its builders work on the same hut
-# who the event brings: a chief and 2 goblins (one squad, guarding the camp) and 3 builders
-WARBAND = ["Goblin Chieftan", "Goblin", "Goblin", "Goblin Builder", "Goblin Builder", "Goblin Builder"]
+# who the event brings: a chief and 2 goblins (one squad, guarding the camp), 3 builders and a farmer (who brings
+# seeds of one plant, FARMER_START_SEEDS)
+WARBAND = ["Goblin Chieftan", "Goblin", "Goblin", "Goblin Builder", "Goblin Builder", "Goblin Builder", "Goblin Farmer"]
+
+# Food: what spawners eat. Each of these materials is 1 food.
+FOOD = [info["herb"] for info in plants.PLANTS.values() if info.get("wild", True)] + ["meat"]
+FOOD_PER_SPAWN = 2          # food a spawner eats for each goblin it makes
+SPAWNER_FOOD_MAX = 10       # food a spawner holds
+SPAWNER_START_FOOD = 4      # food a new spawner is built with
+HUNGRY_AT = 4               # a spawner with less food than this gets a builder bringing it more
+KILL_MEAT = (1, 2)          # Raw Meat a goblin takes from anything it kills
 
 CARRY_SLOTS = 15            # what a goblin can carry (see "Hauling" above)
 GOBLIN_STACK = 10           # how much of one material fits in one of its slots (a goblin's pouch is small)
@@ -174,6 +187,8 @@ class Structure:
         self.hut = hut            # a spawner's hut center
         self.hp = SPAWNER_HP if kind == "spawner" else BONFIRE_HITS
         self.maxHp = self.hp
+        self.food = SPAWNER_START_FOOD if kind == "spawner" else 0
+        self.feeder = None        # the builder bringing it food, if any
         self.timer = rand.randint(*SPAWN_TURNS)
 
     @property
@@ -524,6 +539,10 @@ def attack(gm, i, unit, target, targetPosition):
         target.foe = unit
     if target.hp <= 0:
         gm.killEnemy(targetPosition, killer=unit)
+        if factionOf(unit) is not None:  # food for the camp
+            meat = min(rand.randint(*KILL_MEAT), fitAmount(unit, "meat"))
+            if meat > 0:
+                unit.materials["meat"] = unit.materials.get("meat", 0) + meat
 
 
 def adjacentFoe(gm, i, unit):
@@ -719,7 +738,12 @@ def soldierTurn(gm, i, unit, ctx):
             position = mineTurn(gm, i, unit, squad, f, home, ctx)
             if position is not None:
                 return position
-    if not squad.marching:  # waiting at the bonfire for more goblins: clear the walls round the camp meanwhile
+    if not squad.marching:  # waiting at the bonfire for more goblins: feed hungry spawners and clear walls meanwhile
+        task = getattr(unit, "task", None)
+        if task is None or task.get("kind") != "feed":
+            task = unit.task = feedTask(gm, i, unit, f)
+        if task is not None:
+            return feedTurn(gm, i, unit, f, task, ctx)
         position = clearTurn(gm, i, unit, f, ctx)
         if position is not None:
             return position
@@ -1216,6 +1240,8 @@ def builderTurn(gm, i, b, ctx):
             b.rest = 10
             return organizers.wander(gm, i)
     task = b.task
+    if task["kind"] == "feed":
+        return feedTurn(gm, i, b, f, task, ctx)
     if task["kind"] == "bonfire":
         return buildBonfire(gm, i, b, f, task, ctx)
     return buildHut(gm, i, b, f, task, ctx)
@@ -1265,6 +1291,9 @@ def planTask(gm, i, b, f):
         building = next((h for h in f.huts if h.get("kind") == "storage" and not h["done"]), None)
         if building is not None:
             return {"kind": "hut", "hut": building}
+    feed = feedTask(gm, i, b, f)
+    if feed is not None:  # a spawner running low on food, and food in the chests (or on it) to bring it
+        return feed
     for hut in f.huts:
         if hut["done"]:
             continue
@@ -1576,6 +1605,7 @@ FARM_DISTANCE = (3, 14)     # a plot goes this far from one of its faction's bon
 FARM_EDGE = 2               # it weeds this many tiles round the plot (the crop is on the first ring)
 PLANT_TURNS = 1             # a farmer's turns to plant a seed
 FARMER_SEEDS_KEPT = 3       # seeds of each kind it farms that it keeps on it
+FARMER_START_SEEDS = 7      # seeds the war band's farmer brings: a block's 4, and the 3 it keeps
 FARMER_HAUL = 6             # it takes its harvest to a war chest once it carries this much to put away
 FARM_PLAN_WAIT = 25         # a farmer that finds nowhere for a plot looks again after this many turns
 FORAGE_RANGE = MINE_RANGE   # how far from its bonfire a farmer looks for wild plants...
@@ -1891,6 +1921,88 @@ def stashChest(gm, f, unit, i, home):
     return min(store, key=lambda c: dist(gm, c, i)) if store else None
 
 
+# ---------------------------------------------------------------- food
+
+def carriedFood(unit):
+    return sum(unit.materials.get(m, 0) for m in FOOD)
+
+
+def foodChest(gm, f, position):
+    """The nearest of f's war chests with food in it, or None."""
+    have = [c for c in chests(gm, f) if any(isinstance(it, resources.MaterialStack) and it.materialId in FOOD
+                                           and it.amount > 0 for it in chestAt(gm, c))]
+    return min(have, key=lambda c: dist(gm, c, position)) if have else None
+
+
+def spawnersOf(gm, f):
+    """(position, spawner) for f's spawners."""
+    out = []
+    for t in camp(gm)["structures"]:
+        tile = gm.grid.get(t)
+        if tile and tile[0] == CAMP and tile[2].kind == "spawner" and tile[2].faction == f.id:
+            out.append((t, tile[2]))
+    return out
+
+
+def feedTask(gm, i, b, f):
+    """A spawner of f with less than HUNGRY_AT food that no other builder is feeding, if there's food to bring it."""
+    hungry = []
+    for t, s in spawnersOf(gm, f):
+        feeder = getattr(s, "feeder", None)
+        busy = feeder is not None and feeder is not b and feeder.hp > 0 and factionOf(feeder) == f.id \
+            and gm.turnCount - getattr(s, "fedAt", 0) <= 3  # (its feeder worked on it lately)
+        if s.__dict__.setdefault("food", SPAWNER_START_FOOD) < HUNGRY_AT and not busy:
+            hungry.append(t)
+    if not hungry or (carriedFood(b) == 0 and foodChest(gm, f, i) is None):
+        return None
+    t = min(hungry, key=lambda t: dist(gm, t, i))
+    gm.grid[t][2].feeder, gm.grid[t][2].fedAt = b, gm.turnCount
+    return {"kind": "feed", "at": t}
+
+
+def feedTurn(gm, i, b, f, task, ctx):
+    """Food from a war chest to a hungry spawner: to the chest for it (unless it carries some already), then to the
+    spawner, which takes as much as it holds."""
+    t = task["at"]
+    tile = gm.grid[t]
+    if tile[0] != CAMP or tile[2].kind != "spawner" or tile[2].faction != f.id:
+        b.task = None  # it's gone
+        return i
+    s = tile[2]
+    s.feeder, s.fedAt = b, gm.turnCount
+    room = SPAWNER_FOOD_MAX - s.food
+    if room <= 0:
+        s.feeder, b.task = None, None
+        return i
+    if carriedFood(b) == 0:
+        chest = foodChest(gm, f, i)
+        if chest is None:
+            s.feeder, b.task = None, None
+            return i
+        position, there = goNextTo(gm, i, b, chest, f, ctx)
+        if there:
+            stock = {it.materialId: it.amount for it in chestAt(gm, chest)
+                     if isinstance(it, resources.MaterialStack) and it.materialId in FOOD}
+            for m in sorted(stock, key=lambda m: -stock[m]):
+                want = min(room - carriedFood(b), fitAmount(b, m))
+                if want <= 0:
+                    break
+                withdraw(gm, chest, b, m, want)
+        return position
+    position, there = goNextTo(gm, i, b, t, f, ctx)
+    if there:
+        for m in FOOD:
+            give = min(b.materials.get(m, 0), SPAWNER_FOOD_MAX - s.food)
+            if give > 0:
+                s.food += give
+                b.materials[m] -= give
+                if b.materials[m] <= 0:
+                    del b.materials[m]
+        s.feeder, b.task = None, None
+        gm.change = True
+    return position
+
+
 # ---------------------------------------------------------------- schisms
 
 PEACE = set()  # frozensets of two faction ids at peace this turn (see updatePeace)
@@ -2069,10 +2181,11 @@ def stepSpawner(gm, t, s):
     hut = next((h for h in f.huts if h["center"] == s.hut), None) if f else None
     inside = hut["inside"] if hut else [n for n in gm.eightAround(t)]
     free = [x for x in inside if x is not None and gm.grid[x][0] == 0]
-    if not free or f is None:
-        s.timer = 1  # full: try again next turn
+    if not free or f is None or s.__dict__.setdefault("food", SPAWNER_START_FOOD) < FOOD_PER_SPAWN:
+        s.timer = 1  # full, or out of food: try again next turn
         return
     s.timer = rand.randint(*SPAWN_TURNS)
+    s.food -= FOOD_PER_SPAWN
     roll, kind = rand.random() * 100, SPAWN_ODDS[-1][0]
     for name, chance in SPAWN_ODDS:
         if roll < chance:
@@ -2138,9 +2251,27 @@ def spawnWarband(gm):
             if kind not in WORKERS:
                 squad.members.append(unit)
                 unit.squad = squad
+            if kind == "Goblin Farmer":
+                unit.materials[seedOf(startingCrop(gm, start))] = FARMER_START_SEEDS
         gm.change = True
         return True
     return False
+
+
+def startingCrop(gm, start):
+    """A random plant that grows on the floor most common round start (where the camp will be)."""
+    floors = {}
+    for dy in range(-FARM_DISTANCE[1], FARM_DISTANCE[1] + 1):
+        for dx in range(-FARM_DISTANCE[1], FARM_DISTANCE[1] + 1):
+            t = offsetTile(gm, start, dx, dy)
+            if t is not None and gm.grid[t][0] == 0:
+                floor = plants.floorOf(t, gm.rooms)
+                floors[floor] = floors.get(floor, 0) + 1
+    for floor in sorted(floors, key=lambda k: -floors[k]):
+        kinds = [k for k in FARM_KINDS if floor in plants.PLANTS[k]["floors"]]
+        if kinds:
+            return rand.choice(kinds)
+    return rand.choice(FARM_KINDS)
 
 
 def newFaction(gm, look):
