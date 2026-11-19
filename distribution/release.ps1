@@ -9,7 +9,7 @@ param([string]$Version)
 
 $ErrorActionPreference = 'Stop'
 $Repo = Split-Path $PSScriptRoot
-$Release = Join-Path $Repo 'release'  # served by: tailscale serve --bg --http=80 --set-path /cruel <this folder>
+$Release = Join-Path $Repo 'release'  # served by: tailscale serve --service=svc:cruel --http=80 <this folder>
 $VersionPy = Join-Path $Repo 'version.py'
 
 # Work out the new version
