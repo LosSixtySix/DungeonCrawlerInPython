@@ -36,7 +36,7 @@ It bumps `version.py`, builds with PyInstaller, then puts `CRUEL.zip`, `install.
 First install, in PowerShell:
 
 ```powershell
-irm http://jonathanlaptop.tail6a8b0d.ts.net/cruel/install.ps1 | iex
+irm http://cruel.tail6a8b0d.ts.net/cruel/install.ps1 | iex
 ```
 
 This installs to `%LOCALAPPDATA%\Programs\CRUEL`, adds Start Menu and desktop shortcuts and starts the game.

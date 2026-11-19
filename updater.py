@@ -23,7 +23,7 @@ Only the packaged game (CRUEL.exe) checks: running from source never offers an u
 reached (this PC is off, or the player isn't on the tailnet), the game just starts as normal.
 """
 
-UPDATE_URL = "http://jonathanlaptop.tail6a8b0d.ts.net/cruel/"
+UPDATE_URL = "http://cruel.tail6a8b0d.ts.net"
 TIMEOUT = 4  # seconds
 
 

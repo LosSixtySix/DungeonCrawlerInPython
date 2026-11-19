@@ -1,7 +1,7 @@
 # Installs CRUEL, or updates it if it's already installed, then starts it.
 #
 # Players run this from PowerShell (they must be on the tailnet):
-#   irm http://jonathanlaptop.tail6a8b0d.ts.net/cruel/install.ps1 | iex
+#   irm http://cruel.tail6a8b0d.ts.net/install.ps1 | iex
 # The game also runs it when you choose "Update to vX" on the title screen. It then passes -WaitPid,
 # the game's process id, so the script waits for the game to close before replacing its files.
 #
@@ -18,7 +18,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'  # Windows PowerShell's download progress bar makes downloads very slow
 
-$Base = 'http://jonathanlaptop.tail6a8b0d.ts.net/cruel'
+$Base = 'http://cruel.tail6a8b0d.ts.net'
 $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\CRUEL'
 $Exe = Join-Path $InstallDir 'CRUEL.exe'
 $VersionFile = Join-Path $InstallDir 'version.txt'
