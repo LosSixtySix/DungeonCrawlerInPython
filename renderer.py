@@ -7,6 +7,7 @@ import themes
 import sprites
 import wall as walls
 import expansion
+import plants
 
 
 # Dithered light: tiles in view get a pattern of dark pixels the further they are from the player.
@@ -23,6 +24,21 @@ FIRE_LIGHT_RADIUS = 3
 SMOKE_THIN_TURNS = 4          # Smoke Bomb smoke fades out over its last this many turns
 FIRE_TINT = (240, 128, 40)
 FIRE_TINT_ALPHA = 82          # the tint's strength on the fire's own tile (0-255); it fades to nothing at the edge
+
+# Corrupted walls (Overgrowth): vines creeping over the top of the wall, in the corrupting plant's colors.
+# c = its main color, C = its light color, s = its dark color (its main color if it has none).
+VINES = [
+    "..........",
+    ".c.....C..",
+    "..c...c...",
+    "...cCc....",
+    "....c...s.",
+    "...c.c.c..",
+    "..C...c...",
+    ".c...c.C..",
+    "..s.c.....",
+    "..........",
+]
 
 # Ore glints ("Twinkle"): every vein tile in your light twinkles on its own timer. Three of its flecks flash
 # one after another, and the first throws a tiny four-point star onto the wall around it.
@@ -957,7 +973,7 @@ class renderer():
             return self.paintWall(wall, color, memorized, glintAt)
         if not hasattr(self, "wallCache"):
             self.clearTileCaches()
-        key = (id(wall), tuple(color), memorized, len(wall.brokenPoints), self.tileSize)
+        key = (id(wall), tuple(color), memorized, len(wall.brokenPoints), getattr(wall, "corruptedBy", None), self.tileSize)
         return self.cached(self.wallCache, key, lambda: (wall, self.paintWall(wall, color, memorized, None)))[1]
 
     def paintWall(self, wall, color, memorized, glintAt) -> pygame.Surface:
@@ -974,6 +990,9 @@ class renderer():
                     canvas.fill(shine, pygame.Rect(x, y - 1, 1, 1))
             if glintAt is not None and not memorized:
                 self.drawGlint(canvas, glintAt, ore, shine, color)
+        kind = getattr(wall, "corruptedBy", None)
+        if kind:
+            self.drawVines(canvas, kind, memorized)
         brokenColor = [max(0, c - 100) for c in color]
         for point in wall.brokenPoints:
             pygame.draw.rect(canvas, brokenColor, pygame.Rect(point[0], point[1], 1, 1))
@@ -1041,6 +1060,18 @@ class renderer():
         for i in getattr(self, "glintDirty", ()):
             if grid.get(i, (None, 0))[1] == 1:
                 self.drawLitTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
+
+    def drawVines(self, canvas, kind, memorized):
+        plantColors = plants.PLANTS[kind]["colors"]
+        palette = {"c": plantColors["c"], "C": plantColors.get("C", plantColors["c"]), "s": plantColors.get("s", plantColors["c"])}
+        if memorized:
+            fog = self.theme.colors["fog"]
+            palette = {k: themes.remembered(list(v), fog) for k, v in palette.items()}
+        scale = self.tileSize / 10
+        for y, row in enumerate(VINES):
+            for x, ch in enumerate(row):
+                if ch != ".":
+                    canvas.fill(palette[ch], pygame.Rect(int(x * scale), int(y * scale), max(1, int(scale)), max(1, int(scale))))
 
     def drawAimline(self, aimLine):
         if aimLine is None:
@@ -1402,9 +1433,13 @@ class renderer():
                 self.mapSurface.blit(self.drawWall(w, color, memorized, None if memorized else i), (x * ts, y * ts))
             # Chests and doors: the floor first (it shows through the pictures' transparent pixels and
             # shadows), then the picture. They keep their full color even when remembered.
-            case 3:  # Chest: walnut, mahogany or burnt umber (the same on every floor)
+            case 3:  # Chest: walnut, mahogany or burnt umber (the same on every floor), or an Expansion warcamp chest
                 self.floorFill(i, rooms, memorized, x, y)
-                self.mapSurface.blit(self.sprites["chests"][sprites.chestColorFor(i)], (x * ts, y * ts))
+                look = getattr(grid[i][2], "look", None)
+                if look in self.sprites["campChests"]:
+                    self.mapSurface.blit(self.sprites["campChests"][look], (x * ts, y * ts))
+                else:
+                    self.mapSurface.blit(self.sprites["chests"][sprites.chestColorFor(i)], (x * ts, y * ts))
             case 9:  # An item pile: one of the pile pictures, picked when the pile was made
                 self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["piles"][grid[i][2].look], (x * ts, y * ts))

@@ -204,6 +204,27 @@ BONFIRE = [
 BONFIRE_COLORS = {"S": (146, 148, 156), "s": (100, 102, 110), "w": (112, 76, 44), "r": (196, 48, 28), "Y": (240, 128, 40), "y": (255, 222, 120)}
 BONFIRE_FRAME_MS = 180
 
+# Warcamp chest, top down: a rough plank crate with two iron bands, a strap of the faction's cloth across the middle.
+# (A floor chest is a lidded box with studs; this one is plainly goblin-made.)
+CAMP_CHEST = [
+    "..........",
+    ".kkkkkkkk.",
+    ".kpbppbpk.",
+    ".kPbPPbPk.",
+    ".kcccccck.",
+    ".kCccccCk.",
+    ".kpbppbpk.",
+    ".kPbPPbPk.",
+    ".kkkkkkkk.",
+    "..........",
+]
+CAMP_CHEST_COLORS = {"p": (150, 118, 78), "P": (112, 84, 52), "b": (88, 90, 98)}
+
+
+def campChestColors(look):
+    cloth = EXPANSION_LOOKS[look]["goblin"]
+    return {**CAMP_CHEST_COLORS, "c": cloth["c"], "C": cloth["C"]}
+
 # enemy name (as in enemies.py) -> (picture, colors). Enemies not listed are still drawn as a square.
 ENEMY_SPRITES = {
     "Goblin": (GOBLIN, GOBLIN_COLORS),
@@ -612,6 +633,7 @@ def buildSprites(colors, tileSize):
         "factions": {(name, look): makeShadowed(rows, enemyRoles(colors, fixed), tileSize)
                      for look in EXPANSION_LOOKS for name, (rows, fixed) in factionPictures(look).items()},
         "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
+        "campChests": {look: makeShadowed(CAMP_CHEST, enemyRoles(colors, campChestColors(look)), tileSize) for look in EXPANSION_LOOKS},
         "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],
     }
 

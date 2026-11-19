@@ -59,7 +59,7 @@ MENU_OPTIONS_FILE = paths.savePath("menuOpts.txt")
 # Frame rate cap, and how much the splash messages fade per frame
 FPS = 60
 # Each message starts at 255 and loses this much every frame: 255 / step / FPS = seconds on screen
-FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage": 1.5, "eventMessage": 1.5, "schismMessage": 1.5}
+FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage": 1.5, "eventMessage": 1.5}
 # The title fades in as the exact reverse of the "Escape" message fading out: same speed (about 4 seconds)
 TITLE_FADE_STEP = FADE_STEPS["escapeMessage"]
 KEY_REPEAT_DELAY = 250     # ms before a held key starts repeating
@@ -354,7 +354,7 @@ class gameManager():
         self.aimLine = None
 
         self.messageBools = {"escapeMessage": False, "floorLevelMessage": False, "brokenSealMessage": False,
-                             "eventMessage": False, "schismMessage": False}
+                             "eventMessage": False}
         self.painter.fade = 255
 
         self.rotate = False
@@ -1508,6 +1508,9 @@ class gameManager():
             drops = [(m, n + extra if m == broken.ore else n) for m, n in drops]
         if player.hasEffect("gold_double"):
             drops = [(m, n * 2 if m == "gold" else n) for m, n in drops]
+        kind = getattr(broken, "corruptedBy", None)
+        if kind:  # a wall a plant had corrupted (Overgrowth): its herb too
+            drops = drops + [(plants.PLANTS[kind]["herb"], 1)]
         self.collectDrops(drops, name, position)
 
     def harvestPlant(self, position):
@@ -1534,6 +1537,7 @@ class gameManager():
             stacks, gold = self.killLoot(enemy, position), 0
         else:
             stacks, gold = self.spillPockets(enemy, killer)
+        stacks = list(stacks) + list(getattr(enemy, "loot", []))  # items it picked up (Expansion goblins) drop too
         underneath = self.enemyOccupiedItemSpaces.pop(position, None)  # what it was standing on, if anything
         if underneath is not None and (underneath[0] != 2 or not (stacks or gold)):  # a pile, chest or plant stays
             underneath[1] = tile[1]                          # (so does the wall round a burrower that left nothing)
@@ -1625,7 +1629,7 @@ class gameManager():
         drops = loot.rollWall(broken.name, 1)
         if isinstance(broken, wall.OreVein) and position in self.rooms["Gold"]:
             drops += loot.rollWall("Gold Wall", 1)
-        keep = rand.random() < POCKET_CHANCE
+        keep = rand.random() < POCKET_CHANCE or getattr(enemy, "faction", None) is not None  # Expansion squads keep it all to stash
         for materialId, amount in drops:
             if materialId == "gold" or keep:
                 self.pocket(enemy, materialId, amount)
@@ -2151,6 +2155,15 @@ class gameManager():
                 if p not in best or d < best[p]:
                     best[p], self.fireLight[p] = d, (fire, radius)
 
+    def torchSpotSeen(self, seen):
+        """The torchlit tile nearest you among the tiles in seen (what an enemy can see), or None. Enemies that see
+        your torchlight head for it; once they see you, they go for you (enemies with tremor sense don't do this)."""
+        lit = seen & getattr(self, "torchLight", set())
+        if not lit:
+            return None
+        R, here = self.rowLength, self.playerPositionFlat
+        return min(lit, key=lambda t: (t % R - here % R) ** 2 + (t // R - here // R) ** 2)
+
     def setPositionsVisible(self):
         visiblePositions = self.rayCircleVision(self.playerPositionFlat, self.player.getVisionRange(), 1)
         # what was in view last time goes back to remembered: just those tiles, unless this is a different floor
@@ -2175,9 +2188,14 @@ class gameManager():
             for position in self.EnemyPositions:
                 if position in self.grid and self.grid[position][0] == 5:
                     self.grid[position][1] = 1
+        # torchlight: with a torch in hand, the tiles you see by your own light are lit, and enemies can spot them
+        self.torchLight = set(visiblePositions) if self.player.holdingTorch() and not self.peaceful else set()
+        if getattr(self, "revealMap", False):  # developer console /reveal: the whole floor is in view
+            for tile in self.grid.values():
+                tile[1] = 1
         self.visibleGrid = self.grid  # (see the top of this function)
-        self.visibleTiles = [i for i in set(visiblePositions) | set(self.fireLight) | set(self.EnemyPositions)
-                             if self.grid.get(i, (None, 0))[1] == 1]
+        self.visibleTiles = list(self.grid) if getattr(self, "revealMap", False) else             [i for i in set(visiblePositions) | set(self.fireLight) | set(self.EnemyPositions)
+             if self.grid.get(i, (None, 0))[1] == 1]
         if self.player.seeDoor:
             self.grid[self.doorPositions[self.level]][1] = 2
             self.player.seeDoor = False
@@ -2879,8 +2897,11 @@ class gameManager():
                         currentEnemy.lastPlayerPosition = None
                     if not visiblePositions:
                         break
+                torchSpot = None if currentEnemy.tremorSense else self.torchSpotSeen(visiblePositions)
                 if self.playerPositionFlat in visiblePositions:
                     currentEnemy.lastPlayerPosition = self.playerPositionFlat
+                elif torchSpot is not None and currentEnemy.lastPlayerPosition != self.playerPositionFlat:
+                    currentEnemy.lastPlayerPosition = torchSpot  # it sees your torchlight: heads into the light
                 elif currentEnemy.lastPlayerPosition is None:
                     currentEnemy.lastPlayerPosition = rand.choice(list(visiblePositions))
 
@@ -3333,8 +3354,7 @@ class gameManager():
         messageKey, messageText = None, None
         messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"Floor {self.level}\n{self.floorSubtitle()}",
                         "brokenSealMessage": "The Seal is Broken",
-                        "eventMessage": events.name(self.activeEvent()) if self.activeEvent() else "",
-                        "schismMessage": "Schism\nThe expansion splits in two"}
+                        "eventMessage": events.name(self.activeEvent()) if self.activeEvent() else ""}
         for key, active in self.messageBools.items():
             if active:
                 messageKey, messageText = key, messageTexts[key]

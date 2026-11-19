@@ -176,6 +176,10 @@ class PlayerClass():
     def countEffect(self, tag):
         return self.effects().count(tag)
 
+    def holdingTorch(self):
+        """True with a Torch in hand: its light can be seen by enemies (see gameManager.torchLight)."""
+        return any(item != "None" and "Torch" in getattr(item, "name", "") for item in self.equipment.values())
+
     def getVisionRange(self):
         """How far the player sees: the base range, plus light in hand (a Torch), plus effects."""
         return self.visionRange + self.getequipmentBonus("Light") + self.countEffect("bright") + 3 * self.countEffect("far_sight")

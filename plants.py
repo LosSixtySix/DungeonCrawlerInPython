@@ -14,6 +14,11 @@ Growth works like Conway's Game of Life, with some randomness. Every GROW_TURNS 
     kind that takes it over around it is replaced by that kind with TAKEOVER_CHANCE, if the invader can grow
     on that floor. Tended plants hold their ground. The takeovers make loops (on Stone: Glowcap beats
     Bloodcap, Bloodcap beats Shadowfern, Shadowfern beats Glowcap), so no plant wins a floor for good.
+Corrupted walls (Overgrowth, see events.py): a wall with at least CORRUPT_NEIGHBORS of one kind around it
+(plants, or walls that kind already corrupted) can be corrupted by it, CORRUPT_CHANCE each growth step. A
+corrupted wall still blocks the way and sight, but it counts as a plant of its kind: plants sprout beside it and
+the corruption creeps on through the rock, so walls spread a plant instead of stopping it. Breaking one gives its
+herb too. Conway kinds (Organizer's Demise) never corrupt walls.
 Kinds marked "conway" follow Conway's rules exactly instead: born with exactly 3 neighbors, a wild one dies
 with fewer than 2 or more than 3. Kinds marked "wild": False never appear in wild patches.
 A plant tile is [8, visibility, Plant]. Each kind says whether it can be walked through ("walkable", by
@@ -62,6 +67,8 @@ TAKES_OVER = {                     # kind -> the kinds it takes over
 TAKEOVER_NEIGHBORS = 2             # invaders needed around a plant to take it over
 TAKEOVER_CHANCE = 0.35
 MAX_PLANTS = 160                   # a floor stops growing new plants past this many
+CORRUPT_NEIGHBORS = 2              # plants (or corrupted walls) of a kind around a wall for it to corrupt it
+CORRUPT_CHANCE = 0.15              # each growth step, while corruption is on (Overgrowth)
 SEED_CHANCE = 35                   # percent chance a harvest also gives a seed
 WILD_PATCHES = 4                   # wild patches on a new floor (per 10,000 tiles), 3-6 plants each
 MIN_PATCHES = 3                    # every floor gets at least this many
@@ -124,14 +131,29 @@ def around(i, rowLength, grid):
     return out
 
 
-def step(grid, rooms, rowLength, birth=1.0, death=DEATH_CHANCE, maxPlants=MAX_PLANTS, **_):
+def corruptedBy(tile):
+    """The plant kind a wall tile is corrupted by, or None."""
+    return getattr(tile[2], "corruptedBy", None) if tile[0] == 2 and len(tile) > 2 else None
+
+
+def step(grid, rooms, rowLength, birth=1.0, death=DEATH_CHANCE, maxPlants=MAX_PLANTS, corrupt=False, **_):
     """One growth step for the whole floor. Returns True if anything changed. A floor event can make births
-    more likely (birth), withering less likely (death) and raise the cap (maxPlants); see events.py."""
+    more likely (birth), withering less likely (death), raise the cap (maxPlants) and let plants corrupt walls
+    (corrupt); see events.py. Walls already corrupted count as plants of their kind either way."""
     plantsHere = {i: tile[2] for i, tile in grid.items() if tile[0] == 8}
+    corrupted = {i: corruptedBy(tile) for i, tile in grid.items() if corruptedBy(tile)}
     counts = {}  # (tile, kind) -> neighbors of that kind
-    for i, plant in plantsHere.items():
+    for i, kind in [(i, p.kind) for i, p in plantsHere.items()] + list(corrupted.items()):
         for j in around(i, rowLength, grid):
-            counts[(j, plant.kind)] = counts.get((j, plant.kind), 0) + 1
+            counts[(j, kind)] = counts.get((j, kind), 0) + 1
+    newlyCorrupted = {}
+    if corrupt:
+        for (j, kind), n in counts.items():
+            if n >= CORRUPT_NEIGHBORS and not isConway(kind) and grid[j][0] == 2 and j not in corrupted \
+                    and j not in newlyCorrupted and random.random() < CORRUPT_CHANCE:
+                newlyCorrupted[j] = kind
+        for j, kind in newlyCorrupted.items():
+            grid[j][2].corruptedBy = kind
     births, deaths = {}, []
     room = maxPlants - len(plantsHere)
     for (j, kind), n in counts.items():
@@ -159,7 +181,7 @@ def step(grid, rooms, rowLength, birth=1.0, death=DEATH_CHANCE, maxPlants=MAX_PL
         grid[j] = [8, grid[j][1], Plant(kind)]
     for i in deaths:
         grid[i] = [0, grid[i][1]]
-    return bool(births or deaths or takeovers)
+    return bool(births or deaths or takeovers or newlyCorrupted)
 
 
 def growPatch(grid, rooms, rowLength, start, kind, avoid=()):

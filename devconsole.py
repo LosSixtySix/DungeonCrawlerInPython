@@ -73,13 +73,15 @@ class DevConsole():
             "items": (self.cmdItems, "/items [filter]", "Lists every item id, or only those matching filter"),
             "enemy": (self.cmdEnemy, "/enemy", "Lists every kind of enemy and its id. Also /enemies"),
             "peaceful": (self.cmdPeaceful, "/peaceful [on|off]", "Enemies ignore you and never attack (toggles with no word)"),
+            "reveal": (self.cmdReveal, "/reveal [on|off]", "See the whole floor, enemies included (toggles with no word)"),
             "events": (self.cmdEvents, "/events", "Lists the floor events and this floor's event, if any"),
             "event": (self.cmdEvent, "/event <id>", "Starts a floor event now (ids: /events)"),
             "orefloor": (self.cmdOreFloor, "/orefloor <type> [mother]", "Makes the next new floor an ore floor (types: /orefloor)"),
             "clear": (self.cmdClear, "/clear", "Clears the console"),
         }
-        self.aliases = {"additem": "give", "add": "give", "enemies": "enemy", "item": "items", "aggro": "peaceful", "?": "help"}
+        self.aliases = {"additem": "give", "add": "give", "enemies": "enemy", "item": "items", "aggro": "peaceful", "map": "reveal", "seeall": "reveal", "?": "help"}
         self.arguments = {"give": lambda: list(itemCatalog()), "peaceful": lambda: ["on", "off"],
+                          "reveal": lambda: ["on", "off"],
                           "event": lambda: list(events.EVENTS),
                           "orefloor": lambda: list(oreFloorIds())}  # what autofill offers
         self.write("info", "Developer console. Type /help for the commands")
@@ -331,6 +333,19 @@ class DevConsole():
         motherlode = len(args) > 1 and args[1].lower() in ("mother", "motherlode")
         self.gm.forcedOreFloor = (name, motherlode)
         self.write("good", f"The next new floor will be {'a Motherlode ' if motherlode else ''}{name}. Take the stairs down")
+
+    def cmdReveal(self, args):
+        gm = self.gm
+        if args and args[0].lower() in ("on", "off"):
+            gm.revealMap = args[0].lower() == "on"
+        elif args:
+            self.write("error", "Usage: /reveal [on|off]")
+            return
+        else:
+            gm.revealMap = not getattr(gm, "revealMap", False)
+        gm.setPositionsVisible()
+        gm.change = True
+        self.write("good", "Whole floor revealed" if gm.revealMap else "Back to your own sight (what you saw stays remembered)")
 
     def cmdClear(self, _args):
         self.log = []
