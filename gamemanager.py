@@ -1453,7 +1453,7 @@ class gameManager():
             if self.playerHidden() and not hidden:
                 self.addPopup("Hidden", newPosition)
             return
-        if targetLocation not in (7, 8) and self.player.checkValidMoveLocation(targetLocation):  # stations and other plants block
+        if targetLocation not in (7, 8, expansion.CAMP) and self.player.checkValidMoveLocation(targetLocation):  # stations, other plants and camp pieces block
             self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
             self.currentLocation = copy.copy(self.grid[newPosition])
             self.playerPositionFlat = newPosition

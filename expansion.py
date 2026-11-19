@@ -41,8 +41,9 @@ all belong to it. Goblins that were already on the floor are "wild" (no faction)
                   factions, any other enemy). With nothing to fight they go on gathering missions: the chief leads
                   them to a random spot anywhere on the floor (at least MISSION_MIN from home) and back, and they
                   gather whatever they pass, there and back. Back home they stash what they brought.
-  Schisms         a faction with SPLIT_UNITS goblins (and SPLIT_BUILDERS builders) splits: half its squads,
-                  builders and farmers become a new faction in new colors and march off to set up a camp at least
+  Schisms         a faction with SPLIT_UNITS goblins (and SPLIT_BUILDERS builders and SPLIT_FARMERS farmers)
+                  splits: half its squads, builders and farmers become a new faction in new colors, taking half its
+                  stored food (up to SCHISM_FOOD) and, for their farmers, seeds from its war chests, and march off to set up a camp at least
                   SCHISM_DISTANCE from every bonfire. Huts, chests and plots stay. The two are at peace until the
                   new camp's first bonfire is lit (SCHISM_PEACE turns at most), then at war. A faction has no
                   schism within SCHISM_COOLDOWN turns of its last one, or of being made.
@@ -84,6 +85,7 @@ SPAWNER_TURNS = 8           # ...to build a spawner
 BUILDER_REST = (10, 20)
 BREAK_DAMAGE = 40           # a builder's hit on a wall in its way (one hit for any plain wall)
 BONFIRE_REACH = 12          # huts go 4 to this many tiles from a bonfire
+BONFIRE_GIVE_UP = 80        # a builder that hasn't reached the spot for a new bonfire after this many turns gives it up
 HOME_REACH = 30             # a builder further than this from all its faction's bonfires lights one where it is
 HUT_DISTANCE = (4, 12)
 NEW_BONFIRE_DISTANCE = (13, 18)
@@ -123,8 +125,12 @@ CHEST_HP = 12               # hits (of a goblin's damage) to smash one open
 CHEST_SPOT = (2, 4)         # a warcamp chest goes this many tiles from its bonfire
 RAID_REACH = 60             # squads raid another faction's chests this close to their own bonfire
 
-SPLIT_UNITS = 40            # a faction with this many goblins (builders and farmers too)...
-SPLIT_BUILDERS = 2          # ...and at least this many builders (so both halves can build) has a schism
+SPLIT_UNITS = 25            # a faction with this many goblins (builders and farmers too)...
+SPLIT_BUILDERS = 2          # ...and at least this many builders (so both halves can build)...
+SPLIT_FARMERS = 2           # ...and farmers (so both halves can farm) has a schism
+SCHISM_FOOD = 30            # the half that leaves takes half the faction's stored food along, at most this much
+HUT_SPAWNS = 2              # a faction starts a new spawner hut only once each of its spawner huts has made this many goblins
+MAX_STORAGE_HUTS = 3        # a faction has at most this many storage huts
 SPLIT_CHECK_TURNS = 10
 SCHISM_DISTANCE = 45        # the half that leaves makes its camp at least this far from every faction's bonfires
 SCHISM_PEACE = 400          # the two are at peace until its first bonfire is lit, or for this many turns at most
@@ -563,6 +569,8 @@ def takeTurn(gm, i, unit, ctx):
     foe = adjacentFoe(gm, i, unit)
     if foe:
         attack(gm, i, unit, *foe)
+        if slotsUsed(unit) > CARRY_SLOTS:  # a kill's spoils (and meat) can overfill its pockets
+            dropExtra(gm, unit, i)
         return i
     if unit.name == "Goblin Builder":
         position = builderTurn(gm, i, unit, ctx)
@@ -1304,6 +1312,12 @@ def planTask(gm, i, b, f):
                 or (getattr(owner, "task", None) or {}).get("hut") is not hut:
             hut["builder"] = b
             return {"kind": "hut", "hut": hut}
+    count = lambda k: sum(1 for h in f.huts if h.get("kind", "hut") == k)
+    kind = "storage" if needStorage and count("storage") < MAX_STORAGE_HUTS else "hut"
+    if kind == "hut" and any(h.get("spawned", 0) < HUT_SPAWNS for h in f.huts if h.get("kind", "hut") == "hut"):
+        # a spawner hut that hasn't made HUT_SPAWNS goblins yet: no new one. Help with one that's being built, if any.
+        building = next((h for h in f.huts if not h["done"]), None)
+        return {"kind": "hut", "hut": building} if building is not None else None
     claimed = claimedTiles(gm)
     sites = []
     reach = HUT_DISTANCE[1]
@@ -1315,7 +1329,7 @@ def planTask(gm, i, b, f):
                 continue
             if len(sites) >= 12:
                 break
-            hut = layOutHut(gm, center, claimed, "storage" if needStorage else "hut")
+            hut = layOutHut(gm, center, claimed, kind)
             if hut is None:
                 continue
             enemyBonfire = nearestEnemyBonfire(gm, f, center)
@@ -1427,6 +1441,8 @@ def buildBonfire(gm, i, b, f, task, ctx):
         return i
     position, there = goNextTo(gm, i, b, at, f, ctx)
     if not there:
+        if tooLong(gm, b, at, BONFIRE_GIVE_UP):  # it can't get there: pick something else (another spot, or feeding)
+            b.task = None
         return position
     if work(f, ("bonfire", at), BONFIRE_TURNS):
         place(gm, at, Structure("bonfire", f.id))
@@ -1551,6 +1567,8 @@ def buildHut(gm, i, b, f, task, ctx):
             return position
         if there and gm.grid[t][0] != 0:  # one of its own goblins standing there: shoo it
             return makeWay(gm, ctx, i, t, f)
+        if there and wouldTrap(gm, t):  # it would shut someone (maybe itself) in: step away and let them out first
+            return organizers.wander(gm, i)
         if there and work(hut, ("wall", t), WALL_TURNS):
             gm.grid[t] = [2, gm.grid[t][1], gm.createWall(t, gm.rooms)]
             paintHutWall(gm, hut, t, f.look)
@@ -1600,7 +1618,8 @@ STILL_LIFES = {
     "loaf": [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)],
 }
 FARM_PLOTS = 2              # plots one farmer looks after
-HUTS_PER_FARMER = 4         # a faction has at most 1 farmer, plus 1 for every this many finished huts
+BASE_FARMERS = SPLIT_FARMERS  # a faction has at most this many farmers (enough for a schism, whatever its size)...
+HUTS_PER_FARMER = 4         # ...plus 1 for every this many finished huts
 FARM_DISTANCE = (3, 14)     # a plot goes this far from one of its faction's bonfires
 FARM_EDGE = 2               # it weeds this many tiles round the plot (the crop is on the first ring)
 PLANT_TURNS = 1             # a farmer's turns to plant a seed
@@ -1891,11 +1910,25 @@ def buildChests(gm, i, b, f, hut, ctx):
     position, there = goNextTo(gm, i, b, t, f, ctx)
     if there and gm.grid[t][0] != 0:  # one of its own goblins standing there: shoo it
         return makeWay(gm, ctx, i, t, f)
+    if there and wouldTrap(gm, t):  # it would shut someone (maybe itself) in: step away and let them out first
+        return organizers.wander(gm, i)
     if there and work(hut, ("chest", t), CHEST_TURNS):
         gm.grid[t] = [3, gm.grid[t][1], CampChest(f.id, f.look)]
         chests(gm, f).add(t)
         gm.change = True
     return position
+
+
+def wouldTrap(gm, t):
+    """Would filling tile t box in a goblin standing beside it (no way out but t: walls, chests and camp pieces all
+    round)? Other goblins round it count as a way out, since they move."""
+    for n in gm.neighbors(t):
+        if gm.grid[n][0] != 5:
+            continue
+        if not any(m != t and (organizers.passable(gm.grid[m], demise=False) or gm.grid[m][0] == 5)
+                   for m in gm.neighbors(n)):
+            return True
+    return False
 
 
 def storageChests(gm, f):
@@ -2047,7 +2080,8 @@ def schism(gm, f, units):
     farmers = [u for _, u in units if u.name == "Goblin Farmer"]
     rand.shuffle(builders)
     rand.shuffle(farmers)
-    goers = [m for s in leaving for m in s.members if m.hp > 0] + builders[:len(builders) // 2] + farmers[:len(farmers) // 2]
+    goers = [m for s in leaving for m in s.members if m.hp > 0] + builders[:max(1, len(builders) // 2)] + \
+        farmers[:max(1, len(farmers) // 2)]
     where = {id(u): p for p, u in units}
     start = next((where[id(u)] for u in goers if id(u) in where), None)
     if start is None:
@@ -2069,7 +2103,43 @@ def schism(gm, f, units):
     for p in farms(f):
         if p.get("farmer") in goers:
             p["farmer"] = None
+    packUp(gm, f, goers)
     gm.change = True
+
+
+def packUp(gm, f, goers):
+    """Before a schism's half leaves, it takes half of f's stored food (up to SCHISM_FOOD), shared out among its
+    pockets, and each of its farmers tops up its seeds of one kind (up to FARMER_START_SEEDS) from f's war chests."""
+    stock = chestStock(gm, f)
+    left = min(SCHISM_FOOD, sum(stock.get(m, 0) for m in FOOD) // 2)
+    for c in list(chests(gm, f)):
+        for it in list(chestAt(gm, c)):
+            if left <= 0:
+                break
+            if not isinstance(it, resources.MaterialStack) or it.materialId not in FOOD:
+                continue
+            for u in goers:
+                n = min(left, it.amount, fitAmount(u, it.materialId))
+                if n > 0:
+                    withdraw(gm, c, u, it.materialId, n)
+                    left -= n
+                if left <= 0 or it.amount <= 0:
+                    break
+    for u in goers:
+        if u.name != "Goblin Farmer":
+            continue
+        stock = chestStock(gm, f)
+        seeds = [seedOf(k) for k in FARM_KINDS]
+        mine = max(seeds, key=lambda s: u.materials.get(s, 0) * 1000 + stock.get(s, 0))  # what it has most of
+        want = FARMER_START_SEEDS - u.materials.get(mine, 0)
+        for c in list(chests(gm, f)):
+            if want <= 0:
+                break
+            have = sum(it.amount for it in chestAt(gm, c) if isinstance(it, resources.MaterialStack) and it.materialId == mine)
+            if have:
+                n = min(want, have, fitAmount(u, mine))
+                withdraw(gm, c, u, mine, n)
+                want -= n
 
 
 def farAway(gm, start):
@@ -2140,8 +2210,15 @@ def stepCamp(gm):
     state = camp(gm)
     if not state["factions"]:
         return
+    for f in state["factions"].values():  # pieces that fell off the list (saves from before you couldn't stand on them)
+        for t in f.bonfires + [h["center"] for h in f.huts]:
+            tile = gm.grid.get(t)
+            if tile and tile[0] == CAMP:
+                state["structures"].add(t)
     for t in list(state["structures"]):
         tile = gm.grid.get(t)
+        if tile and tile[0] == 1 and t == gm.playerPositionFlat and gm.currentLocation[0] == CAMP:
+            continue  # you're standing on it (you got put there somehow): it's still there under you
         if not tile or tile[0] != CAMP:
             state["structures"].discard(t)
             continue
@@ -2169,7 +2246,8 @@ def stepCamp(gm):
             if gm.turnCount - f.__dict__.setdefault("lastSchism", gm.turnCount) < SCHISM_COOLDOWN:
                 continue
             units = factionUnits(gm, f)
-            if len(units) >= SPLIT_UNITS and sum(u.name == "Goblin Builder" for _, u in units) >= SPLIT_BUILDERS:
+            if len(units) >= SPLIT_UNITS and sum(u.name == "Goblin Builder" for _, u in units) >= SPLIT_BUILDERS \
+                    and sum(u.name == "Goblin Farmer" for _, u in units) >= SPLIT_FARMERS:
                 schism(gm, f, units)
 
 
@@ -2192,8 +2270,10 @@ def stepSpawner(gm, t, s):
             kind = name
             break
         roll -= chance
-    if kind == "Goblin Farmer" and farmerCount(gm, f) >= 1 + finishedHuts(f) // HUTS_PER_FARMER:
+    if kind == "Goblin Farmer" and farmerCount(gm, f) >= BASE_FARMERS + finishedHuts(f) // HUTS_PER_FARMER:
         kind = "Goblin"  # enough farmers for a camp this size
+    if hut is not None:
+        hut["spawned"] = hut.get("spawned", 0) + 1  # (kept on the hut, so a rebuilt spawner doesn't start over)
     spawn(gm, rand.choice(free), kind, f)
 
 
