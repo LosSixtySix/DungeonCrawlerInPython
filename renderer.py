@@ -227,7 +227,8 @@ class renderer():
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
-             console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None):
+             console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None,
+             memoryFalloff=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -249,6 +250,7 @@ class renderer():
         self.lightStyleNow = lightStyle  # fires sway the same way (see fireLevel)
         self.fireLight = fireLight or {}
         self.memoryFade = memoryFade or {}  # remembered tile -> how far it has faded to black, 0..1
+        self.memoryFalloff = memoryFalloff  # (radius, curve, door darkest) for drawMemoryFalloff, or None
         self.smokeHere = smoke or {}  # Smoke Bomb smoke: whoever stands in it isn't drawn
         light = self.lightShape(lightTime, lightStyle)
         if getattr(self, "drawnGrid", None) is not grid:  # a different floor (or the first frame): start over
@@ -275,6 +277,7 @@ class renderer():
         self.drawAimline(aimLine)
         self.aimDrawn = set(aimLine or ())
         self.win.blit(self.mapSurface, self.mapOffset)
+        self.drawMemoryFalloff(grid, playerPosition, self.aimDrawn)
         if throws is not None:
             self.drawThrows(throws)
 
@@ -1582,6 +1585,9 @@ class renderer():
         memorized = grid[i][1] == 2
         x = i % self.rowLength
         y = i // self.rowLength
+        if lighting is not None and lighting[0] == "fade" and lighting[1] >= 1:  # faded all the way: just the dark
+            self.fillTile(self.color("fog"), x, y)
+            return
         self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
         # Dithered light only on tiles in view (remembered tiles stay as they are). The player, enemies,
         # chests and the door back up are never dithered so they stand out; pits are part of the floor, so they are.
@@ -1594,6 +1600,42 @@ class renderer():
                 self.mapSurface.blit(self.fireTint(alpha), (x * ts, y * ts))
             if level is not None and self.shades:
                 self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
+
+    def drawMemoryFalloff(self, grid, playerPosition, keep):
+        """Darkens remembered tiles near you by distance: (distance / radius) ** curve, a door no darker than
+        its cap. Drawn as one small see-through layer over the map every frame, so moving never repaints the
+        tiles themselves. Tiles past the radius are already black in the map (gameManager.memoryShades). Tiles
+        in keep (the aim line) are left alone."""
+        if not self.memoryFalloff:
+            return
+        radius, curve, doorMost = self.memoryFalloff
+        ts, R = self.tileSize, self.rowLength
+        px, py = playerPosition % R, playerPosition // R
+        size = (2 * radius + 1) * ts
+        layer = getattr(self, "falloffLayer", None)
+        if layer is None or layer.get_width() != size:
+            layer = self.falloffLayer = pygame.Surface((size, size), pygame.SRCALPHA)
+        layer.fill((0, 0, 0, 0))
+        fog = tuple(self.color("fog"))[:3]
+        edge, half = radius * radius, curve / 2
+        for dy in range(-radius, radius + 1):
+            row = (py + dy) * R
+            for dx in range(-radius, radius + 1):
+                d2 = dx * dx + dy * dy
+                x = px + dx
+                if d2 == 0 or d2 >= edge or not 0 <= x < R:
+                    continue
+                i = row + x
+                tile = grid.get(i)
+                if tile is None or tile[1] != 2 or i in keep:
+                    continue
+                shade = (d2 / edge) ** half
+                if tile[0] in (4, 6):
+                    shade = min(shade, doorMost)
+                alpha = int(255 * shade)
+                if alpha:
+                    layer.fill((*fog, alpha), pygame.Rect((dx + radius) * ts, (dy + radius) * ts, ts, ts))
+        self.win.blit(layer, (self.mapOffset[0] + (px - radius) * ts, self.mapOffset[1] + (py - radius) * ts))
 
     def forgetShade(self, amount):
         """A tile-sized sheet of the fog color, amount (0..1) opaque: laid over a remembered tile as it fades

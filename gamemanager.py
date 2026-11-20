@@ -88,8 +88,12 @@ INVENTORY_COLUMNS = 5
 # Remembered tiles fade: one more than FORGET_DISTANCE tiles from you gets a little darker every turn, and after
 # FORGET_TURNS turns it's black again (forgotten: unseen, as if you'd never been there). Seeing it again brings it
 # back. Doors aren't forgotten. Close by (within FORGET_DISTANCE), a fading tile holds where it is.
+# On top of that, remembered tiles darken with distance from you: (distance / FORGET_DISTANCE) ** FORGET_CURVE,
+# so nearby ones look about the same and they're black at FORGET_DISTANCE. Doors darken only to DOOR_SHADE_MOST.
 FORGET_DISTANCE = 10
 FORGET_TURNS = 50
+FORGET_CURVE = 2  # higher keeps nearby remembered tiles bright for longer before the falloff
+DOOR_SHADE_MOST = 0.45  # doors are never forgotten: they take the same falloff, but never get darker than this
 # Each new floor picks one of these as its chance that any given tile starts as a wall (0.15 open to 0.75 dense)
 WALL_DENSITIES = [round(0.15 + 0.05 * step, 2) for step in range(13)]
 INVENTORY_ROWS = 2  # rows the Inventory window shows; a Backpack's row is reached by arrowing down (it scrolls)
@@ -2980,6 +2984,32 @@ class gameManager():
                 fading[i] = turns
             self.change = True
 
+    def memoryShades(self):
+        """How dark each remembered tile is painted into the map, 0..1. Past FORGET_DISTANCE that's black (a door
+        only to DOOR_SHADE_MOST); closer in, it's how far the tile has faded over time. The smooth falloff inside
+        FORGET_DISTANCE isn't painted into tiles (every step would repaint hundreds of them): the renderer lays it
+        over the map instead (renderer.drawMemoryFalloff). Worked out again only when you move, a turn passes, or
+        the floor changes."""
+        fading = self.fadingHere()
+        key = (id(self.grid), self.level, self.playerPositionFlat, self.turnCount, len(fading))
+        cached = getattr(self, "shadeCache", None)
+        if cached and cached[0] == key:
+            return cached[1]
+        R, here = self.rowLength, self.playerPositionFlat
+        hx, hy = here % R, here // R
+        edge = FORGET_DISTANCE * FORGET_DISTANCE
+        shades = {}
+        for i, tile in self.grid.items():
+            if tile[1] != 2:
+                continue
+            door = tile[0] in (4, 6)
+            if (i % R - hx) ** 2 + (i // R - hy) ** 2 >= edge:
+                shades[i] = DOOR_SHADE_MOST if door else 1.0
+            elif not door and i in fading:
+                shades[i] = fading[i] / FORGET_TURNS
+        self.shadeCache = (key, shades)
+        return shades
+
     def stepSmoke(self):
         for position in list(self.smoke):
             self.smoke[position] -= 1
@@ -3639,7 +3669,7 @@ class gameManager():
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly, overlayOnly=overlayOnly,
             fireLight=getattr(self, "fireLight", {}),
-            memoryFade={i: turns / FORGET_TURNS for i, turns in self.fadingHere().items()},
+            memoryFade=self.memoryShades(), memoryFalloff=(FORGET_DISTANCE, FORGET_CURVE, DOOR_SHADE_MOST),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
             smoke=self.smoke,
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])

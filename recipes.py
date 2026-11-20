@@ -371,17 +371,37 @@ SALVAGE_PER_INT = 0.5    # more percent per point of Intelligence above 1
 SALVAGE_MOST = 75        # never more than this
 RECIPES_BY_ID = {r.id: r for r in RECIPES}
 
+# Found gear (chests, goblin drops, your starting pick) was never crafted, so it has no recipe to take apart by.
+# These stand in for one: what it's worth in materials, taken apart at the Workbench for the usual salvage share.
+# They're only in RECIPES_BY_ID, so they never show up as something to make.
+FOUND_SALVAGE = {  # item name -> (turns, materials it's worth)
+    "Worn Pick-Axe": (2, {"scrap": 2, "handle": 1}),
+    "Rusty Sword": (2, {"scrap": 4, "handle": 1}),
+    "Pick-Axe": (2, {"scrap": 4, "handle": 1}),
+    "Simple Shield": (2, {"wood": 5, "scrap": 2}),
+    "Sword": (4, {"iron_ingot": 3, "handle": 1}),
+    "Steel Pick-Axe": (4, {"iron_ingot": 3, "handle": 1}),
+    "Tear Sheild": (4, {"iron_ingot": 3, "wood": 2}),
+    "War Pick": (4, {"iron_ingot": 2, "copper_ingot": 1, "handle": 1}),
+}
+for _name, (_turns, _needs) in FOUND_SALVAGE.items():
+    _found = Recipe("found_" + _name.lower().replace(" ", "_").replace("-", "_"), _name, "workbench", _turns, _needs,
+                    "found", "Found gear.", "")
+    RECIPES_BY_ID[_found.id] = _found
+
 
 def salvagePercent(intelligence):
     return min(SALVAGE_MOST, SALVAGE_BASE + SALVAGE_PER_INT * max(0, intelligence - 1))
 
 
 def recipeFor(item):
-    """The recipe an item was made from, or None. Items made before recipes were recorded on them (and found
-    items that share a recipe's name) are matched by name."""
+    """The recipe an item was made from, or None. Found gear uses its FOUND_SALVAGE stand-in. Items made before
+    recipes were recorded on them are matched by name."""
     recipe = RECIPES_BY_ID.get(getattr(item, "recipeId", None))
     if recipe is not None:
         return recipe
+    if not hasattr(item, "baseName") and item.name in FOUND_SALVAGE:  # (crafted gear always has a baseName)
+        return RECIPES_BY_ID["found_" + item.name.lower().replace(" ", "_").replace("-", "_")]
     name = getattr(item, "baseName", item.name)
     return next((r for r in RECIPES if r.kind in ("item", "potion") and r.name == name), None)
 
