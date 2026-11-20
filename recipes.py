@@ -175,6 +175,7 @@ def gear(etype, name, slot, scaling="strength"):
 
 
 BACKPACK_SLOTS = 5  # one more row of the Inventory window
+POTION_BELT_STACK = 5  # how many of the same potion share an inventory slot while a Potion Belt is worn
 FIRE_FLASK_DAMAGE = 5
 SMOKE_TURNS = 12  # a Smoke Bomb's cloud lingers this long (it thins out over its last SMOKE_THIN_TURNS)
 DEMISE_FLASK_DAMAGE = 5
@@ -204,6 +205,11 @@ RECIPES = [
     Recipe("backpack", "Backpack", "workbench", 3, {"hide": 6, "wood": 2}, "item",
            "Worn on your back. Another row of inventory; arrow down to reach it.", "Back  Inventory +5",
            makeItem=lambda b, b2: items.equipment("Storage", "Backpack", "Back", BACKPACK_SLOTS)),
+    # Like the Backpack, quality only names it: every Potion Belt stacks potions to POTION_BELT_STACK
+    Recipe("potion_belt", "Potion Belt", "workbench", 2, {"hide": 4, "bone": 2}, "item",
+           f"A leather belt lined with vial loops. Up to {POTION_BELT_STACK} of the same potion share one inventory slot.",
+           f"Belt  Potions stack to {POTION_BELT_STACK}",
+           makeItem=lambda b, b2: items.equipment("PotionStack", "Potion Belt", "Belt", POTION_BELT_STACK)),
     Recipe("cooking_pot", "Cooking Pot", "workbench", 3, {"stone": 6, "wood": 3}, "station",
            "A stone pot that sits on a few coals. Cooks meat, alone or with herbs.", "Unlocks the Cooking Pot", makes="cooking_pot"),
     *[Recipe(mealId, name, "cooking_pot", turns, needs, "potion", description, mealResult(heal, buffs),

@@ -3,16 +3,35 @@ import resources
 import relics
 import random
 import math
+import copy
 
 BASE_INVENTORY = 10        # inventory slots with nothing on your back (a Backpack's Storage bonus adds to it)
 EXTRA_HAND = "Third Hand"  # the hand slot a Discarded Vestigial Hand (the "extra_hand" effect) gives
-# The order the Equipment window lists slots in. Back and Third Hand are also added to old saves (syncSlots).
-SLOT_ORDER = ["Head", "Neck", "Back", "Chest", "Gloves", "Right Hand", "Left Hand", EXTRA_HAND, "Legs", "Feet"]
+# The order the Equipment window lists slots in. Back, Belt and Third Hand are also added to old saves (syncSlots).
+SLOT_ORDER = ["Head", "Neck", "Back", "Chest", "Belt", "Gloves", "Right Hand", "Left Hand", EXTRA_HAND, "Legs", "Feet"]
 
 
 def storageOf(item):
     """How many inventory slots an item adds while worn (a Backpack's Storage bonus)."""
     return item.bonus if item != "None" and item.Etype == "Storage" else 0
+
+
+POTION_STACK = "PotionStack"  # Etype of a Potion Belt: its bonus is how many of one potion share an inventory slot
+
+
+def isPotion(item):
+    """True for a potion, flask or bomb (a consumable that isn't a meal): what a Potion Belt can stack."""
+    return item != "None" and item.Etype == "Consume" and item.effect != "Meal"
+
+
+def countOf(item):
+    """How many potions an inventory slot holds (1 for anything that isn't a stack)."""
+    return getattr(item, "count", 1)
+
+
+def sameStack(a, b):
+    """True if two potions are alike enough to share a slot."""
+    return isPotion(a) and isPotion(b) and (a.name, a.effect, a.bonus, a.attributeScaling) ==         (b.name, b.effect, b.bonus, b.attributeScaling)
 
 
 def grants(item, tag):
@@ -81,14 +100,14 @@ class PlayerClass():
             match item.effect:
                 case "Heal":  # can't heal past full health
                     self.damageTaken = max(0, self.damageTaken - (item.bonus + self.attributeBonuses[item.attributeScaling]))
-                    self.inventory.pop(inventorySlot)
+                    self.takeOne(inventorySlot)
                     self.actionMade = True
                 case "Meal":
-                    self.inventory.pop(inventorySlot)
+                    self.takeOne(inventorySlot)
                     self.actionMade = True
                     self.eat(item)
                 case "DoorLocate":
-                    self.inventory.pop(inventorySlot)
+                    self.takeOne(inventorySlot)
                     self.actionMade = True
                     self.seeDoor = True
     
@@ -112,10 +131,11 @@ class PlayerClass():
         return [item.slot] if item.slot in self.equipment else []
 
     def syncSlots(self):
-        """Keeps the slots in step with what's worn: the Back slot (old saves didn't have it), the Third Hand
+        """Keeps the slots in step with what's worn: the Back and Belt slots (old saves didn't have them), the Third Hand
         while something gives "extra_hand", and the inventory's size from the Backpack's Storage."""
         equipment = dict(self.equipment)
         equipment.setdefault("Back", "None")
+        equipment.setdefault("Belt", "None")
         if any(grants(item, "extra_hand") for item in equipment.values()):
             equipment.setdefault(EXTRA_HAND, "None")
         elif equipment.get(EXTRA_HAND, "None") == "None":  # a held one is left for overflow to spill
@@ -126,14 +146,16 @@ class PlayerClass():
         self.inventoryLimit = BASE_INVENTORY + sum(storageOf(item) for item in ordered.values())
 
     def sheds(self, item):
-        """True if taking this item off takes slots away with it: a Backpack (its row) or the Vestigial Hand
-        (its Third Hand). Whatever is in those spills onto the ground instead of stopping you."""
-        return storageOf(item) > 0 or grants(item, "extra_hand")
+        """True if taking this item off takes room away with it: a Backpack (its row), the Vestigial Hand (its
+        Third Hand) or a Potion Belt (its stacks). Whatever no longer fits spills onto the ground instead of
+        stopping you."""
+        return storageOf(item) > 0 or grants(item, "extra_hand") or (item != "None" and item.Etype == POTION_STACK)
 
     def overflow(self):
-        """After a Backpack or Vestigial Hand comes off: takes out whatever no longer has a slot and returns it
-        for the ground. Items past the end of the smaller inventory spill; what the Third Hand held goes in the
-        inventory if there's room, otherwise it spills too."""
+        """After a Backpack, Vestigial Hand or Potion Belt comes off: takes out whatever no longer has a slot and
+        returns it for the ground. Items past the end of the smaller inventory spill; what the Third Hand held
+        goes in the inventory if there's room, otherwise it spills too; potions past the stack limit are split
+        into their own slots, and those that don't fit spill."""
         spilled = []
         if len(self.inventory) > self.inventoryLimit:
             spilled += self.inventory[self.inventoryLimit:]
@@ -145,6 +167,16 @@ class PlayerClass():
                     self.burrow = False
                 if not self.addItemToInventory(held):
                     spilled.append(held)
+        limit, extras = self.potionStackLimit(), []
+        for held in self.inventory:  # a Potion Belt came off: stacks bigger than the new limit come apart
+            while countOf(held) > limit:
+                held.count -= 1
+                one = copy.copy(held)
+                one.count = 1
+                extras.append(one)
+        for one in extras:
+            if not self.addItemToInventory(one):
+                spilled.append(one)
         return spilled
 
     def freeSlotFor(self, item):
@@ -316,10 +348,42 @@ class PlayerClass():
         self.gold += amount 
 
     def addItemToInventory(self,item):
+        """Puts an item in the inventory: a potion goes onto a stack of the same potion if one has room (see
+        potionStackLimit), anything else into a free slot. Returns False if there's no room."""
+        if isPotion(item):
+            limit = self.potionStackLimit()
+            for held in self.inventory:
+                if sameStack(held, item) and countOf(held) < limit:
+                    held.count = countOf(held) + 1
+                    return True
+            item = copy.copy(item)  # its own object, so the stack's count isn't shared with anything else
+            item.count = 1
         if len(self.inventory) < self.inventoryLimit:
             self.inventory.append(item)
             return True
         return False
+
+    def potionStackLimit(self):
+        """How many of the same potion fit in one inventory slot: 1, or a worn Potion Belt's bonus."""
+        return max([1] + [item.bonus for item in self.equipment.values() if item != "None" and item.Etype == POTION_STACK])
+
+    def roomFor(self, item):
+        """How many more of this item the inventory could take (stacks with room count for potions)."""
+        free = max(0, self.inventoryLimit - len(self.inventory))
+        if not isPotion(item):
+            return free
+        limit = self.potionStackLimit()
+        return free * limit + sum(limit - countOf(held) for held in self.inventory if sameStack(held, item) and countOf(held) < limit)
+
+    def takeOne(self, index):
+        """Takes one item out of inventory slot index: one potion off a stack, or the whole slot otherwise."""
+        held = self.inventory[index]
+        if countOf(held) > 1:
+            held.count -= 1
+            one = copy.copy(held)
+            one.count = 1
+            return one
+        return self.inventory.pop(index)
 
     def takeDamage(self,damage):
         self.damageTaken += damage - self.damageReduction()

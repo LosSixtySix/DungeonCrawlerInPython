@@ -15,6 +15,7 @@ The valid slot types are:
 ->  Neck
 ->  Back    (a Backpack, a Discarded Vestigial Hand)
 ->  Chest
+->  Belt    (a Potion Belt)
 ->  Legs
 ->  Feet
 ->  Gloves

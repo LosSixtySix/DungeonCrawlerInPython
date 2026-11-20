@@ -90,6 +90,8 @@ INVENTORY_COLUMNS = 5
 # back. Doors aren't forgotten. Close by (within FORGET_DISTANCE), a fading tile holds where it is.
 FORGET_DISTANCE = 10
 FORGET_TURNS = 50
+# Each new floor picks one of these as its chance that any given tile starts as a wall (0.15 open to 0.75 dense)
+WALL_DENSITIES = [round(0.15 + 0.05 * step, 2) for step in range(13)]
 INVENTORY_ROWS = 2  # rows the Inventory window shows; a Backpack's row is reached by arrowing down (it scrolls)
 EQUIP_TURNS = 1         # turns to put one item on or take one off (a swap is both)
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
@@ -807,7 +809,7 @@ class gameManager():
             index = self.windowSel["inventory"]
             if index >= len(player.inventory):
                 return
-            take = lambda: (player.inventory.pop(index), [])
+            take = lambda: (player.takeOne(index), [])  # one potion off a stack
         else:
             if self.swapActive():
                 return
@@ -1088,7 +1090,7 @@ class gameManager():
             floors = plants.PLANTS[recipe.makes]["floors"]
             if plants.floorOf(look, self.rooms) not in floors:
                 return f"it only grows on {floors[0]} or {floors[1]} floors"
-        if recipe.kind == "potion" and len(player.inventory) + recipe.amount > player.inventoryLimit:
+        if recipe.kind == "potion" and player.roomFor(recipe.makeItem(0, 0)) < recipe.amount:
             return "not enough room in your inventory"
         return None
 
@@ -1953,8 +1955,9 @@ class gameManager():
         ListOfEnemyPositions = set()
         for i in range(self.numberOfSpots):
             grid[i] = [0, 0]
+        wallChance = rand.choice(WALL_DENSITIES)  # this floor's wall density
         for i in grid.keys():
-            if rand.randint(0, 1) == 1:
+            if rand.random() < wallChance:
                 grid[i][0] = 2
         grid[self.playerPositionFlat] = [0, 0]
         if addStartingItem:
@@ -2520,7 +2523,7 @@ class gameManager():
         if landing is None:
             self.addPopup("No room to throw", self.playerPositionFlat)
             return
-        item = self.player.inventory.pop(self.throwing)
+        item = self.player.takeOne(self.throwing)
         self.cancelThrow()
         turns = self.flightTurns(landing)
         shot = {"effect": item.effect, "power": item.bonus, "path": path, "landing": landing, "turns": turns, "flight": turns}
@@ -3293,6 +3296,8 @@ class gameManager():
             self.camps = data.get("camps", {})
             self.fallen = data.get("fallen", {})
             self.memoryFade = data.get("memoryFade", {})
+            self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
+            self.enemyOccupiedItemSpaces = {}  # (also only set by newGame)
             self.doorPositions = data["doorPositions"]
             self.playerPositionFlat = data["playerPositionFlat"]
             self.currentLocation = data["currentLocation"]
@@ -3485,7 +3490,8 @@ class gameManager():
             self.craftSpec(spec)
         elif windowId == "inventory":
             spec["kind"] = "grid"
-            spec["items"] = [item.name for item in player.inventory]
+            spec["items"] = [item.name + (f" x{pc.countOf(item)}" if pc.countOf(item) > 1 else "")
+                             for item in player.inventory]
             spec["capacity"] = player.inventoryLimit
             self.fitSelections()
             spec["visibleRows"] = INVENTORY_ROWS
@@ -3496,7 +3502,8 @@ class gameManager():
         return spec
 
     STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health",
-                  "FireRes": "Fire Resist", "MagicRes": "Magic Resist", "Storage": "Inventory Slots"}
+                  "FireRes": "Fire Resist", "MagicRes": "Magic Resist", "Storage": "Inventory Slots",
+                  pc.POTION_STACK: "Potions per Slot"}
 
     def statLines(self, item):
         """[(stat name, bonus)] for a piece of gear."""
@@ -3534,6 +3541,8 @@ class gameManager():
                       "Explosive": f"Thrown: {item.bonus} damage to everything where it lands, you included. Breaks nearby walls"}.get(item.effect, item.effect)
                                
             lines.append(("body", effect, ""))
+            if player.potionStackLimit() > 1 or pc.countOf(item) > 1:
+                lines.append(("row", "In this stack", f"{pc.countOf(item)} / {player.potionStackLimit()}"))
             lines.append(("hint", "Enter  aim and throw" if item.effect in THROWN_EFFECTS else "Enter  use", ""))
             lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines
