@@ -1532,6 +1532,8 @@ class renderer():
             extra = (obj.id, obj.hp, obj.claimed)
         elif kind == 8:
             extra = (obj.kind, getattr(obj, "stage", None), obj.ready if obj.staged else None)
+        elif kind == expansion.HOLE:
+            extra = self.holeSides(grid, i)
         elif kind == expansion.CAMP:
             extra = (obj.kind, obj.hp, len(getattr(obj, "brokenPoints", ())),
                      self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"]) if obj.kind == "bonfire" else None)
@@ -1559,6 +1561,17 @@ class renderer():
                 self.mapSurface.blit(self.fireTint(alpha), (x * ts, y * ts))
             if level is not None and self.shades:
                 self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
+
+    def holeSides(self, grid, i):
+        """The sides ("nesw") of hole i where the next tile is a hole too (or what you stand on there is)."""
+        R = self.rowLength
+        x = i % R
+        out = ""
+        for side, j, ok in (("n", i - R, True), ("e", i + 1, x < R - 1), ("s", i + R, True), ("w", i - 1, x > 0)):
+            tile = grid.get(j) if ok else None
+            if tile is not None and tile[0] == expansion.HOLE:
+                out += side
+        return out
 
     def fireLevel(self, x, y, fire):
         """(dither level, distance) for tile x, y in the light of fire: (its position, its light radius). Each fire's
@@ -1633,6 +1646,13 @@ class renderer():
                     self.mapSurface.blit(self.sprites["bonfire"][frame], (x * ts, y * ts))
                 else:  # (cracked as it's hit, like a wall: no damage bar)
                     self.mapSurface.blit(self.crackedPicture(self.sprites["spawner"], piece, ("spawner",)), (x * ts, y * ts))
+            case expansion.HOLE:  # broken floor: a drop to the floor below, running into the holes beside it
+                floor = self.floorColor(i, rooms, memorized)
+                key = (self.holeSides(grid, i), i % 5, tuple(floor))
+                cache = self.__dict__.setdefault("holeCache", {})
+                if key not in cache:
+                    cache[key] = sprites.makeHole(key[0], key[1], floor, ts)
+                self.mapSurface.blit(cache[key], (x * ts, y * ts))
             case 6:  # Door back to the previous level
                 self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))

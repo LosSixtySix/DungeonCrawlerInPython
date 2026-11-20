@@ -1,4 +1,5 @@
 import math
+import random
 import pygame
 import plants
 import themes
@@ -667,6 +668,34 @@ def pitRoles(floor):
 def makePit(style, floor, tileSize):
     """One pit picture for a given floor color (pits blend into whatever room they're in)."""
     return makeSurface(PIT_STYLES[style], pitRoles(floor), tileSize)
+
+
+def holeRows(openSides, variant):
+    """A hole in the floor, top down (expansion.HOLE): black depth, with a broken lip of floor and its shadow along
+    each side that isn't more hole (openSides: the sides, of "nesw", where the next tile is a hole too, so holes
+    run together into one ragged pit). variant picks the raggedness, so neighboring holes don't match."""
+    rng = random.Random(variant * 7919 + sum(ord(c) for c in openSides))
+    rows = [["k"] * 10 for _ in range(10)]
+    for side in "nesw":
+        if side in openSides:
+            continue
+        for along in range(10):
+            depth = rng.choice((1, 1, 2, 2, 3))
+            for into in range(depth + 1):
+                ch = "f" if into < depth - 1 else ("a" if into == depth - 1 else "b")
+                x, y = {"n": (along, into), "s": (along, 9 - into), "w": (into, along), "e": (9 - into, along)}[side]
+                if rows[y][x] in ("k", "b") or ch == "f":
+                    rows[y][x] = ch
+    for _ in range(rng.randint(1, 3)):  # bits of broken floor down in the dark
+        x, y = rng.randint(2, 7), rng.randint(2, 7)
+        if rows[y][x] == "k":
+            rows[y][x] = "b"
+    return ["".join(r) for r in rows]
+
+
+def makeHole(openSides, variant, floor, tileSize):
+    roles_ = {**pitRoles(floor), "f": floor}
+    return makeSurface(holeRows(openSides, variant), roles_, tileSize)
 
 
 def makeSurface(rows, palette, tileSize):

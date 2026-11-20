@@ -100,6 +100,8 @@ KILLER_SHARE = 0.3   # ...and share the enemy that killed it pockets (lost if no
 BURN_CHANCE = 0.5    # chance fire damage sets the target burning
 BURN_TURNS = 3       # how long burning lasts
 BURN_DAMAGE = 1      # fire damage burning deals each turn (Fire Resist takes off it like any fire)
+FLOOR_BREAK_CHANCE = 0.25  # a Bomb's chance to break the floor in its whole blast circle (see collapseFloor)
+FALL_DAMAGE = 3            # damage you, or anything else, take falling through a hole to the floor below
 DEMISE_DAMAGE = 5    # magic damage Organizer's Demise deals each turn to anything (but an Organizer) standing in it
 GROUND_FIRE_CHANCE = 0.25  # chance each floor tile a Fire Flask splashes catches fire
 GROUND_FIRE_TURNS = 3      # how long burning ground lasts
@@ -302,6 +304,7 @@ class gameManager():
         self.forcedOreFloor = None  # developer console /orefloor: (floor type, motherlode) for the next new floor
         self.camps = {}  # floor -> its Expansion camp state (expansion.camp)
         self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
+        self.fallen = {}  # floor -> [(position, tile)]: what fell into it through a hole, put there when you arrive
         self.enemyOccupiedItemSpaces = {}
 
         playerposx, playerposy = self.painter.getCenterCartesian()
@@ -1516,7 +1519,7 @@ class gameManager():
                 self.painter.fade = 255
                 self.addUnsealed = True
         broken = tile.pop()
-        tile[0] = 0
+        tile[0] = expansion.HOLE if getattr(broken, "holeBelow", False) else 0  # (the floor under it was broken)
         player = self.player
         drops = loot.rollWall(name, player.attributes["wisdom"])
         if isinstance(broken, wall.OreVein) and position in self.rooms["Gold"]:  # a vein in a gold wall: gold too
@@ -1648,7 +1651,7 @@ class gameManager():
         the wall's other materials too."""
         organizers.wallBroken(self, position, enemy)
         broken = self.grid[position].pop()
-        self.grid[position][0] = 0
+        self.grid[position][0] = expansion.HOLE if getattr(broken, "holeBelow", False) else 0
         drops = loot.rollWall(broken.name, 1)
         if isinstance(broken, wall.OreVein) and position in self.rooms["Gold"]:
             drops += loot.rollWall("Gold Wall", 1)
@@ -1765,11 +1768,13 @@ class gameManager():
         self.bloodDry = data[7] if len(data) >7 else {}
         self.setTheme(theme)
 
-    def changeLevel(self, newLevel):
+    def changeLevel(self, newLevel, falling=False):
         self.saveLevel()
         self.level = newLevel
         self.deepest = max(self.deepest, self.level)
         self.LoadLevel(newLevel)
+        if falling:  # you land where you fell, or on the nearest open floor to it
+            self.playerPositionFlat = self.openSpot(self.playerPositionFlat) or self.playerPositionFlat
         self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
         self.afterLevelChange()
 
@@ -1818,6 +1823,7 @@ class gameManager():
         self.picker = {"ChangingColor": False, "ColorSelected": False}
         self.messageBools["floorLevelMessage"] = True
         self.painter.fade = 255
+        self.landFallen()
 
     def PlacePreviousLevelDoor(self):
         position = self.doorPositions[-1]
@@ -2520,6 +2526,9 @@ class gameManager():
                 w.hp -= recipes.BOMB_WALL_DAMAGE
                 if w.hp <= 0: 
                     self.breakWall(position)
+            if rand.random() < FLOOR_BREAK_CHANCE:
+                hit += 1
+                self.collapseFloor(landing, radius)
             if not hit:
                 self.addPopup("Boom",landing)
         else:
@@ -2529,6 +2538,102 @@ class gameManager():
                 if tile[0] == 5 and len(tile) > 2:
                     tile[2].lastPlayerPosition = None  # caught in the smoke: it loses track of you
             self.addPopup("Smoke", landing)
+        self.change = True
+
+    # ------------------------------------------------------------- holes
+    # A Bomb can break the floor (FLOOR_BREAK_CHANCE): its whole blast circle turns to holes (expansion.HOLE), the
+    # floor under its walls too (wall.holeBelow: break one and it's a hole). What was on it falls to the floor below
+    # and waits there (self.fallen) until you get there; step on a hole and you fall too. Every fall does FALL_DAMAGE.
+
+    def collapseFloor(self, center, radius):
+        """Every tile in the circle becomes a hole, bar doors, stations and camp pieces (they keep a scrap of floor).
+        Enemies, chests, item piles and plants on it fall to the floor below; so do you, if you're on it."""
+        R = self.rowLength
+        cx, cy = center % R, center // R
+        below = self.fallen.setdefault(self.level + 1, [])
+        for y in range(cy - radius, cy + radius + 1):
+            for x in range(cx - radius, cx + radius + 1):
+                if not 0 <= x < R or not self.inCircle(x - cx, y - cy, radius):
+                    continue
+                p = x + y * R
+                tile = self.grid.get(p)
+                if tile is None:
+                    continue
+                kind = tile[0]
+                if kind == 2:
+                    tile[2].holeBelow = True  # it stands over a hole now
+                    continue
+                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE):
+                    continue
+                if p == self.playerPositionFlat:  # what you stand on falls with you (you fall: the main loop)
+                    if self.currentLocation[0] in (3, 8, 9) and len(self.currentLocation) > 2:
+                        expansion.dropOut(self, self.currentLocation[2])
+                        below.append((p, self.currentLocation))
+                    self.currentLocation = [expansion.HOLE, self.currentLocation[1]]
+                    continue
+                if kind == 5 and len(tile) > 2:
+                    enemy = tile[2]
+                    self.EnemyPositions.discard(p)
+                    expansion.dropOut(self, enemy)
+                    below.append((p, [5, 0, enemy]))
+                    under = self.enemyOccupiedItemSpaces.pop(p, None)
+                    if under is not None and under[0] in (3, 8, 9) and len(under) > 2:
+                        expansion.dropOut(self, under[2])
+                        below.append((p, under))
+                elif kind in (3, 8, 9) and len(tile) > 2:
+                    expansion.dropOut(self, tile[2])
+                    below.append((p, tile))
+                self.grid[p] = [expansion.HOLE, tile[1]]
+        self.change = True
+
+    def fall(self):
+        """You fell through a hole: FALL_DAMAGE, and you land on the floor below, where you fell (or on the nearest
+        open floor to it there)."""
+        self.player.damageTaken += FALL_DAMAGE
+        if self.level < len(self.doorPositions) - 1:
+            self.changeLevel(self.level + 1, falling=True)
+        else:
+            self.goToNewLevel()
+        self.bleed(self.playerPositionFlat)
+
+    def openSpot(self, position, avoid=()):
+        """position if it's open floor, else the nearest open floor tile to it (None if there's none)."""
+        tile = self.grid.get(position)
+        if tile is not None and tile[0] == 0 and position not in avoid:
+            return position
+        R = self.rowLength
+        px, py = position % R, position // R
+        best = None
+        for i, t in self.grid.items():
+            if t[0] == 0 and i not in avoid:
+                d = (i % R - px) ** 2 + (i // R - py) ** 2
+                if best is None or d < best[0]:
+                    best = (d, i)
+        return best[1] if best else None
+
+    def landFallen(self):
+        """What fell into this floor through a hole lands where it fell (or the nearest open floor), now that you're
+        here: enemies take FALL_DAMAGE (and may die of it). Faction goblins and goblin chests land as their faction on
+        this floor (expansion.land)."""
+        for position, tile in self.fallen.pop(self.level, []):
+            spot = self.openSpot(position, avoid={self.playerPositionFlat})
+            if spot is None:
+                continue
+            visibility = self.grid[spot][1]
+            obj = tile[2]
+            if tile[0] == 5:
+                self.grid[spot] = [5, visibility, obj]
+                self.EnemyPositions.add(spot)
+                obj.hp -= FALL_DAMAGE
+                if hasattr(obj, "lastPlayerPosition"):
+                    obj.lastPlayerPosition = None
+                if obj.hp <= 0:
+                    self.killEnemy(spot, killer=None)
+                else:
+                    expansion.land(self, obj, spot)
+                continue
+            self.grid[spot] = [tile[0], visibility, obj]
+            expansion.land(self, obj, spot)
         self.change = True
 
     # ------------------------------------------------------------------- fire
@@ -3067,6 +3172,7 @@ class gameManager():
             "floorEvents": self.floorEvents,
             "motherlodes": self.motherlodes,
             "camps": self.camps,
+            "fallen": self.fallen,
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -3088,6 +3194,7 @@ class gameManager():
             self.floorEvents = data.get("floorEvents", {})
             self.motherlodes = data.get("motherlodes", set())
             self.camps = data.get("camps", {})
+            self.fallen = data.get("fallen", {})
             self.doorPositions = data["doorPositions"]
             self.playerPositionFlat = data["playerPositionFlat"]
             self.currentLocation = data["currentLocation"]
@@ -3159,7 +3266,7 @@ class gameManager():
         if tile is None:
             return "Nothing"
         if tile[0] == 2:
-            return tile[2].name
+            return tile[2].name + (" (over a hole)" if getattr(tile[2], "holeBelow", False) else "")
         if tile[0] == 8:
             plant = tile[2]
             notes = [n for n in (("yours" if plant.planted and getattr(plant, "faction", None) is None else
@@ -3173,7 +3280,7 @@ class gameManager():
             return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
             return tile[2].name + (" (burning)" if getattr(tile[2], "burnTurns", 0) > 0 else "")
-        return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up"}.get(tile[0], "Floor")
+        return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
 
     def windowSpec(self, windowId):
         """Everything the renderer needs to draw one window."""
@@ -3461,6 +3568,10 @@ class gameManager():
                 self.change = True
                 self.enemyTurn()
                 self.enemyMove = False
+
+            if self.currentLocation[0] == expansion.HOLE:  # you stepped on a hole, or the floor broke under you
+                self.change = True
+                self.fall()
 
             if self.player.actionMade:
                 self.change = True

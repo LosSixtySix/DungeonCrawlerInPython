@@ -71,6 +71,7 @@ grid tiles of type CAMP holding a Structure.
 """
 
 CAMP = 10                   # grid tile type for camp structures (spawners and bonfires)
+HOLE = 11                   # grid tile type for broken floor (a bomb's collapse): step on it and you fall to the floor below
 
 SPAWN_TURNS = (30, 50)      # turns between a spawner's goblins
 SPAWN_ODDS = [("Goblin", 64), ("Goblin Chieftan", 22), ("Goblin Builder", 8), ("Goblin Farmer", 6)]
@@ -266,6 +267,52 @@ def camp(gm):
     if gm.level not in camps:
         camps[gm.level] = {"factions": {}, "next": 0, "structures": set()}
     return camps[gm.level]
+
+
+def dropOut(gm, thing):
+    """A faction goblin or goblin chest fell through the floor (gameManager.collapseFloor): it remembers which floor
+    and faction it fell from (fellFrom), so it lands as that faction on the floor below (land). A goblin leaves its
+    squad and forgets whatever it was doing."""
+    if getattr(thing, "faction", None) is None or isinstance(thing, plants.Plant):
+        return  # (a goblin crop that falls lands as a plain plant)
+    thing.fellFrom = (gm.level, thing.faction)
+    squad = getattr(thing, "squad", None)
+    if squad is not None and thing in squad.members:
+        squad.members.remove(thing)
+    for attr in ("squad", "task", "rally", "foe", "seizing"):
+        if hasattr(thing, attr):
+            setattr(thing, attr, None)
+
+
+def fallenFaction(gm, origin, look):
+    """The faction on this floor for goblins and goblin chests that fell from origin (floor, faction id): made the
+    first time one of them lands here, in the same colors. It has no camp: a builder of it lights one and it starts
+    over; without one it goes to seize the nearest other faction's spawner (seizeStep), or with none to take its
+    goblins wander, fighting anything that isn't theirs (wild goblins included)."""
+    state = camp(gm)
+    ids = state.setdefault("fellFrom", {})
+    f = state["factions"].get(ids.get(origin))
+    if f is None or getattr(f, "abandoned", False):
+        f = newFaction(gm, look or NEUTRAL_LOOK)
+        f.fallen = True
+        ids[origin] = f.id
+    return f
+
+
+def land(gm, thing, t):
+    """A goblin or goblin chest that fell (dropOut) has landed at t: it joins its faction on this floor."""
+    origin = getattr(thing, "fellFrom", None)
+    if origin is None:
+        return
+    thing.fellFrom = None
+    f = fallenFaction(gm, origin, getattr(thing, "look", None))
+    if isinstance(thing, CampChest):
+        thing.faction, thing.look = f.id, f.look
+        chests(gm, f).add(t)
+        return
+    setFaction(thing, f)
+    if thing.name not in WORKERS:
+        joinSquad(gm, thing, f)
 
 
 def factionOf(enemy):
@@ -1559,7 +1606,8 @@ def layOutHut(gm, center, claimed, kind="hut"):
     floor = set(floor)
     if floor & claimed or gm.playerPositionFlat in floor:
         return None
-    if any(gm.grid[t][0] in (3, 4, 6, 7, 9, CAMP) for t in floor):  # no chests, piles, doors, stations or camp pieces
+    if any(gm.grid[t][0] in (3, 4, 6, 7, 9, CAMP, HOLE) for t in floor):  # no chests, piles, doors, stations, camp
+        # pieces or holes
         return None
     walls = [offsetTile(gm, center, dx, dy) for dx, dy in hutWalls(doors, r)]
     spots = [offsetTile(gm, center, dx, dy) for dx, dy in STORAGE_CHESTS] if store else []
@@ -1729,7 +1777,7 @@ def buildHut(gm, i, b, f, task, ctx):
             if kind == 2:  # a wall already standing here: claim it
                 todo.append(t)
                 continue
-            if kind in (3, 4, 6, 7, 9, CAMP):  # something there now: leave a gap
+            if kind in (3, 4, 6, 7, 9, CAMP, HOLE):  # something there now (or the floor's gone): leave a gap
                 hut["skip"].add(t)
                 continue
             if kind == 8:  # a plant grew there: pull it up
