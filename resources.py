@@ -32,6 +32,7 @@ MATERIALS = {
     "cut_ruby": ("Cut Ruby", "Refined", (238, 80, 100)),
     "cut_amethyst": ("Cut Amethyst", "Refined", (186, 130, 240)),
     "relic_dust": ("Relic Dust", "Refined", (184, 154, 232)),
+    "charcoal": ("Charcoal", "Refined", (52, 46, 44)),  # burns in place of coal, CHARCOAL_PER_COAL to one
     "bone": ("Bone", "Drops", (216, 207, 184)),
     "scrap": ("Goblin Scrap", "Drops", (106, 110, 118)),
     "hide": ("Hide", "Drops", (122, 98, 80)),
@@ -51,6 +52,8 @@ MATERIALS = {
     "organizers_demise": ("Organizer's Demise", "Plants", (176, 96, 184)),
     "organizers_demise_seed": ("Demise Seeds", "Plants", (140, 96, 146)),
 }
+CHARCOAL_PER_COAL = 3  # any recipe that needs Coal can use this much Charcoal for each one it's short
+
 GROUPS = ["Raw", "Ore", "Refined", "Plants", "Drops"]
 
 

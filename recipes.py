@@ -224,6 +224,9 @@ RECIPES = [
            "For jewelry.", "1 Silver Ingot", makes="silver_ingot"),
     Recipe("glass", "Glass", "smelter", 2, {"sand": 2, "coal": 1}, "material",
            "For lenses.", "1 Glass", makes="glass"),
+    Recipe("charcoal", "Charcoal", "smelter", 1, {"wood": 1}, "material",
+           "Wood baked black. Any recipe that needs Coal takes 3 Charcoal in place of each one.", "1 Charcoal",
+           makes="charcoal"),
     Recipe("anvil", "Anvil", "smelter", 5, {"iron_ingot": 6, "stone": 4}, "station",
            "Cast in one piece. Heavy, but it folds into your pack.", "Unlocks the Anvil", makes="anvil"),
 

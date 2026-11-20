@@ -205,8 +205,13 @@ class PlayerClass():
         return added
 
     def have(self, materialId):
-        """How many of a material the player has ("gold" is their gold)."""
-        return self.gold if materialId == "gold" else self.materials.get(materialId, 0)
+        """How many of a material the player has ("gold" is their gold). Coal counts the Charcoal too: every
+        CHARCOAL_PER_COAL of it is one more Coal (see spendMaterials)."""
+        if materialId == "gold":
+            return self.gold
+        if materialId == "coal":
+            return self.materials.get("coal", 0) + self.materials.get("charcoal", 0) // resources.CHARCOAL_PER_COAL
+        return self.materials.get(materialId, 0)
 
     def hasMaterials(self, needs, times=1):
         """True if the pouch (and gold) holds everything in needs ({material id: count}), times over."""
@@ -217,6 +222,16 @@ class PlayerClass():
             if materialId == "gold":
                 self.gold -= count
                 continue
+            if materialId == "coal":  # real Coal first, then Charcoal for whatever's short
+                fromCoal = min(count, self.materials.get("coal", 0))
+                short = count - fromCoal
+                if short:
+                    self.materials["charcoal"] -= short * resources.CHARCOAL_PER_COAL
+                    if self.materials["charcoal"] <= 0:
+                        del self.materials["charcoal"]
+                count = fromCoal
+                if not count:
+                    continue
             self.materials[materialId] -= count
             if self.materials[materialId] <= 0:
                 del self.materials[materialId]

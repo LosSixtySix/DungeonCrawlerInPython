@@ -85,6 +85,11 @@ WINDOW_SIZES = [(1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440
 POPUP_SECONDS = 1.2  # how long a "+2 Wood" popup takes to rise and fade
 POPUP_GAP = 450      # ms between two different popups on the same tile, so they don't draw over each other
 INVENTORY_COLUMNS = 5
+# Remembered tiles fade: one more than FORGET_DISTANCE tiles from you gets a little darker every turn, and after
+# FORGET_TURNS turns it's black again (forgotten: unseen, as if you'd never been there). Seeing it again brings it
+# back. Doors aren't forgotten. Close by (within FORGET_DISTANCE), a fading tile holds where it is.
+FORGET_DISTANCE = 10
+FORGET_TURNS = 50
 INVENTORY_ROWS = 2  # rows the Inventory window shows; a Backpack's row is reached by arrowing down (it scrolls)
 EQUIP_TURNS = 1         # turns to put one item on or take one off (a swap is both)
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
@@ -306,6 +311,7 @@ class gameManager():
         self.camps = {}  # floor -> its Expansion camp state (expansion.camp)
         self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
         self.fallen = {}  # floor -> [(position, tile)]: what fell into it through a hole, put there when you arrive
+        self.memoryFade = {}  # floor -> {tile: turns it has been fading} (see stepForgetting)
         self.enemyOccupiedItemSpaces = {}
 
         playerposx, playerposy = self.painter.getCenterCartesian()
@@ -1283,7 +1289,10 @@ class gameManager():
             rows = []
             for m, n in needs.items():
                 have = player.have(m)
-                rows.append(("need" if have >= n else "short", resources.materialName(m), f"{have} / {n}"))
+                name = resources.materialName(m)
+                if m == "coal" and player.materials.get("charcoal"):  # (have counts the Charcoal too)
+                    name += f" (or {resources.CHARCOAL_PER_COAL} Charcoal each)"
+                rows.append(("need" if have >= n else "short", name, f"{have} / {n}"))
             return rows
 
         detail = []
@@ -2940,6 +2949,34 @@ class gameManager():
         for shot in landed:
             self.land(shot)
 
+    def fadingHere(self):
+        """This floor's fading remembered tiles: {tile: turns faded}."""
+        if not hasattr(self, "memoryFade"):
+            self.memoryFade = {}
+        return self.memoryFade.setdefault(self.level, {})
+
+    def stepForgetting(self):
+        """Every remembered tile more than FORGET_DISTANCE from you fades one turn darker; at FORGET_TURNS it's
+        forgotten (back to unseen). Tiles in view stop fading and start over next time they're remembered."""
+        fading = self.fadingHere()
+        R, here = self.rowLength, self.playerPositionFlat
+        hx, hy = here % R, here // R
+        far = FORGET_DISTANCE * FORGET_DISTANCE
+        for i, tile in self.grid.items():
+            if tile[1] != 2:
+                if i in fading:
+                    del fading[i]
+                continue
+            if tile[0] in (4, 6) or (i % R - hx) ** 2 + (i // R - hy) ** 2 <= far:
+                continue
+            turns = fading.get(i, 0) + 1
+            if turns >= FORGET_TURNS:
+                tile[1] = 0
+                fading.pop(i, None)
+            else:
+                fading[i] = turns
+            self.change = True
+
     def stepSmoke(self):
         for position in list(self.smoke):
             self.smoke[position] -= 1
@@ -3005,6 +3042,7 @@ class gameManager():
         self.stepFires()
         self.stepBlood()
         self.stepSmoke()
+        self.stepForgetting()
         self.stepThrows()
         self.stepFloorEvent()
         growth = events.plantRules(self.activeEvent())
@@ -3231,6 +3269,7 @@ class gameManager():
             "motherlodes": self.motherlodes,
             "camps": self.camps,
             "fallen": self.fallen,
+            "memoryFade": self.memoryFade,
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -3253,6 +3292,7 @@ class gameManager():
             self.motherlodes = data.get("motherlodes", set())
             self.camps = data.get("camps", {})
             self.fallen = data.get("fallen", {})
+            self.memoryFade = data.get("memoryFade", {})
             self.doorPositions = data["doorPositions"]
             self.playerPositionFlat = data["playerPositionFlat"]
             self.currentLocation = data["currentLocation"]
@@ -3590,6 +3630,7 @@ class gameManager():
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly, overlayOnly=overlayOnly,
             fireLight=getattr(self, "fireLight", {}),
+            memoryFade={i: turns / FORGET_TURNS for i, turns in self.fadingHere().items()},
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
             smoke=self.smoke,
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])

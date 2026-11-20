@@ -227,7 +227,7 @@ class renderer():
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
-             console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False):
+             console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -248,6 +248,7 @@ class renderer():
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
         self.lightStyleNow = lightStyle  # fires sway the same way (see fireLevel)
         self.fireLight = fireLight or {}
+        self.memoryFade = memoryFade or {}  # remembered tile -> how far it has faded to black, 0..1
         self.smokeHere = smoke or {}  # Smoke Bomb smoke: whoever stands in it isn't drawn
         light = self.lightShape(lightTime, lightStyle)
         if getattr(self, "drawnGrid", None) is not grid:  # a different floor (or the first frame): start over
@@ -1568,6 +1569,8 @@ class renderer():
             extra = (obj.name, getattr(obj, "look", None), i in getattr(self, "smokeHere", {}),
                      sprites.shardFrameFor(getattr(self, "lightTime", 0.0)) if obj.name == "Unsealed" else None)
         lighting = None
+        if memorized:  # a fading remembered tile: how dark it has got (gameManager.stepForgetting)
+            lighting = ("fade", getattr(self, "memoryFade", {}).get(i, 0))
         if not memorized and kind not in self.LIGHT_EXEMPT:
             lighting = self.tileLighting(i, i % self.rowLength, i // self.rowLength, playerPosition, visionRange, light)
         signature = (kind, visibility, id(obj), self.roomOf(i, rooms), blood,
@@ -1582,12 +1585,30 @@ class renderer():
         self.drawTile(grid, i, x, y, rooms, playerDirection, memorized)
         # Dithered light only on tiles in view (remembered tiles stay as they are). The player, enemies,
         # chests and the door back up are never dithered so they stand out; pits are part of the floor, so they are.
-        if lighting is not None:
+        if lighting is not None and lighting[0] == "fade":
+            if lighting[1] > 0:
+                self.mapSurface.blit(self.forgetShade(lighting[1]), (x * ts, y * ts))
+        elif lighting is not None:
             level, alpha = lighting
             if alpha > 0:
                 self.mapSurface.blit(self.fireTint(alpha), (x * ts, y * ts))
             if level is not None and self.shades:
                 self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
+
+    def forgetShade(self, amount):
+        """A tile-sized sheet of the fog color, amount (0..1) opaque: laid over a remembered tile as it fades
+        toward black and is forgotten. Cached per alpha."""
+        alpha = int(255 * min(1.0, amount))
+        cache = self.__dict__.setdefault("forgetCache", {})
+        key = (alpha, tuple(self.color("fog")), self.tileSize)
+        if key not in cache:
+            sheet = pygame.Surface((self.tileSize, self.tileSize))
+            sheet.fill(self.color("fog"))
+            sheet.set_alpha(alpha)
+            if len(cache) > 300:
+                cache.clear()
+            cache[key] = sheet
+        return cache[key]
 
     def holeSides(self, grid, i):
         """The sides ("nesw") of hole i where the next tile is a hole too (or what you stand on there is)."""
