@@ -149,6 +149,7 @@ SCHISM_DISTANCE = 45        # the half that leaves makes its camp at least this 
 SCHISM_CLEAR = 10           # ...and this far from you, any other enemy and any crafting station
 SCHISM_PEACE = 400          # the two are at peace until its first bonfire is lit, or for this many turns at most
 ARRIVE_REACH = 5            # its builders light that bonfire this close to where they were going
+SEIZE_FIGHT = 12            # a group off to seize a spawner (it lost its builders) fights all it sees this close to it
 
 # Storage huts: walls STORAGE_RADIUS from the middle (a 9x9 square with the corners left out), an entrance in the
 # middle of each side, and a war chest on each of these spots inside, along the walls
@@ -229,6 +230,7 @@ class Faction:
         self.farms = []           # (farm plots, from before farming huts: unused)
         self.migrating = None     # where a schism's new half is going to set up camp
         self.peaceWith = None     # the faction it's at peace with for now (a schism's other half)
+        self.seizing = None       # (faction id, hut center): the spawner a group that lost its builders goes to take
 
     def walls(self):
         """Its huts' walls, built or planned: its own goblins never dig through these."""
@@ -794,15 +796,19 @@ def soldierTurn(gm, i, unit, ctx):
         joinSquad(gm, unit, f)
         squad = unit.squad
     protected = f.walls()
-    target = squadTarget(gm, squad, ctx, unit, i) if migrating(f) is None else None
+    seizing = getattr(f, "seizing", None) is not None
+    fighting = migrating(f) is None or (seizing and dist(gm, i, f.migrating) <= SEIZE_FIGHT)
+    target = squadTarget(gm, squad, ctx, unit, i) if fighting else None
     if target:
         return step(gm, i, unit, target[1], protected, ctx)
     if migrating(f) is not None:  # leaving after a schism: the leader heads for the new camp, the rest follow it.
         # They don't stop to hunt anything on the way (they still fight whatever is right beside them, takeTurn).
+        # Off to seize a spawner, the leader goes right up to it, into its hut.
         leader = squadLeader(squad)
         leaderAt = None if leader is unit else find(gm, ctx, leader)
         if leaderAt is None:
-            return migrateTurn(gm, i, unit, f, ctx) if dist(gm, i, f.migrating) > 3 else organizers.wander(gm, i)
+            close = 1.5 if seizing else 3
+            return migrateTurn(gm, i, unit, f, ctx) if dist(gm, i, f.migrating) > close else organizers.wander(gm, i)
         return step(gm, i, unit, leaderAt, protected, ctx) if dist(gm, i, leaderAt) > FOLLOW_DISTANCE else i
     if squad.marching:
         home = homeBonfire(gm, f, i)
@@ -1377,6 +1383,11 @@ def planTask(gm, i, b, f):
                            and getattr(other, "task", None) and other.task["kind"] == "bonfire"), None)
             if shared is not None:
                 return {"kind": "bonfire", "at": shared["at"]}
+        if not f.bonfires and f.huts:  # a seized hut with no bonfire yet: light one just outside it
+            hut = min(f.huts, key=lambda h: dist(gm, h["center"], i))
+            spot = bonfireSpot(gm, hut["center"], i, hut.get("radius", 3) + 1, HUT_DISTANCE[1])
+            if spot is not None:
+                return {"kind": "bonfire", "at": spot}
         spot = bonfireSpot(gm, i, i, 0, 3, avoid=f if f.bonfires else None)  # (a camp's first: where it was going)
         return {"kind": "bonfire", "at": spot} if spot is not None else None
     for hut in f.huts:
@@ -2281,24 +2292,7 @@ def takeOver(gm, f, new):
     huts = sorted(f.huts, key=lambda h: -dist(gm, h["center"], heart))
     taken = huts[:max(1, len(huts) // 2)]
     for h in taken:
-        f.huts.remove(h)
-        new.huts.append(h)
-        h["builder"] = None
-        if h.get("kind") == "farm" and factionOf(h.get("farmer")) != new.id:
-            h["farmer"] = None
-        for t in h["walls"]:
-            if gm.grid[t][0] == 2 and getattr(gm.grid[t][2], "paint", None):
-                paintHutWall(gm, h, t, new.look)
-        c = h["center"]
-        if gm.grid[c][0] == CAMP:
-            gm.grid[c][2].faction = new.id  # its spawner
-        for t in h.get("chests", []) + ([c] if h.get("kind") == "farm" else []):
-            box = chestAt(gm, t)
-            if isinstance(box, CampChest):
-                box.faction, box.look = new.id, new.look
-                chests(gm, f).discard(t)
-                if h.get("kind") != "farm":
-                    chests(gm, new).add(t)
+        giveHut(gm, f, new, h)
     near = lambda t, hs: min((dist(gm, t, h["center"]) for h in hs), default=1e9)
     for b in list(f.bonfires):
         if b != heart and near(b, taken) < near(b, f.huts):
@@ -2313,6 +2307,107 @@ def takeOver(gm, f, new):
             box.faction, box.look = new.id, new.look
             chests(gm, f).discard(c)
             chests(gm, new).add(c)
+
+
+def giveHut(gm, f, new, h):
+    """Hut h goes from f to new: its spawner, its chests and its walls, repainted in new's colors."""
+    f.huts.remove(h)
+    new.huts.append(h)
+    h["builder"] = None
+    if h.get("kind") == "farm" and factionOf(h.get("farmer")) != new.id:
+        h["farmer"] = None
+    for t in h["walls"]:
+        if gm.grid[t][0] == 2 and getattr(gm.grid[t][2], "paint", None):
+            paintHutWall(gm, h, t, new.look)
+    c = h["center"]
+    if gm.grid[c][0] == CAMP:
+        gm.grid[c][2].faction = new.id  # its spawner
+    for t in h.get("chests", []) + ([c] if h.get("kind") == "farm" else []):
+        box = chestAt(gm, t)
+        if isinstance(box, CampChest):
+            box.faction, box.look = new.id, new.look
+            chests(gm, f).discard(t)
+            if h.get("kind") != "farm":
+                chests(gm, new).add(t)
+    gm.change = True
+
+
+# ---------------------------------------------------------------- seizing a spawner
+
+def spawnerHut(gm, g, center):
+    """g's hut at center, if it's still g's and its spawner is standing."""
+    if g is None:
+        return None
+    tile = gm.grid.get(center)
+    if not tile or tile[0] != CAMP or tile[2].kind != "spawner":
+        return None
+    return next((h for h in g.huts if h["center"] == center), None)
+
+
+def seizeTarget(gm, f, units):
+    """The nearest spawner of any other faction to f's group (its chief, or any of it): (faction, hut), or None."""
+    at = next((p for p, u in units if u.name == "Goblin Chieftan"), units[0][0])
+    best = None
+    for g in camp(gm)["factions"].values():
+        if g is f:
+            continue
+        for h in g.huts:
+            if spawnerHut(gm, g, h["center"]) is None:
+                continue
+            d = dist(gm, at, h["center"])
+            if best is None or d < best[0]:
+                best = (d, g, h)
+    return best[1:] if best else None
+
+
+def seizeStep(gm, f):
+    """A group that has lost all its builders before it lit a bonfire (so it can't start a camp) goes to take a
+    spawner from the nearest other faction instead: peace or not, it marches on it, fights whatever it meets near
+    it, and once one of its goblins is inside the hut with none of the owners left in it, the hut is its. Its
+    goblins put the food they carry in the spawner, which makes it a builder first (fed or not), and the builder
+    lights the new camp's bonfire beside the hut. If there's no spawner to take, it carries on where it was going."""
+    units = factionUnits(gm, f)
+    if not units:
+        f.seizing = None
+        return
+    seizing = getattr(f, "seizing", None)
+    if seizing is None:
+        if f.bonfires or f.huts or any(u.name == "Goblin Builder" for _, u in units):
+            return
+        hut = None
+    else:
+        owner = camp(gm)["factions"].get(seizing[0])
+        hut = spawnerHut(gm, owner, seizing[1])
+    if hut is None:  # (still) needs a spawner to go for
+        target = seizeTarget(gm, f, units)
+        if target is None:
+            if seizing is not None:
+                f.seizing, f.migrating = None, f.__dict__.get("settleAt")
+            return
+        owner, hut = target
+        if seizing is None:
+            f.settleAt = f.migrating  # (where it was going, in case there's nothing left to take)
+        f.seizing, f.migrating, f.peaceWith = (owner.id, hut["center"]), hut["center"], None
+    inHut = set(hut["inside"])
+    ours = [u for p, u in units if p in inHut]
+    theirs = [p for p, u in factionUnits(gm, owner) if p in hut["floor"]]
+    if not ours or theirs:
+        return
+    giveHut(gm, owner, f, hut)
+    f.seizing = f.migrating = f.peaceWith = None
+    s = gm.grid[hut["center"]][2]
+    s.__dict__.setdefault("food", 0)
+    for _, u in units:
+        if not hasattr(u, "materials"):
+            continue
+        for m in FOOD:
+            give = min(u.materials.get(m, 0), SPAWNER_FOOD_MAX - s.food)
+            if give > 0:
+                s.food += give
+                u.materials[m] -= give
+                if u.materials[m] <= 0:
+                    del u.materials[m]
+    s.timer = min(s.timer, 3)
 
 
 def packUp(gm, f, goers):
@@ -2400,7 +2495,8 @@ MIGRATE_RECHECK = 25        # a leaving group checks this often that nobody has 
 def migrateTurn(gm, i, unit, f, ctx):
     """A step toward where its faction is going to set up camp (a floor-wide path map, like a bonfire's). Now and
     then it checks nobody has settled within SCHISM_DISTANCE of it meanwhile, and if so, picks somewhere else."""
-    if gm.turnCount - f.__dict__.setdefault("migrateChecked", gm.turnCount) >= MIGRATE_RECHECK:
+    if getattr(f, "seizing", None) is None and \
+            gm.turnCount - f.__dict__.setdefault("migrateChecked", gm.turnCount) >= MIGRATE_RECHECK:
         f.migrateChecked = gm.turnCount
         if any(dist(gm, f.migrating, t) < SCHISM_DISTANCE for t in campsAround(gm, ignore=f)):
             goal = farAway(gm, i, ignore=f)
@@ -2482,6 +2578,9 @@ def stepCamp(gm):
     if bonfires and gm.turnCount % WANDERER_TURNS == 0:
         wanderIn(gm, bonfires)
     for f in list(state["factions"].values()):
+        if not f.bonfires:
+            seizeStep(gm, f)
+    for f in list(state["factions"].values()):
         if migrating(f) is not None or not f.bonfires:
             continue
         units = factionUnits(gm, f)
@@ -2522,18 +2621,22 @@ def stepSpawner(gm, t, s):
     hut = next((h for h in f.huts if h["center"] == s.hut), None) if f else None
     inside = hut["inside"] if hut else [n for n in gm.eightAround(t)]
     free = [x for x in inside if x is not None and gm.grid[x][0] == 0]
-    if not free or f is None or s.__dict__.setdefault("food", SPAWNER_START_FOOD) < FOOD_PER_SPAWN:
+    needBuilder = f is not None and not f.bonfires and not any(u.name == "Goblin Builder" for u in builders(gm)
+                                                               if factionOf(u) == f.id)
+    if not free or f is None or (s.__dict__.setdefault("food", SPAWNER_START_FOOD) < FOOD_PER_SPAWN and not needBuilder):
         s.timer = 1  # full, or out of food: try again next turn
         return
     s.timer = rand.randint(*SPAWN_TURNS)
-    s.food -= FOOD_PER_SPAWN
+    s.food = max(0, s.food - FOOD_PER_SPAWN)
     roll, kind = rand.random() * 100, SPAWN_ODDS[-1][0]
     for name, chance in SPAWN_ODDS:
         if roll < chance:
             kind = name
             break
         roll -= chance
-    if kind == "Goblin Farmer" and farmerCount(gm, f) >= BASE_FARMERS + finishedHuts(f) // HUTS_PER_FARMER:
+    if needBuilder:
+        kind = "Goblin Builder"  # a seized hut with no camp yet: a builder to light its bonfire, fed or not
+    elif kind == "Goblin Farmer" and farmerCount(gm, f) >= BASE_FARMERS + finishedHuts(f) // HUTS_PER_FARMER:
         kind = "Goblin"  # enough farmers for a camp this size
     if hut is not None:
         hut["spawned"] = hut.get("spawned", 0) + 1  # (kept on the hut, so a rebuilt spawner doesn't start over)
