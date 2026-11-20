@@ -25,13 +25,14 @@ STATION_INFO = {
     "anvil": {"name": "Anvil", "setup": 2, "hp": 120},
     "jeweler": {"name": "Jeweler's Kit", "setup": 0, "hp": 0},
     "alchemist": {"name": "Alchemist's Set", "setup": 0, "hp": 0},
+    "cooking_pot": {"name": "Cooking Pot", "setup": 0, "hp": 0},
     "cauldron": {"name": "Cauldron", "setup": 3, "hp": 140},
     "shrine": {"name": "Shrine of Unmaking", "setup": 4, "hp": 200, "found": "Vaults sealed in gold walls, floor 5 and deeper"},
     "forge": {"name": "Gilded Forge", "setup": 5, "hp": 220, "found": "Vaults on All Gold floors, floor 8 and deeper"},
 }
 STATIONS = list(STATION_INFO)
 TAB_NAMES = {"hand": "By Hand", "workbench": "Workbench", "smelter": "Smelter", "anvil": "Anvil", "jeweler": "Jeweler",
-             "alchemist": "Alchemy", "cauldron": "Cauldron", "shrine": "Shrine", "forge": "Forge"}
+             "alchemist": "Alchemy", "cooking_pot": "Cooking", "cauldron": "Cauldron", "shrine": "Shrine", "forge": "Forge"}
 
 
 class Station():
@@ -128,11 +129,52 @@ def potion(name, effect, power=0, scaling=None):
     return lambda b, b2: items.consumable(name, power, effect, attributeScaling=scaling)
 
 
+def meal(name, heal, buffs):
+    """makeItem for a meal from the Cooking Pot: a consumable (effect "Meal") that heals a little and gives
+    buffs, {effect tag: turns}, for a while after (see PlayerClass.eat). Meals don't roll a quality."""
+    def make(b, b2):
+        item = items.consumable(name, heal, "Meal")
+        item.buffs = dict(buffs)
+        return item
+    return make
+
+
+def mealResult(heal, buffs):
+    """The short "what it makes" line for a meal recipe, e.g. "Heals 3  Hearty 80t"."""
+    return f"Heals {heal}  " + ", ".join(f"{relics.effectName(tag)} {turns}t" for tag, turns in buffs.items())
+
+
+# The Cooking Pot's meals: (id, name, turns to cook, needs, heal, {buff: turns}, description). Raw Meat comes
+# from Dire Rats and Dire Moles. Demise Stew is the one with a drawback: its sickness comes with its powers.
+MEALS = [
+    ("roast_meat", "Roast Meat", 2, {"meat": 1}, 3, {"hardy": 80},
+     "Meat on a stick over the pot's coals. Plain, but it fills you up."),
+    ("bloodcap_stew", "Bloodcap Stew", 3, {"meat": 1, "bloodcap": 1}, 4, {"fed_mend": 40},
+     "A dark red stew. Your cuts close while it settles."),
+    ("hearthmoss_skewers", "Hearthmoss Skewers", 2, {"meat": 1, "hearthmoss": 1}, 3, {"fed_guard": 80},
+     "Meat wrapped in warm moss. Blows land softer on a full stomach."),
+    ("glowcap_broth", "Glowcap Broth", 2, {"meat": 1, "glowcap": 1}, 2, {"far_sight": 60},
+     "A thin broth that makes your eyes glimmer."),
+    ("emberroot_chili", "Emberroot Chili", 3, {"meat": 1, "emberroot": 1}, 2, {"fed_strength": 60, "fed_fire": 60},
+     "Hot enough to hurt. Your swings hit harder and fire bothers you less."),
+    ("shadowfern_wrap", "Shadowfern Wrap", 2, {"meat": 1, "shadowfern": 1}, 2, {"see_enemies": 40},
+     "Meat rolled in bitter fern. For a while you feel things moving behind the walls."),
+    ("miners_hotpot", "Miner's Hotpot", 4, {"meat": 2, "hearthmoss": 1, "glowcap": 1}, 4, {"fed_dig": 100, "bright": 100},
+     "A heavy pot of meat and moss with glowcaps on top. Good for a long dig."),
+    ("hunters_feast", "Hunter's Feast", 4, {"meat": 2, "bloodcap": 1, "emberroot": 1}, 5, {"fed_strength": 80, "hardy": 80},
+     "Two cuts, seared with emberroot and bloodcap. The best meal the pot makes."),
+    ("demise_stew", "Demise Stew", 3, {"meat": 1, "organizers_demise": 1}, 1,
+     {"demise_ward": 60, "fed_thorns": 60, "fed_sick": 60},
+     "Meat boiled with Organizer's Demise. Its thorns grow in your blood, and it makes you sick."),
+]
+
+
 def gear(etype, name, slot, scaling="strength"):
     """makeItem for one-stat gear."""
     return lambda b, b2: items.equipment(etype, name, slot, b, attributeScaling=scaling)
 
 
+BACKPACK_SLOTS = 5  # one more row of the Inventory window
 FIRE_FLASK_DAMAGE = 5
 SMOKE_TURNS = 12  # a Smoke Bomb's cloud lingers this long (it thins out over its last SMOKE_THIN_TURNS)
 DEMISE_FLASK_DAMAGE = 5
@@ -157,6 +199,15 @@ RECIPES = [
            "Blocks a little of every hit.", "Hands  Defense +1", bonus=1, makeItem=gear("Defense", "Wooden Shield", "Hands")),
     Recipe("leather_pouch", "Leather Pouch", "workbench", 2, {"hide": 3}, "upgrade",
            "Stitched to your belt. Carry twice as much of everything.", "Stacks 99 to 199"),
+    # A Backpack is a whole row of inventory, whatever its quality (quality only names it, and Masterwork still
+    # gets its free enchantment)
+    Recipe("backpack", "Backpack", "workbench", 3, {"hide": 6, "wood": 2}, "item",
+           "Worn on your back. Another row of inventory; arrow down to reach it.", "Back  Inventory +5",
+           makeItem=lambda b, b2: items.equipment("Storage", "Backpack", "Back", BACKPACK_SLOTS)),
+    Recipe("cooking_pot", "Cooking Pot", "workbench", 3, {"stone": 6, "wood": 3}, "station",
+           "A stone pot that sits on a few coals. Cooks meat, alone or with herbs.", "Unlocks the Cooking Pot", makes="cooking_pot"),
+    *[Recipe(mealId, name, "cooking_pot", turns, needs, "potion", description, mealResult(heal, buffs),
+             makeItem=meal(name, heal, buffs)) for mealId, name, turns, needs, heal, buffs, description in MEALS],
     Recipe("smelter", "Portable Smelter", "workbench", 4, {"stone": 10, "sand": 4, "copper_ore": 2}, "station",
            "A clay furnace small enough to carry. Set it up beside you to use it.", "Unlocks the Smelter", makes="smelter"),
     Recipe("alchemist", "Alchemist's Set", "workbench", 3, {"glass": 2, "wood": 3, "stone": 2}, "station",
@@ -344,7 +395,7 @@ def salvageRecipes(station, inventory):
     """A Take Apart recipe for each item in your pack that was made at this station."""
     out = []
     for item in inventory:
-        if relics.isRelic(item):
+        if relics.isRelic(item) or getattr(item, "effect", None) == "Meal":  # a meal can't be uncooked
             continue
         made = recipeFor(item)
         if made is None or made.station != station or not made.needs:
@@ -363,7 +414,7 @@ def relicStationRecipes(station, inventory):
             out.append(Recipe("scrap", f"Scrap {item.name}", "shrine", 6, {"gold": SCRAP_GOLD}, "scrap",
                               f"Destroys the relic for its dust. {SCRAP_GOLD} gold of fuel.", "3 Relic Dust, maybe a Void Shard",
                               target=item))
-        elif station == "forge" and relics.isRelic(item):
+        elif station == "forge" and relics.isRelic(item) and item.relicPower not in relics.BOUND_POWERS:
             out.append(Recipe("rekindle", f"Rekindle {item.name}", "forge", 8, {"relic_dust": 2, "gold": REKINDLE_GOLD}, "rekindle",
                               f"Burns away its relic power for a different one. {REKINDLE_GOLD} gold of fuel.", "A new relic power",
                               target=item))

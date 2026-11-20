@@ -85,6 +85,7 @@ WINDOW_SIZES = [(1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440
 POPUP_SECONDS = 1.2  # how long a "+2 Wood" popup takes to rise and fade
 POPUP_GAP = 450      # ms between two different popups on the same tile, so they don't draw over each other
 INVENTORY_COLUMNS = 5
+INVENTORY_ROWS = 2  # rows the Inventory window shows; a Backpack's row is reached by arrowing down (it scrolls)
 EQUIP_TURNS = 1         # turns to put one item on or take one off (a swap is both)
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
 CRAFT_MORE = 5       # Shift+Enter crafts up to this many in a row
@@ -340,6 +341,7 @@ class gameManager():
         self.colorIndex = 0
 
         self.swap = None  # an equipment swap waiting for Enter (see startSwap)
+        self.inventoryScroll = 0  # the Inventory window's top row (see scrollInventory)
         self.smoke = {}       # thrown Smoke Bomb clouds: {map position: turns left}
         self.throwing = None  # inventory index of the potion being aimed, or None
         self.throwArea = None # tiles the aimed potion would reach where it lands
@@ -730,6 +732,7 @@ class gameManager():
             index = self.windowSel["inventory"] + dx + dy * INVENTORY_COLUMNS
             if 0 <= index < self.player.inventoryLimit:
                 self.windowSel["inventory"] = index
+            self.scrollInventory()
             return
         if windowId == "equipment" and self.swapActive():
             keys = list(self.player.equipment.keys())
@@ -758,19 +761,29 @@ class gameManager():
                     self.player.equipItem(index)
                     if len(self.player.inventory) < before:
                         self.spendTurns(EQUIP_TURNS)
+                        self.fitSelections()
         elif windowId == "equipment":
             slot = list(self.player.equipment.keys())[index]
             if self.swapActive():
                 if slot in self.swap["slots"]:
-                    self.player.swapEquip(self.swap["index"], slot)
+                    old = self.player.equipment[slot]
+                    if self.player.sheds(old) and not self.roomToSpill():
+                        return
+                    self.spill(self.player.swapEquip(self.swap["index"], slot))
                     self.spendTurns(2 * EQUIP_TURNS)  # taking one off and putting one on
                     self.swap = None
                     self.focus = "inventory" if "inventory" in self.openWindows else "equipment"
+                    self.fitSelections()
             elif self.player.equipment[slot] != "None":
-                if self.player.unEquipItem(slot):
-                    self.spendTurns(EQUIP_TURNS)
+                if self.player.sheds(self.player.equipment[slot]) and not self.roomToSpill():
+                    return
+                problem, spilled = self.player.unEquipItem(slot)
+                self.spill(spilled)
+                if problem:
+                    self.addPopup(problem, self.playerPositionFlat)
                 else:
-                    self.addPopup("Inventory full", self.playerPositionFlat)
+                    self.spendTurns(EQUIP_TURNS)
+                    self.fitSelections()
         elif windowId == "levelup":
             self.player.levelUp(list(self.player.attributes.keys())[index])
         elif windowId == "items":
@@ -788,7 +801,7 @@ class gameManager():
             index = self.windowSel["inventory"]
             if index >= len(player.inventory):
                 return
-            take = lambda: player.inventory.pop(index)
+            take = lambda: (player.inventory.pop(index), [])
         else:
             if self.swapActive():
                 return
@@ -799,8 +812,11 @@ class gameManager():
         if not any(self.roomFor(self.groundAt(p)) for p in self.spillOrder(self.playerPositionFlat)):
             self.addPopup("No room to drop it", self.playerPositionFlat)
             return
-        item = take()
-        spot = self.placeItems(self.playerPositionFlat, [item])[0]
+        item, spilled = take()  # dropping a Backpack or Vestigial Hand spills what it held too
+        self.fitSelections()
+        spot = self.placeItems(self.playerPositionFlat, [item] + spilled)[0]
+        if spilled:
+            self.addPopup(f"{len(spilled)} spilled", self.playerPositionFlat)
         self.addPopup(f"Dropped {item.name}", spot)
         self.change = True
 
@@ -909,6 +925,35 @@ class gameManager():
             pile.gold += gold
         self.change = True
         return placed
+
+    def roomToSpill(self):
+        """True if there's ground nearby to spill things onto (popup if not)."""
+        if any(self.roomFor(self.groundAt(p)) for p in self.spillOrder(self.playerPositionFlat)):
+            return True
+        self.addPopup("No room to spill onto", self.playerPositionFlat)
+        return False
+
+    def spill(self, things):
+        """Puts what came out of a Backpack's row or a Third Hand (and the Backpack or Hand itself, if the
+        inventory had no room for it) on the ground at your feet."""
+        if things:
+            self.placeItems(self.playerPositionFlat, things)
+            self.addPopup(f"{len(things)} spilled" if len(things) > 1 else f"{things[0].name} spilled", self.playerPositionFlat)
+
+    def scrollInventory(self):
+        """Scrolls the Inventory window just enough to keep the selected slot in view."""
+        rows = max(1, -(-self.player.inventoryLimit // INVENTORY_COLUMNS))
+        row = self.windowSel["inventory"] // INVENTORY_COLUMNS
+        top = getattr(self, "inventoryScroll", 0)
+        top = min(top, row)
+        top = max(top, row - INVENTORY_ROWS + 1)
+        self.inventoryScroll = max(0, min(top, rows - INVENTORY_ROWS))
+
+    def fitSelections(self):
+        """After slots come or go (a Backpack, a Vestigial Hand), keeps the windows' selections on real slots."""
+        self.windowSel["inventory"] = min(self.windowSel["inventory"], self.player.inventoryLimit - 1)
+        self.windowSel["equipment"] = min(self.windowSel["equipment"], len(self.player.equipment) - 1)
+        self.scrollInventory()
 
     # --------------------------------------------------------- equipment swap
     # Equipping with every fitting slot full opens the Equipment window on that slot; Enter swaps the item in
@@ -1322,6 +1367,9 @@ class gameManager():
             return
         player.damageTaken += player.hitDamage(enemy.damage)
         self.bleed(self.playerPositionFlat)
+        tile = self.grid.get(enemyPosition)
+        if player.hasEffect("fed_thorns") and tile and tile[0] == 5 and len(tile) > 2 and tile[2] is enemy:
+            self.magicEnemy(enemyPosition, relics.THORN_DAMAGE)  # Demise Stew: the thorns in your blood bite back
 
     def placeRelicChest(self, grid, depth, proportion):
         """Sometimes a floor has a chest with a relic in it."""
@@ -2317,8 +2365,12 @@ class gameManager():
         return here[0] == 8 and len(here) > 2 and here[2].hides
 
     def useConsumable(self, index):
-        """Drinks a potion from the inventory (thrown ones go through startThrow instead)."""
+        """Drinks a potion or eats a meal from the inventory (thrown ones go through startThrow instead)."""
+        item = self.player.inventory[index]
         self.player.useConsumable(index)
+        if item.effect == "Meal":
+            self.addPopup(f"Ate {item.name}", self.playerPositionFlat)  # (it replaces any meal still working)
+            self.change = True
 
     # ---------------------------------------------------------------- throwing
     # Enter on a Fire Flask or Smoke Bomb starts aiming: the aim line runs from you to where it will land and the
@@ -2964,6 +3016,12 @@ class gameManager():
         player = self.player
         if player.hasEffect("regen") and self.turnCount % 20 == 0 and player.damageTaken > 0:
             player.damageTaken -= 1  # Gilded Amulet
+        if player.hasEffect("fed_mend") and self.turnCount % 5 == 0 and player.damageTaken > 0:
+            player.damageTaken -= 1  # Bloodcap Stew
+        if player.hasEffect("fed_sick") and self.turnCount % relics.SICK_TURNS == 0 and player.getCurrentHealth() > 1:
+            player.damageTaken += 1  # Demise Stew's sickness
+        for tag in player.stepBuffs():
+            self.addPopup(f"{relics.effectName(tag)} wore off", self.playerPositionFlat)
         if self.addUnsealed and not player.hasEffect("seal_ward"):
             validSpots = [k for k in self.grid.keys() if self.grid[k][0] == 2]
             if len(validSpots) > 0:
@@ -3213,6 +3271,11 @@ class gameManager():
                 self.player.pouchLimit = resources.POUCH_LIMIT
             if not hasattr(self.player, "wardReady"):
                 self.player.wardReady = True
+            if not hasattr(self.player, "buffs"):
+                self.player.buffs = {}
+            if not hasattr(self.player, "meal"):
+                self.player.meal = None
+            self.player.syncSlots()  # saves from before the Back slot
             self.updateOldGems()
             self.updateOldRelics()
             self.goldWallCount = data["goldwallCount"]
@@ -3295,11 +3358,13 @@ class gameManager():
                             ("AC", player.damageReduction()), ("Fire Resist", player.fireResistance()),
                             ("Magic Resist", player.magicResistance()),
                             ("Door Sense", f"{self.doorSense()} tile" + ("s" if self.doorSense() != 1 else "")),
-                            ("Status", f"Burning ({player.burnTurns})" if getattr(player, "burnTurns", 0) > 0 else "Fine"),
+                            ("Status", ", ".join(([f"Burning ({player.burnTurns})"] if getattr(player, "burnTurns", 0) > 0 else []) +
+                                                 [f"{relics.effectName(t)} ({n})" for t, n in player.drawbacks()]) or "Fine"),
                             ("Gold", player.gold),
                             ("Facing", self.getDirectionName()), ("Wall Damage", player.getWallDamage()),
                             ("Damage", f"{minDamage} - {maxDamage}"), ("Vision", player.getVisionRange()),
-                            ("Effects", ", ".join(relics.effectName(t) for t in player.effects()) or "None")]
+                            ("Effects", ", ".join(relics.effectName(t) for t in player.gearEffects()) or "None"),
+                            ("Meal", f"{player.meal} ({player.mealTurns()})" if getattr(player, "meal", None) and player.mealTurns() else "None")]
         elif windowId == "room":
             spec["rows"] = [("Floor Type", self.floorTypeName()), ("Theme", self.theme.name),
                             ("Room Type", self.getRoomType(self.playerPositionFlat, self.rooms) or "-"),
@@ -3382,13 +3447,16 @@ class gameManager():
             spec["kind"] = "grid"
             spec["items"] = [item.name for item in player.inventory]
             spec["capacity"] = player.inventoryLimit
+            self.fitSelections()
+            spec["visibleRows"] = INVENTORY_ROWS
+            spec["scroll"] = self.inventoryScroll
             index = self.windowSel["inventory"]
             spec["detail"] = self.itemDetail(player.inventory[index]) if index < len(player.inventory) else \
                 [("muted", "Empty slot", "")]
         return spec
 
     STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health",
-                  "FireRes": "Fire Resist", "MagicRes": "Magic Resist"}
+                  "FireRes": "Fire Resist", "MagicRes": "Magic Resist", "Storage": "Inventory Slots"}
 
     def statLines(self, item):
         """[(stat name, bonus)] for a piece of gear."""
@@ -3403,6 +3471,17 @@ class gameManager():
         how it compares with what you have on."""
         player = self.player
         lines = [("title", item.name, "")]
+        if item.Etype == "Consume" and item.effect == "Meal":
+            lines.append(("label", "MEAL", ""))
+            lines.append(("body", f"Heals {item.bonus}", ""))
+            for tag, turns in getattr(item, "buffs", {}).items():
+                name, text = relics.EFFECTS.get(tag, (tag, ""))
+                lines.append(("ench", f"{name}: {text} ({turns} turns)", ""))
+            if getattr(player, "meal", None):  # only one meal works at a time
+                lines.append(("worse", f"Replaces {player.meal}", ""))
+            lines.append(("hint", "Enter  eat", ""))
+            lines.append(("hint", "Ctrl+Enter  drop", ""))
+            return lines
         if item.Etype == "Consume":
             lines.append(("label", "POTION", ""))
             bonus = player.attributeBonuses.get(item.attributeScaling, 0)

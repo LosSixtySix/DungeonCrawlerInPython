@@ -22,6 +22,7 @@ RELICS = {
     "mole_claws": {"name": "Mole-King's Claws", "slot": "Gloves", "etype": "WallDamage", "bonus": 1, "power": "half_swings"},
     "hollow_blade": {"name": "Hollow Blade", "slot": "Hands", "etype": "Damage", "bonus": 8, "power": "lifedrinker"},
     "thornward_gloves": {"name": "Thornward Gloves", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "demise_ward"},
+    "vestigial_hand": {"name": "Discarded Vestigial Hand", "slot": "Back", "etype": "Unique", "bonus": 0, "power": "extra_hand"},
 }
 
 # Relics that can be in a chest: (relic id, first floor, floor types it can appear on or None for any)
@@ -31,6 +32,7 @@ CHEST_RELICS = [
     ("lantern", 5, None),
     ("hollow_blade", 8, None),
     ("thornward_gloves", 2, None),
+    ("vestigial_hand", 3, None),
 ]
 RELIC_CHEST_CHANCE = 0.25  # chance that a floor has one relic chest (if any relic can appear there)
 
@@ -54,7 +56,24 @@ EFFECTS = {
     "hardy": ("Hardy", "+2 max health"),
     "lucky": ("Lucky", "+1 gold per kill"),
     "keen_eye": ("Keen Eye", "1 in 4 veins give an extra ore"),
+    "extra_hand": ("Third Hand", "Grows another hand slot from your back"),
+    # Meals from the Cooking Pot (they last a number of turns; see recipes.MEALS and PlayerClass.buffs)
+    "fed_mend": ("Mending", "Heals 1 HP every 5 turns"),
+    "fed_guard": ("Sturdy", "+1 Defense"),
+    "fed_strength": ("Fire Belly", "+2 damage"),
+    "fed_fire": ("Heat-Proof", "+2 Fire Resist"),
+    "fed_dig": ("Miner's Fill", "+2 wall damage"),
+    "fed_thorns": ("Thorn Blood", "Enemies that hit you take 2 magic damage"),
+    "fed_sick": ("Demise Sickness", "Lose 1 HP every 8 turns (never below 1)"),
 }
+
+# A meal's drawbacks: they stay when you eat another meal (only the good part is replaced), and run their turns out
+DRAWBACKS = {"fed_sick"}
+THORN_DAMAGE = 2  # Demise Stew's Thorn Blood: magic damage to whatever hits you
+SICK_TURNS = 8    # Demise Sickness: 1 HP lost this often
+
+# Powers that are the relic itself: the Gilded Forge can't rekindle them away (the Hand would be just a hand)
+BOUND_POWERS = {"extra_hand"}
 
 # Powers the Gilded Forge can give (not Burrow: that one is the Burrower's Amulet's alone)
 FORGE_POWERS = ["half_swings", "goblin_fear", "seal_ward", "lifedrinker", "far_sight", "gold_double"]

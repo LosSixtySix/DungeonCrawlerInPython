@@ -11,7 +11,9 @@ L -> Low quality
 
 The valid slot types are:
 ->  Hands
+->  Head
 ->  Neck
+->  Back    (a Backpack, a Discarded Vestigial Hand)
 ->  Chest
 ->  Legs
 ->  Feet

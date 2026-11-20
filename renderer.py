@@ -64,6 +64,8 @@ class renderer():
     PAD = 16           # inner padding of a window
     BOX_W, BOX_H = 118, 74  # one inventory slot
     INV_DETAIL_W = 250      # the inventory's details panel, right of the slots
+    INV_SCROLL_W = 18       # the inventory's scroll bar, between the slots and the details panel
+    INV_ROWS = 2            # rows of slots the inventory shows (more scroll; see gameManager.INVENTORY_ROWS)
 
     def __init__(self, win):
         self.win = win
@@ -493,8 +495,8 @@ class renderer():
                     widest = max(widest, 22 + self.windowFont.size(str(label))[0] + self.windowFont.size(str(value))[0] + 40)
             return max(300, widest + self.PAD * 2), self.WINDOW_HEAD + max(1, count) * self.ROW + 14
         if spec["kind"] == "grid":
-            rows = math.ceil(spec["capacity"] / 5)
-            return self.PAD * 2 + 5 * self.BOX_W + self.INV_DETAIL_W, self.WINDOW_HEAD + rows * self.BOX_H + 18
+            rows = min(math.ceil(spec["capacity"] / 5), spec.get("visibleRows", self.INV_ROWS))
+            return self.PAD * 2 + 5 * self.BOX_W + self.INV_SCROLL_W + self.INV_DETAIL_W, self.WINDOW_HEAD + rows * self.BOX_H + 18
         widest = self.windowTitleFont.size(spec["title"])[0] + 70
         for label, value in spec["rows"]:
             widest = max(widest, self.windowFont.size(f"> {label}")[0] + self.windowFont.size(str(value))[0] + 40)
@@ -580,8 +582,8 @@ class renderer():
         top, gap = 70, 12
         characterHeight = self.WINDOW_HEAD + 8 * self.ROW + 14
         equipmentHeight = getattr(self, "equipmentHeight", self.WINDOW_HEAD + 8 * self.ROW + 14)
-        inventoryWidth = self.PAD * 2 + 5 * self.BOX_W + self.INV_DETAIL_W
-        inventoryHeight = self.WINDOW_HEAD + 2 * self.BOX_H + 18
+        inventoryWidth = self.PAD * 2 + 5 * self.BOX_W + self.INV_SCROLL_W + self.INV_DETAIL_W
+        inventoryHeight = self.WINDOW_HEAD + self.INV_ROWS * self.BOX_H + 18
         sideColumn = 340  # room for the widest left/right column window (Character, Room, Equipment, Level Up)
         match windowId:
             case "character":
@@ -632,8 +634,11 @@ class renderer():
             return
         if spec["kind"] == "grid":
             gx, gy = rect.x + self.PAD, rect.y + self.WINDOW_HEAD + 4
-            for i in range(spec["capacity"]):
-                box = pygame.Rect(gx + (i % 5) * self.BOX_W + 3, gy + (i // 5) * self.BOX_H + 3, self.BOX_W - 6, self.BOX_H - 6)
+            rows = math.ceil(spec["capacity"] / 5)
+            shown = min(rows, spec.get("visibleRows", self.INV_ROWS))
+            top = spec.get("scroll", 0)
+            for i in range(top * 5, min(spec["capacity"], (top + shown) * 5)):
+                box = pygame.Rect(gx + (i % 5) * self.BOX_W + 3, gy + (i // 5 - top) * self.BOX_H + 3, self.BOX_W - 6, self.BOX_H - 6)
                 selected = focused and i == spec["selected"]
                 if selected:
                     pygame.draw.rect(win, highlight, box)
@@ -642,8 +647,11 @@ class renderer():
                     lines = self.wrapText(spec["items"][i], self.windowSmallFont, box.w - 14)[-3:]
                     for n, line in enumerate(reversed(lines)):
                         self.blitText(win, line, self.windowSmallFont, select if selected else body, box.x + 8, box.bottom - 16 - n * 18)
+            self.drawScrollBar(win, pygame.Rect(gx + 5 * self.BOX_W + 3, gy + 3, self.INV_SCROLL_W - 6, shown * self.BOX_H - 6),
+                               top, shown, rows, focused)
             if spec.get("detail"):
-                self.drawItemDetail(win, spec["detail"], pygame.Rect(gx + 5 * self.BOX_W + 8, gy, self.INV_DETAIL_W - 16, rect.bottom - gy - 10))
+                self.drawItemDetail(win, spec["detail"], pygame.Rect(gx + 5 * self.BOX_W + self.INV_SCROLL_W + 8, gy,
+                                                                     self.INV_DETAIL_W - 16, rect.bottom - gy - 10))
             return
 
         y = rect.y + self.WINDOW_HEAD + self.ROW // 2 + 2
@@ -664,6 +672,25 @@ class renderer():
             self.drawPreview(spec["preview"], rect)
 
     BETTER = (130, 210, 120)
+
+    def drawScrollBar(self, win, area, top, shown, rows, focused):
+        """The inventory's scroll bar: a track with a thumb showing which rows are in view, and an arrow at each
+        end that lights up while there are more rows that way. With nothing to scroll there's just the track."""
+        panel, muted, select, boxLine = (self.color(c) for c in ("panel", "muted", "select", "boxLine"))
+        arrowH = 10
+        track = pygame.Rect(area.x + area.w // 2 - 3, area.y + arrowH + 4, 6, area.h - 2 * (arrowH + 4))
+        pygame.draw.rect(win, themes.mix(panel, boxLine, 0.5), track, border_radius=3)
+        if rows <= shown:
+            return
+        lit = select if focused else themes.mix(muted, select, 0.4)
+        for up, more in ((True, top > 0), (False, top + shown < rows)):
+            cx = area.centerx
+            y = area.y if up else area.bottom - arrowH
+            points = [(cx, y), (cx - 6, y + arrowH), (cx + 6, y + arrowH)] if up else                 [(cx - 6, y), (cx + 6, y), (cx, y + arrowH)]
+            pygame.draw.polygon(win, lit if more else boxLine, points)
+        thumbH = max(12, track.h * shown // rows)
+        thumbY = track.y + (track.h - thumbH) * top // max(1, rows - shown)
+        pygame.draw.rect(win, lit, pygame.Rect(track.x - 1, thumbY, track.w + 2, thumbH), border_radius=4)
 
     def drawPreview(self, preview, beside):
         """A panel attached to the Level Up window while it's focused: what one more point in the selected
