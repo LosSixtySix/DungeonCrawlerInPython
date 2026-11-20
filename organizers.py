@@ -588,8 +588,6 @@ def sow(gm, i, org, dist, came):
             for c in cells:
                 gm.grid[c] = [8, gm.grid[c][1], plants.Plant(DEMISE)]
             gm.change = True
-            if gm.grid[i][1] == 1:
-                gm.addPopup("Sown!", i)
             return i, True
         return i, False
     spots = [t for t in near if t in dist]

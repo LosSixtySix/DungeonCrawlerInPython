@@ -1536,7 +1536,7 @@ class gameManager():
         plant = self.grid[position][2]
         name = plant.name
         if plant.kind == organizers.DEMISE and not self.player.hasEffect("demise_ward"):
-            self.addPopup("Needs Thornward Gloves", position)  # its thorns can't be picked bare-handed
+            self.magicPlayer(DEMISE_DAMAGE)  # its thorns: bare-handed, it hurts you and stays where it is
             return
         stage = plant.pick()  # picking uses it up; what it gives depends on its stage (plants.Plant)
         self.grid[position] = [0, self.grid[position][1]]

@@ -144,8 +144,9 @@ SCHISM_HUNGER = 3           # the growth is up to (1 + this) times faster while 
 FOOD_NEED_SPAWNER = 5       # ...against what it needs: this much food per spawner...
 FOOD_NEED_UNIT = 1          # ...and this much per goblin
 NO_SCHISM_CHANCE = 0.1      # a new faction (a war band, or a schism's new half) never splits, this often
-SCHISM_DISTANCE = 45        # the half that leaves makes its camp at least this far from every faction's bonfires and
-                            # huts, and from where any other leaving half is going
+SCHISM_DISTANCE = 45        # the half that leaves makes its camp at least this far from every faction's bonfires,
+                            # huts and war chests, and from where any other leaving half is going...
+SCHISM_CLEAR = 10           # ...and this far from you, any other enemy and any crafting station
 SCHISM_PEACE = 400          # the two are at peace until its first bonfire is lit, or for this many turns at most
 ARRIVE_REACH = 5            # its builders light that bonfire this close to where they were going
 
@@ -2350,27 +2351,43 @@ def packUp(gm, f, goers):
 
 
 def campsAround(gm, ignore=None):
-    """Where every faction (but ignore) is: its bonfires, its huts and, for a group on its way to a new camp, where
-    it's going."""
+    """Where every faction (but ignore) is: its bonfires, its huts, its war chests and, for a group on its way to a
+    new camp, where it's going."""
     factions = [g for g in camp(gm)["factions"].values() if g is not ignore]
     return [b for g in factions for b in g.bonfires] + [h["center"] for g in factions for h in g.huts] + \
-        [migrating(g) for g in factions if migrating(g) is not None]
+        [c for g in factions for c in chests(gm, g)] + [migrating(g) for g in factions if migrating(g) is not None]
+
+
+def othersAround(gm):
+    """Everything else a new camp keeps SCHISM_CLEAR from: you, every enemy outside the factions (monsters,
+    Organizers, wild goblins) and every crafting station."""
+    out = [gm.playerPositionFlat]
+    for p in gm.EnemyPositions:
+        tile = gm.grid.get(p)
+        if tile and tile[0] == 5 and len(tile) > 2 and factionOf(tile[2]) is None:
+            out.append(p)
+    return out + [t for t, tile in gm.grid.items() if tile[0] == 7]
 
 
 def farAway(gm, start, ignore=None):
-    """A roomy open tile reachable from start, at least SCHISM_DISTANCE from every faction's bonfires and huts and
-    from every other leaving group's destination (campsAround), or None if there's no such spot: the floor is too
-    crowded for another camp."""
-    reach = walkingDistances(gm, start, gm.numberOfSpots)
-    fires = campsAround(gm, ignore)
-    clearance = lambda t: min((dist(gm, t, b) for b in fires), default=1e9)
-    pool = [t for t in reach if gm.grid[t][0] == 0 and clearance(t) >= SCHISM_DISTANCE]
-    if not pool:
-        return None
-    sample = rand.sample(pool, min(200, len(pool)))
+    """Where a schism's leaving half goes to set up camp: an open floor tile anywhere on the floor (goblins dig their
+    way there) at least SCHISM_DISTANCE from every faction's bonfires, huts and war chests and every other leaving
+    group's destination (campsAround) and SCHISM_CLEAR from you, any other enemy and any station (othersAround).
+    It doesn't need room for a hut yet: once the bonfire's lit, builders dig the camp out around it. The roomiest
+    of those, or None only if there's no such spot on the whole floor."""
+    fires, others = campsAround(gm, ignore), othersAround(gm)
+    spots = [t for t, tile in gm.grid.items() if tile[0] == 0]
+    rand.shuffle(spots)
+    found = []
+    for t in spots:
+        if any(dist(gm, t, b) < SCHISM_DISTANCE for b in fires) or any(dist(gm, t, p) < SCHISM_CLEAR for p in others):
+            continue
+        found.append(t)
+        if len(found) >= 60:
+            break
     roomy = lambda t: sum(1 for dy in range(-4, 5) for dx in range(-4, 5)
                           if (n := offsetTile(gm, t, dx, dy)) is not None and gm.grid[n][0] == 0)
-    return max(sample, key=roomy)
+    return max(found, key=roomy) if found else None
 
 
 def migrating(f):
