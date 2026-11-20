@@ -9,7 +9,6 @@ Each event's "plants" entry changes how plants grow while it's active (see plant
   growTurns   a growth step happens this often (normally plants.GROW_TURNS)
   birth       births are this many times as likely
   death       the chance a lonely or crowded wild plant withers (normally plants.DEATH_CHANCE)
-  maxPlants   the floor stops growing new plants past this many (normally plants.MAX_PLANTS)
   corrupt     plants corrupt the walls around them, which then spread the plant (see plants.py)
 """
 
@@ -19,7 +18,7 @@ DELAY = (15, 60)       # the event fires this many turns after you first arrive 
 
 EVENTS = {
     "overgrowth": {"name": "Overgrowth", "description": "Plants grow much faster, rarely wither and creep into the walls",
-                   "plants": {"growTurns": 3, "birth": 1.5, "death": 0.05, "maxPlants": 320, "corrupt": True}},
+                   "plants": {"growTurns": 3, "birth": 1.5, "death": 0.05, "corrupt": True}},
     "expansion": {"name": "Expansion", "description": "A goblin war band arrives and builds a camp (expansion.py)"},
 }
 

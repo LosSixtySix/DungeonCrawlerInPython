@@ -84,11 +84,28 @@ ENEMY_LOOT = {
 }
 
 # The tabs of the Loot Table window, in order
-# Keyed by the plant's name: its herb, and sometimes a seed to plant
-PLANT_LOOT = {info["name"]: [(info["herb"], 100, (1, 2)), (info["seed"], plants.SEED_CHANCE, (1, 1))]
-              for info in plants.PLANTS.values()}
+# Picking a plant (plants.Plant.pick) uses it up: in its harvest stage it gives its herb, in its seed stage its
+# seeds, before it's ripe nothing. Keyed "<plant name> (harvest)" and "<plant name> (seeds)" (plantSource).
+PLANT_LOOT = {f"{info['name']} ({'harvest' if stage == 'harvest' else 'seeds'})": [(info[part], 100, (1, 2))]
+              for info in plants.PLANTS.values() for stage, part in (("harvest", "herb"), ("seed", "seed"))}
 
-LOOT_TABS = [("Enemies", ENEMY_LOOT), ("Walls", WALL_LOOT), ("Plants", PLANT_LOOT)]
+# Planted plants give PLANTED_BONUS more at both the fewest and the most (same keys, their own table).
+PLANTED_BONUS = 1
+CROP_LOOT = {source: [(m, chance, (low + PLANTED_BONUS, high + PLANTED_BONUS)) for m, chance, (low, high) in lines]
+             for source, lines in PLANT_LOOT.items()}
+
+
+def plantSource(plant, stage):
+    """The PLANT_LOOT / CROP_LOOT key for picking this plant in this ripe stage."""
+    return f"{plant.name} ({'harvest' if stage == 'harvest' else 'seeds'})"
+
+
+def rollPick(plant, stage):
+    """What picking this plant in this ripe stage gives (more for a planted one)."""
+    return roll(CROP_LOOT if plant.planted else PLANT_LOOT, plantSource(plant, stage))
+
+
+LOOT_TABS = [("Enemies", ENEMY_LOOT), ("Walls", WALL_LOOT), ("Plants", PLANT_LOOT), ("Crops", CROP_LOOT)]
 
 # Nicer names for the window where the code's names differ
 DISPLAY_NAMES = {"Goblin Chieftan": "Goblin Chieftain", "Unsealed": "The Unsealed"}

@@ -23,9 +23,10 @@ all belong to it. Goblins that were already on the floor are "wild" (no faction)
                   out. A wall already standing where a hut wall goes is claimed (CLAIM_TURNS) instead of broken.
                   Huts that lose walls or their spawner are built back up before any new hut. It only fights
                   things right beside it.
-  Goblin Farmer   grows Game of Life still lifes of plants near its bonfires (see "the farmer" below), picks what
-                  sprouts round them and keeps them alive, with seeds from the war chests; the rest of its harvest
-                  goes back in them.
+  Goblin Farmer   farms only in its farming hut, which a builder builds with it on a floor that suits its seeds
+                  (see "the farmer" below): sows the beds, picks each crop when it's ripe, waiting for its seed
+                  stage while it's short of seeds, and stores what it doesn't keep in the hut's chest. It walks through any plant, and never
+                  picks one it didn't sow.
   Spawner         every SPAWN_TURNS makes a Goblin, Goblin Chief, Goblin Builder or Goblin Farmer (SPAWN_ODDS) on a free tile
                   inside its hut, eating FOOD_PER_SPAWN of the food stocked in it. It waits while the hut is full
                   or it's out of food. It holds SPAWNER_FOOD_MAX food and starts with SPAWNER_START_FOOD.
@@ -41,16 +42,20 @@ all belong to it. Goblins that were already on the floor are "wild" (no faction)
                   factions, any other enemy). With nothing to fight they go on gathering missions: the chief leads
                   them to a random spot anywhere on the floor (at least MISSION_MIN from home) and back, and they
                   gather whatever they pass, there and back. Back home they stash what they brought.
-  Schisms         a faction with SPLIT_UNITS goblins (and SPLIT_BUILDERS builders and SPLIT_FARMERS farmers)
-                  splits: half its squads, builders and farmers become a new faction in new colors, taking half its
-                  stored food (up to SCHISM_FOOD) and, for their farmers, seeds from its war chests, and march off to set up a camp at least
-                  SCHISM_DISTANCE from every bonfire. Huts, chests and plots stay. The two are at peace until the
-                  new camp's first bonfire is lit (SCHISM_PEACE turns at most), then at war. A faction has no
-                  schism within SCHISM_COOLDOWN turns of its last one, or of being made.
+  Schisms         a faction with SPLIT_UNITS goblins (and SPLIT_BUILDERS builders and SPLIT_FARMERS farmers) rolls
+                  for a schism every turn: SCHISM_CHANCE at first, growing by SCHISM_CHANCE_STEP each turn it
+                  doesn't happen (faster while its food is low, see schismStep), and back to SCHISM_CHANCE once it
+                  does. In a schism half its squads, builders and farmers become a new faction in new colors, taking
+                  half its stored food (up to SCHISM_FOOD) and, for their farmers, seeds from its war chests, and
+                  march off to set up a camp at least SCHISM_DISTANCE from every bonfire, hut and other leaving
+                  group's destination. Huts and chests stay. The two are at peace until the new camp's first bonfire
+                  is lit (SCHISM_PEACE turns at most), then at war. On a floor too crowded for another camp, the new
+                  faction rises up where it is instead (takeOver): at war at once, it takes half the faction's huts. NO_SCHISM_CHANCE of factions (war bands and
+                  schisms' new factions alike) never split.
 
 Hauling: marching squads with nothing to fight empty floor chests and item piles near them (items, materials and
 gold), mine ore veins and Gold Walls near their camp, keeping everything they dig out (and what they take from
-enemies they kill), and pick plants near their camp (not the faction's farm plots). Every goblin carries
+enemies they kill), and pick wild plants near their camp (never crops, nor anything in a farming hut). Every goblin carries
 CARRY_SLOTS slots, stacked like your pouch but smaller: each material takes a slot per GOBLIN_STACK of it,
 picked-up gold one slot, each item one. Once the squad is HAUL_AT full it heads home, still stopping for anything within HAUL_DETOUR
 of it on the way until it's full, and puts everything in a war chest: a storage hut's first, else one by its
@@ -89,6 +94,7 @@ BONFIRE_GIVE_UP = 80        # a builder that hasn't reached the spot for a new b
 HOME_REACH = 30             # a builder further than this from all its faction's bonfires lights one where it is
 HUT_DISTANCE = (4, 12)
 NEW_BONFIRE_DISTANCE = (13, 18)
+CAMP_GAP = 30               # a faction lights no bonfire this close to another faction's (bar a new camp's first)
 
 SQUAD_GOBLINS = 3           # plus a chief
 SIGHT = 6                   # how far a squad member spots a target
@@ -120,6 +126,7 @@ MINE_REACH = 6              # squad members mine ore veins and Gold Walls this c
 MINE_RANGE = PATROL_RADIUS + 5  # ...within this far of their bonfire
 CHEST_TURNS = 3             # turns to build a warcamp chest
 CAMP_CHEST_SLOTS = 20       # a warcamp chest's room: each material takes one slot however much of it, each item one
+FARM_CHEST_SLOTS = 40       # a farming hut's chest is bigger
                             # (20 rows is what the Items Here window fits on a 768-pixel-tall screen)
 CHEST_HP = 12               # hits (of a goblin's damage) to smash one open
 CHEST_SPOT = (2, 4)         # a warcamp chest goes this many tiles from its bonfire
@@ -131,16 +138,25 @@ SPLIT_FARMERS = 2           # ...and farmers (so both halves can farm) has a sch
 SCHISM_FOOD = 30            # the half that leaves takes half the faction's stored food along, at most this much
 HUT_SPAWNS = 2              # a faction starts a new spawner hut only once each of its spawner huts has made this many goblins
 MAX_STORAGE_HUTS = 3        # a faction has at most this many storage huts
-SPLIT_CHECK_TURNS = 10
-SCHISM_DISTANCE = 45        # the half that leaves makes its camp at least this far from every faction's bonfires
+SCHISM_CHANCE = 0.0005      # a faction meeting the requirements above rolls this chance of a schism each turn...
+SCHISM_CHANCE_STEP = 0.00005  # ...which grows by this much each turn it doesn't happen (back to SCHISM_CHANCE after one)
+SCHISM_HUNGER = 3           # the growth is up to (1 + this) times faster while the faction's food runs low...
+FOOD_NEED_SPAWNER = 5       # ...against what it needs: this much food per spawner...
+FOOD_NEED_UNIT = 1          # ...and this much per goblin
+NO_SCHISM_CHANCE = 0.1      # a new faction (a war band, or a schism's new half) never splits, this often
+SCHISM_DISTANCE = 45        # the half that leaves makes its camp at least this far from every faction's bonfires and
+                            # huts, and from where any other leaving half is going
 SCHISM_PEACE = 400          # the two are at peace until its first bonfire is lit, or for this many turns at most
-SCHISM_COOLDOWN = 150       # a faction has no schism within this many turns of its last one (or of being made)
 ARRIVE_REACH = 5            # its builders light that bonfire this close to where they were going
 
 # Storage huts: walls STORAGE_RADIUS from the middle (a 9x9 square with the corners left out), an entrance in the
 # middle of each side, and a war chest on each of these spots inside, along the walls
 STORAGE_RADIUS = 4
-STORAGE_CHESTS = [(dx, dy) for d in (-2, -1, 1, 2) for dx, dy in ((d, -3), (d, 3), (-3, d), (3, d))]
+# Chests along the inside of its walls: the corners and the spots beside them on the top and bottom rows... but not
+# (+-2, +-3), so every corner opens onto the middle: no chest is boxed in by others, and no tile is a pocket that
+# would seal in a goblin standing there when the last chest goes in.
+STORAGE_CHESTS = [(dx, dy) for d in (-1, 1) for dx, dy in ((d, -3), (d, 3))] + \
+    [(dx, dy) for d in (-2, -1, 1, 2) for dx, dy in ((-3, d), (3, d))] + [(-3, -3), (3, -3), (-3, 3), (3, 3)]
 FIRST_STORAGE_HUTS = 2      # builders start the first storage hut once the faction has this many huts
 
 WILD_SIGHT = 5              # a wild goblin attacks expansionists this close
@@ -209,7 +225,9 @@ class Faction:
         self.first = None         # its first bonfire (splits measure from it)
         self.huts = []            # {"center", "floor", "walls", "inside", "done"}
         self.squads = []
-        self.farms = []           # farm plots (see "the farmer")
+        self.farms = []           # (farm plots, from before farming huts: unused)
+        self.migrating = None     # where a schism's new half is going to set up camp
+        self.peaceWith = None     # the faction it's at peace with for now (a schism's other half)
 
     def walls(self):
         """Its huts' walls, built or planned: its own goblins never dig through these."""
@@ -231,9 +249,10 @@ class CampChest(list):
     """A warcamp chest: the items in it (a list, like any chest on the map), plus whose it is. You can open and
     loot it like any other chest."""
 
-    def __init__(self, faction, look, items=()):
+    def __init__(self, faction, look, items=(), slots=CAMP_CHEST_SLOTS):
         super().__init__(items)
         self.faction, self.look, self.hp = faction, look, CHEST_HP
+        self.slots = slots
 
 
 def camp(gm):
@@ -380,14 +399,17 @@ def moved(ctx, unit, position):
     ctx["pos"][id(unit)] = position
 
 
-def makeWay(gm, ctx, i, t, f):
+def makeWay(gm, ctx, i, t, f, b):
     """A builder at i needs tile t, where someone is standing. One of its own goblins gets moved off (nudge); if it
     can't be (it's boxed in, often by the builders themselves), the builder steps away instead so it can get out.
     Returns where the builder is now."""
     if nudge(gm, ctx, t, f):
         return i
     away = [n for n in gm.neighbors(i) if organizers.passable(gm.grid[n], demise=False) and n not in gm.neighbors(t)]
-    return organizers.moveTo(gm, i, rand.choice(away)) if away else i
+    if not away:
+        return i
+    b.rest = 2  # it stays out of the way a couple of turns (coming straight back would box the other one in again)
+    return organizers.moveTo(gm, i, rand.choice(away))
 
 
 def nudge(gm, ctx, t, f):
@@ -395,7 +417,8 @@ def nudge(gm, ctx, t, f):
     tile = gm.grid[t]
     if tile[0] != 5 or len(tile) < 3 or factionOf(tile[2]) != f.id:
         return tile[0] == 0
-    free = [n for n in gm.neighbors(t) if organizers.passable(gm.grid[n], demise=False)]
+    clear = keepClear(gm, ctx, f)  # never onto a doorway or a spot the huts still need (it'd be shoved back and forth)
+    free = [n for n in gm.neighbors(t) if organizers.passable(gm.grid[n], demise=False) and n not in clear]
     if not free:
         return False
     n, unit = rand.choice(free), tile[2]
@@ -417,6 +440,7 @@ def nudge(gm, ctx, t, f):
 
 PATH_REACH = 40             # how far (in steps) the shared path maps reach
 BLOCKED_TURNS = 2           # a unit blocked this many turns in a row digs itself a new way (see step)
+SWAP_COOLDOWN = 6           # a goblin that swapped places with another (swapWith) can't swap again for this many turns
 
 
 BONFIRE_PATH_TURNS = 10     # a bonfire's floor-wide path map is redone this often
@@ -433,17 +457,26 @@ def bonfireField(gm, goal):
     return paths
 
 
-def field(gm, ctx, goal, start):
+def field(gm, ctx, goal, start, plantsOpen=False):
     """Walking distance to goal over open floor (tiles someone stands on count as open, since they move), reaching
     far enough for a trip from start (up to PATH_REACH). Worked out once a turn per goal and shared by everyone
-    heading there; redone further out if someone further away needs it."""
+    heading there; redone further out if someone further away needs it. With plantsOpen (farmers), through any
+    plant too."""
     fields = ctx.setdefault("fields", {})
+    key = (goal, "plants") if plantsOpen else goal
     reach = min(PATH_REACH, int(dist(gm, start, goal) * 2) + 8)
-    if goal not in fields or (fields[goal][0] < reach and start not in fields[goal][1]):
-        fields[goal] = (reach, walkingDistances(gm, goal, reach))
-    if start not in fields[goal][1] and fields[goal][0] < PATH_REACH:  # the way round is longer: look further
-        fields[goal] = (PATH_REACH, walkingDistances(gm, goal, PATH_REACH))
-    return fields[goal][1]
+    if key not in fields or (fields[key][0] < reach and start not in fields[key][1]):
+        fields[key] = (reach, walkingDistances(gm, goal, reach, plantsOpen))
+    if start not in fields[key][1] and fields[key][0] < PATH_REACH:  # the way round is longer: look further
+        fields[key] = (PATH_REACH, walkingDistances(gm, goal, PATH_REACH, plantsOpen))
+    return fields[key][1]
+
+
+def canEnter(tile, throughPlants=False):
+    """Can a goblin step onto this tile? Open floor, item piles, walkable plants; with throughPlants (farmers), any
+    plant but Organizer's Demise."""
+    return organizers.passable(tile, demise=False) or \
+        (throughPlants and tile[0] == 8 and not organizers.isDemise(tile))
 
 
 def neighborTable(gm):
@@ -456,9 +489,9 @@ def neighborTable(gm):
     return cache[1]
 
 
-def walkingDistances(gm, goal, reach):
+def walkingDistances(gm, goal, reach, plantsOpen=False):
     """{tile: steps to goal} for tiles up to reach steps away, walking over open floor, item piles and walkable
-    plants (not Organizer's Demise) and anyone standing on them."""
+    plants (not Organizer's Demise; with plantsOpen, any other plant too) and anyone standing on them."""
     out, frontier = {goal: 0}, [goal]
     table, grid = neighborTable(gm), gm.grid
     for d in range(1, reach + 1):
@@ -467,7 +500,7 @@ def walkingDistances(gm, goal, reach):
         nxt = []
         for p in frontier:
             for n in table[p]:
-                if n not in out and (grid[n][0] in (1, 5) or organizers.passable(grid[n], demise=False)):
+                if n not in out and (grid[n][0] in (1, 5) or canEnter(grid[n], plantsOpen)):
                     out[n] = d
                     nxt.append(n)
         frontier = nxt
@@ -478,14 +511,20 @@ def step(gm, i, unit, goal, protected, ctx=None, paths=None):
     """One step toward goal. With a path to it (see field), along the path onto a free tile. Without one, straight
     at it: onto free floor that gets closer, or (for a unit that digs) through a wall in the way that isn't
     protected, sliding sideways round small obstacles. Returns where it is now."""
+    farmer = unit.name == "Goblin Farmer"  # (farmers walk through any plant)
     if ctx is not None or paths is not None:
-        paths = paths if paths is not None else field(gm, ctx, goal, i)
+        paths = paths if paths is not None else field(gm, ctx, goal, i, farmer)
         if i in paths:
             closer = [j for j in gm.neighbors(i) if paths.get(j, 1e9) < paths[i]]
-            better = [j for j in closer if organizers.passable(gm.grid[j], demise=False)]
+            better = [j for j in closer if canEnter(gm.grid[j], farmer)]
             if not better and unit.name == "Goblin Builder" and ctx is not None:  # its own goblins in the way: shoo one
                 f = camp(gm)["factions"].get(factionOf(unit))
                 better = [j for j in closer if f is not None and nudge(gm, ctx, j, f)]
+            if not better and ctx is not None:  # still blocked by its own goblins (nowhere to shoo them): swap places
+                j = swapWith(gm, ctx, i, unit, sorted((j for j in closer if j != goal), key=lambda j: paths[j]))
+                if j is not None:
+                    unit.blockedTurns = 0
+                    return j
             if better:
                 unit.blockedTurns = 0
                 return organizers.moveTo(gm, i, min(better, key=lambda j: paths[j]))
@@ -499,7 +538,7 @@ def step(gm, i, unit, goal, protected, ctx=None, paths=None):
                     j = min(diggable, key=lambda j: dist(gm, j, goal))
                     digWall(gm, i, unit, j, BREAK_DAMAGE if unit.name == "Goblin Builder" else unit.wallDamage)
                     return i
-            aside = [j for j in gm.neighbors(i) if organizers.passable(gm.grid[j], demise=False) and j in paths]
+            aside = [j for j in gm.neighbors(i) if canEnter(gm.grid[j], farmer) and j in paths]
             if aside and rand.random() < 0.3:
                 return organizers.moveTo(gm, i, rand.choice(aside))
             return i
@@ -509,15 +548,45 @@ def step(gm, i, unit, goal, protected, ctx=None, paths=None):
         if dist(gm, j, goal) >= here:
             break
         tile = gm.grid[j]
-        if organizers.passable(tile, demise=False):
+        if canEnter(tile, farmer):
             return organizers.moveTo(gm, i, j)
         if tile[0] == 2 and unit.wallDamage > 0 and j not in protected:
             digWall(gm, i, unit, j, BREAK_DAMAGE if unit.name == "Goblin Builder" else unit.wallDamage)
             return i
-    sideways = [j for j in options if organizers.passable(gm.grid[j], demise=False) and dist(gm, j, goal) <= here + 0.5]
+    sideways = [j for j in options if canEnter(gm.grid[j], farmer) and dist(gm, j, goal) <= here + 0.5]
     if sideways and rand.random() < 0.5:
         return organizers.moveTo(gm, i, rand.choice(sideways))
+    if ctx is not None:  # its own goblins in the way: swap places with one that's closer
+        j = swapWith(gm, ctx, i, unit, [j for j in options if dist(gm, j, goal) < here and j != goal])
+        if j is not None:
+            return j
     return i
+
+
+def swapWith(gm, ctx, i, unit, tiles):
+    """unit (taken off tile i for its turn) swaps places with the first goblin of its own faction standing on one of
+    tiles: that goblin goes to i, and unit's new position is returned (None if there's nobody to swap with). Whatever
+    lies under each tile stays where it is. The other goblin keeps its turn if it hadn't had it yet.
+    Callers never pass the tile unit is heading for: whoever stands on its goal is waited for, not swapped out (else
+    two goblins after the same tile, like a squad member following its leader, swap back and forth for ever). And a
+    goblin that swapped can't swap again for SWAP_COOLDOWN turns, either way round, so no pair can ping-pong."""
+    mine = factionOf(unit)
+    cooling = lambda u: gm.turnCount - getattr(u, "swappedAt", -SWAP_COOLDOWN) < SWAP_COOLDOWN
+    if mine is None or cooling(unit):
+        return None
+    for j in tiles:
+        tile = gm.grid[j]
+        if tile[0] != 5 or len(tile) < 3 or factionOf(tile[2]) != mine or cooling(tile[2]):
+            continue
+        other = tile.pop()  # (j stays an enemy tile: unit goes there)
+        unit.swappedAt = other.swappedAt = gm.turnCount
+        gm.grid[i].append(other)
+        for positions in (gm.EnemyPositions, getattr(gm, "movedEnemies", set())):
+            positions.add(i)
+        moved(ctx, other, i)
+        gm.change = True
+        return j
+    return None
 
 
 def digWall(gm, i, unit, t, damage):
@@ -566,6 +635,10 @@ def adjacentFoe(gm, i, unit):
 
 def takeTurn(gm, i, unit, ctx):
     """A faction unit's turn. Returns where it is now."""
+    acted = ctx.setdefault("acted", set())
+    if id(unit) in acted:  # it was swapped onto a tile that hadn't had its turn yet: it already had its own
+        return i
+    acted.add(id(unit))
     foe = adjacentFoe(gm, i, unit)
     if foe:
         attack(gm, i, unit, *foe)
@@ -596,6 +669,8 @@ def keepClear(gm, ctx, f):
             r = h.get("radius", 3)
             tiles |= {t for t in (offsetTile(gm, h["center"], dx, dy) for dx, dy in ((0, -r), (0, r), (-r, 0), (r, 0)))
                       if t is not None}
+            if h.get("kind") == "farm" and h["done"]:
+                tiles |= set(h["beds"])  # (farmers work in them: see stepOffClear)
             if not h["done"]:
                 tiles |= {t for t in h["walls"] if gm.grid[t][0] != 2}
                 tiles |= {t for t in h.get("chests", ()) if gm.grid[t][0] != 3}
@@ -613,6 +688,8 @@ def stepOffClear(gm, ctx, i, unit):
     clear = keepClear(gm, ctx, f)
     if i not in clear:
         return i
+    if unit.name == "Goblin Farmer" and any(i in h.get("beds", ()) for h in farms(f)):
+        return i  # tending its beds
     off = [n for n in gm.neighbors(i) if organizers.passable(gm.grid[n], demise=False) and n not in clear]
     return organizers.moveTo(gm, i, rand.choice(off)) if off else i
 
@@ -864,10 +941,15 @@ def chestAt(gm, t):
     return tile[2] if tile[0] == 3 else []
 
 
+def chestSlots(items):
+    """How many slots a chest has (CAMP_CHEST_SLOTS, or FARM_CHEST_SLOTS for a farming hut's)."""
+    return getattr(items, "slots", CAMP_CHEST_SLOTS)
+
+
 def roomIn(gm, chest, unit=None):
     """True if the chest has a free slot (or, for unit, already holds a stack of something it carries)."""
     items = chestAt(gm, chest)
-    if len(items) < CAMP_CHEST_SLOTS:
+    if len(items) < chestSlots(items):
         return True
     held = {it.materialId for it in items if isinstance(it, resources.MaterialStack)}
     return unit is not None and not getattr(unit, "loot", []) and set(getattr(unit, "materials", {})) <= held
@@ -888,14 +970,14 @@ def stash(gm, chest, unit):
         stack = next((it for it in items if isinstance(it, resources.MaterialStack) and it.materialId == materialId), None)
         if stack is not None:
             stack.amount += amount
-        elif len(items) < CAMP_CHEST_SLOTS:
+        elif len(items) < chestSlots(items):
             items.append(resources.MaterialStack(materialId, amount))
         else:
             kept[materialId] = amount
     unit.gold = base + kept.pop("gold", 0)
     unit.materials = kept
     loot = getattr(unit, "loot", [])
-    room = max(0, CAMP_CHEST_SLOTS - len(items))
+    room = max(0, chestSlots(items) - len(items))
     items.extend(loot[:room])
     unit.loot = loot[room:]
     gm.change = True
@@ -919,6 +1001,7 @@ def raidTurn(gm, i, unit, squad, f, ctx):
         return step(gm, i, unit, target, f.walls(), ctx, bonfireField(gm, target))
     chest = tile[2]
     chest.hp -= unit.damage
+    crack(gm, chest, unit.damage)
     gm.change = True
     if chest.hp > 0:
         return i
@@ -1103,10 +1186,13 @@ def setAside(gm, unit):
 
 
 def pickable(gm, t, kind=None, farmed=None):
-    """Is there a plant at t a goblin can pick (not Organizer's Demise: its thorns), outside every farm plot?"""
+    """Is there a wild plant at t a goblin can pick (not Organizer's Demise: its thorns, nor a crop), outside every
+    farming hut?"""
     tile = gm.grid[t]
     if tile[0] != 8 or organizers.isDemise(tile) or (kind is not None and tile[2].kind != kind):
         return False
+    if getattr(tile[2], "planted", False) or not tile[2].ready:
+        return False  # somebody's crop (yours, or a farmer's), or not ripe yet
     return t not in (farmed if farmed is not None else allFarmTiles(gm))
 
 
@@ -1127,9 +1213,10 @@ def plantNear(gm, position, reach, home, homeReach, kind=None, avoid=()):
 
 
 def harvestBy(gm, unit, t):
-    """unit picks the plant at t: its herb, and sometimes a seed, go in its pockets (like yours, loot.PLANT_LOOT)."""
+    """unit picks the (ripe) plant at t: what its stage gives, its herb or seeds, goes in its pockets (like yours)."""
     tile = gm.grid[t]
-    for materialId, amount in loot.roll(loot.PLANT_LOOT, tile[2].name):
+    stage = tile[2].pick()
+    for materialId, amount in loot.rollPick(tile[2], stage) if stage else ():
         unit.materials[materialId] = unit.materials.get(materialId, 0) + amount
     gm.grid[t] = [0, tile[1]]
     gm.change = True
@@ -1289,19 +1376,19 @@ def planTask(gm, i, b, f):
                            and getattr(other, "task", None) and other.task["kind"] == "bonfire"), None)
             if shared is not None:
                 return {"kind": "bonfire", "at": shared["at"]}
-        spot = bonfireSpot(gm, i, i, 0, 3)
+        spot = bonfireSpot(gm, i, i, 0, 3, avoid=f if f.bonfires else None)  # (a camp's first: where it was going)
         return {"kind": "bonfire", "at": spot} if spot is not None else None
     for hut in f.huts:
         if hut["done"] and damaged(gm, hut):
             hut["done"] = False  # it lost walls, its spawner or a chest: it's built back up before any new hut
+    feed = feedTask(gm, i, b, f)
+    if feed is not None:  # a spawner running low on food, and food in the chests (or on it) to bring it: before
+        return feed       # anything else, even storage (a camp that can't spawn dies out while it builds)
     needStorage = storageNeeded(gm, f)
     if needStorage:  # the storage is full (or there's none yet): every builder works on the next storage hut
         building = next((h for h in f.huts if h.get("kind") == "storage" and not h["done"]), None)
         if building is not None:
             return {"kind": "hut", "hut": building}
-    feed = feedTask(gm, i, b, f)
-    if feed is not None:  # a spawner running low on food, and food in the chests (or on it) to bring it
-        return feed
     for hut in f.huts:
         if hut["done"]:
             continue
@@ -1312,13 +1399,35 @@ def planTask(gm, i, b, f):
                 or (getattr(owner, "task", None) or {}).get("hut") is not hut:
             hut["builder"] = b
             return {"kind": "hut", "hut": hut}
+    claimed = claimedTiles(gm)
+    farmer = unhousedFarmer(gm, f)
+    if farmer is not None:  # a farmer with seeds and no farming hut: pair up with it and build it one
+        hut = newHutSite(gm, f, i, "farm", claimed)
+        if hut is not None:
+            hut.update(builder=b, farmer=farmer, floorType=farmFloor(farmer))
+            f.huts.append(hut)
+            return {"kind": "hut", "hut": hut}
     count = lambda k: sum(1 for h in f.huts if h.get("kind", "hut") == k)
     kind = "storage" if needStorage and count("storage") < MAX_STORAGE_HUTS else "hut"
     if kind == "hut" and any(h.get("spawned", 0) < HUT_SPAWNS for h in f.huts if h.get("kind", "hut") == "hut"):
         # a spawner hut that hasn't made HUT_SPAWNS goblins yet: no new one. Help with one that's being built, if any.
         building = next((h for h in f.huts if not h["done"]), None)
         return {"kind": "hut", "hut": building} if building is not None else None
-    claimed = claimedTiles(gm)
+    hut = newHutSite(gm, f, i, kind, claimed)
+    if hut is not None:
+        hut["builder"] = b
+        f.huts.append(hut)
+        return {"kind": "hut", "hut": hut}
+    # no room around any bonfire: light a new one further out (one builder at a time, where a hut will fit)
+    if any(getattr(other, "task", None) and other.task["kind"] == "bonfire" and other is not b and other.hp > 0
+           and factionOf(other) == f.id for other in builders(gm)):
+        return None
+    spot = bonfireSpot(gm, home, i, *NEW_BONFIRE_DISTANCE, avoid=f, needRoom=claimed)
+    return {"kind": "bonfire", "at": spot} if spot is not None else None
+
+
+def newHutSite(gm, f, i, kind, claimed):
+    """A new hut of this kind laid out near one of f's bonfires (the nearest to i first), or None if none fits."""
     sites = []
     reach = HUT_DISTANCE[1]
     for bonfire in sorted(f.bonfires, key=lambda p: dist(gm, p, i)):
@@ -1338,17 +1447,7 @@ def planTask(gm, i, b, f):
             sites.append((dist(gm, center, bonfire) + rand.random() * 3, hut))
         if sites:
             break
-    if sites:
-        hut = min(sites, key=lambda s: s[0])[1]
-        hut["builder"] = b
-        f.huts.append(hut)
-        return {"kind": "hut", "hut": hut}
-    # no room around any bonfire: light a new one further out (one builder at a time, where a hut will fit)
-    if any(getattr(other, "task", None) and other.task["kind"] == "bonfire" and other is not b and other.hp > 0
-           and factionOf(other) == f.id for other in builders(gm)):
-        return None
-    spot = bonfireSpot(gm, home, i, *NEW_BONFIRE_DISTANCE, avoid=f, needRoom=claimed)
-    return {"kind": "bonfire", "at": spot} if spot is not None else None
+    return min(sites, key=lambda s: s[0])[1] if sites else None
 
 def builders(gm):
     for p in set(gm.EnemyPositions) | getattr(gm, "movedEnemies", set()):
@@ -1379,8 +1478,8 @@ def bonfireSpot(gm, center, near_, low, high, avoid=None, needRoom=None):
             continue
         if avoid is not None:
             enemyBonfire = nearestEnemyBonfire(gm, avoid, t)
-            if enemyBonfire is not None and enemyBonfire < dist(gm, t, center):
-                continue
+            if enemyBonfire is not None and (enemyBonfire < dist(gm, t, center) or enemyBonfire < CAMP_GAP):
+                continue  # the other faction's ground, or too close to it
         candidates.add(t)
     for t in sorted(candidates, key=lambda t: dist(gm, t, near_))[:8]:
         if needRoom is None or roomForHut(gm, t, needRoom):
@@ -1389,8 +1488,9 @@ def bonfireSpot(gm, center, near_, low, high, avoid=None, needRoom=None):
 
 
 def layOutHut(gm, center, claimed, kind="hut"):
-    """A hut ("hut": a spawner in the middle) or storage hut ("storage": war chests along its walls) centered at
-    center, with an entrance in the middle of each side, or None if it doesn't fit."""
+    """A hut ("hut": a spawner in the middle), storage hut ("storage": war chests along its walls) or farming hut
+    ("farm": plant beds round a chest in the middle) centered at center, with an entrance in the middle of each side,
+    or None if it doesn't fit."""
     store = kind == "storage"
     r = STORAGE_RADIUS if store else 3
     doors = [(0, -r), (0, r), (-r, 0), (r, 0)]  # an entrance in the middle of every side
@@ -1410,6 +1510,9 @@ def layOutHut(gm, center, claimed, kind="hut"):
            "skip": set(), "done": False, "builder": None, "kind": kind, "radius": r}
     if store:
         hut["chests"] = spots
+    if kind == "farm":  # beds in the 4 corners, a cross of paths from the doors to the chest in the middle
+        hut["beds"] = [offsetTile(gm, center, dx, dy) for dy in range(1 - r, r) for dx in range(1 - r, r) if dx and dy]
+        hut["chest"] = center
     return hut
 
 
@@ -1471,7 +1574,20 @@ def floored(gm, hut, t):
     tile = gm.grid[t]
     if tile[0] == 2 and t in hut["walls"]:
         return not isOre(tile)
-    return t in gm.rooms["Stone"] and tile[0] != 2
+    if tile[0] == 8 and hut.get("kind") == "farm" and not getattr(tile[2], "planted", False):
+        return False  # a wild plant in a farming hut: pulled up as the floor is laid
+    return plants.floorOf(t, gm.rooms) == hut.get("floorType", "Stone") and tile[0] != 2
+
+
+def layFloor(gm, hut, t):
+    """Tile t of the hut becomes its floor type (Stone, or a farming hut's own), pulling up any wild plant there."""
+    tile = gm.grid[t]
+    if tile[0] == 8 and not getattr(tile[2], "planted", False):
+        gm.grid[t] = [0, tile[1]]
+    for room in gm.rooms.values():
+        room.discard(t)
+    gm.rooms.setdefault(hut.get("floorType", "Stone"), set()).add(t)
+    gm.change = True
 
 
 def needsWall(gm, hut, t):
@@ -1491,12 +1607,13 @@ def claimWall(gm, hut, t, look):
 
 
 def hutStage(gm, hut):
-    """What a hut needs next: every floor tile Stone first, then every wall, then the spawner."""
+    """What a hut needs next: every floor tile laid in its floor type (Stone, or a farming hut's own) first, then
+    every wall, then the spawner (a storage hut's chests, a farming hut's chest)."""
     if any(not floored(gm, hut, t) for t in hut["floor"]):
         return "floor"
     if any(needsWall(gm, hut, t) for t in hut["walls"]):
         return "walls"
-    return "chests" if hut.get("kind") == "storage" else "spawner"
+    return "chests" if hut.get("kind") == "storage" else "spawner"  # (a farming hut's chest goes where a spawner would)
 
 
 def damaged(gm, hut):
@@ -1526,6 +1643,12 @@ def buildHut(gm, i, b, f, task, ctx):
     if hut not in f.huts or hut["done"]:  # it went to the other faction in a split, or someone finished it
         b.task = None
         return i
+    if hut.get("kind") == "farm" and not hut.get("built"):  # a farming hut is built with its farmer: wait for it
+        farmer = hut.get("farmer")
+        if farmer is not None and farmer.hp > 0 and factionOf(farmer) == f.id:
+            p = ctx["pos"].get(id(farmer))
+            if p is None or dist(gm, p, hut["center"]) > FARM_PAIR_REACH:
+                return goNextTo(gm, i, b, hut["center"], f, ctx)[0] if dist(gm, i, hut["center"]) > 4 else i
     stage = hutStage(gm, hut)
     if stage == "floor":
         t = pick(gm, hut, b, [t for t in hut["floor"] if not floored(gm, hut, t)], i)
@@ -1536,10 +1659,7 @@ def buildHut(gm, i, b, f, task, ctx):
             return position
         position, there = goNextTo(gm, i, b, t, f, ctx, standOn=True)
         if there and work(hut, ("floor", t), FLOOR_TURNS):
-            for room in gm.rooms.values():
-                room.discard(t)
-            gm.rooms["Stone"].add(t)
-            gm.change = True
+            layFloor(gm, hut, t)
         return position
     if stage == "walls":
         todo = []
@@ -1566,9 +1686,9 @@ def buildHut(gm, i, b, f, task, ctx):
                 claimWall(gm, hut, t, f.look)
             return position
         if there and gm.grid[t][0] != 0:  # one of its own goblins standing there: shoo it
-            return makeWay(gm, ctx, i, t, f)
-        if there and wouldTrap(gm, t):  # it would shut someone (maybe itself) in: step away and let them out first
-            return organizers.wander(gm, i)
+            return makeWay(gm, ctx, i, t, f, b)
+        if there and wouldTrap(gm, t) is not None:  # it would shut someone (maybe itself) in: let them out first
+            return leaveNook(gm, ctx, i, b, t, f)
         if there and work(hut, ("wall", t), WALL_TURNS):
             gm.grid[t] = [2, gm.grid[t][1], gm.createWall(t, gm.rooms)]
             paintHutWall(gm, hut, t, f.look)
@@ -1586,68 +1706,46 @@ def buildHut(gm, i, b, f, task, ctx):
         return i
     if gm.grid[c][0] == 5:  # someone standing in the middle: shoo them if it's one of ours, else wait
         if c in gm.neighbors(i):
-            return makeWay(gm, ctx, i, c, f)
+            return makeWay(gm, ctx, i, c, f, b)
         return goNextTo(gm, i, b, c, f, ctx)[0]
     position, there = goNextTo(gm, i, b, c, f, ctx)
     if there and work(hut, ("spawner", c), SPAWNER_TURNS):
-        place(gm, c, Structure("spawner", f.id, hut=c))
+        if hut.get("kind") == "farm":  # its chest
+            gm.grid[c] = [3, gm.grid[c][1], CampChest(f.id, f.look, slots=FARM_CHEST_SLOTS)]
+            hut["built"] = True
+            gm.change = True
+        else:
+            place(gm, c, Structure("spawner", f.id, hut=c))
         hut["done"] = True
         finishTask(b)
     return position
 
 
 # ---------------------------------------------------------------- the farmer
-# A farm plot is a Game of Life still life of one plant kind. Every plant in it has 2 or 3 neighbors of its kind, so
-# none withers, and no empty tile beside it has 3, so it never grows into the shape. The empty tiles beside it with
-# exactly 2 neighbors sprout now and then (plants.BIRTH_CHANCE[2]): that's the crop. A sprout gives the plants next
-# to it a 4th neighbor (and they could wither), so the farmer picks sprouts as they come, pulls up any other plant
-# within FARM_EDGE tiles (it could take the plot over, plants.TAKES_OVER), and replants any plant the plot loses. So
-# the plot stays as it is and keeps cropping. Its plants follow the usual rules (they aren't tended like yours): a
-# plot nobody looks after soon falls apart.
+# A farmer only farms in a farming hut ("farm", see layOutHut). A builder pairs up with a farmer that carries seeds but
+# has no farming hut and builds it one, laying its whole floor in the floor type that suits most of that farmer's
+# seeds (farmFloor); the farmer comes and helps lay it, and the builder waits for it to be there (FARM_PAIR_REACH).
+# Inside, a cross of paths runs from the 4 doors to a chest in the middle, with beds in the 4 corners. Nothing wild
+# sprouts in a farming hut (plants.step, noBirth).
 #
-# A farmer looks after up to FARM_PLOTS plots. It starts one when there are seeds for it (its own and in the
-# faction's war chests), picking the shape with the best crop per seed that fits (PLOT_SHAPES). Seeds come from the
-# war chests; when there are none, it picks wild plants of that kind for seeds. Herbs and spare seeds go back in the
-# chests (it keeps FARMER_SEEDS_KEPT of each kind it farms on it).
+# The farmer plants seeds in the beds (planted plants never wither, grow in stages and give more: plants.Plant,
+# loot.CROP_LOOT) and picks them when they're ripe. Picking uses a plant up, so it picks each in the stage it wants:
+# gone to seed while it's short of seeds (fewer than it needs to sow all its beds again plus FARMER_SEEDS_KEPT, on
+# it and in its hut's chest: crops can wither, plants.step), else ready to harvest. A plant in its other first stage is left to move on to its second; one in its
+# second (last) stage is picked whatever it gives. It pulls up anything else growing in its hut, and never picks
+# any plant it didn't sow. What it doesn't keep goes into its hut's chest (only farmers store there; builders take
+# food from it for the spawners), or a war chest when that's full. A farmer with no seeds fetches some from the war
+# chests. Farmers walk through any plant (canEnter), even ones that block the way.
 
-STILL_LIFES = {
-    "block": [(0, 0), (1, 0), (0, 1), (1, 1)],
-    "tub": [(1, 0), (0, 1), (2, 1), (1, 2)],
-    "boat": [(0, 0), (1, 0), (0, 1), (2, 1), (1, 2)],
-    "beehive": [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)],
-    "loaf": [(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)],
-}
-FARM_PLOTS = 2              # plots one farmer looks after
+FARM_KINDS = [k for k, info in plants.PLANTS.items() if info.get("wild", True) and not info.get("conway")]
 BASE_FARMERS = SPLIT_FARMERS  # a faction has at most this many farmers (enough for a schism, whatever its size)...
 HUTS_PER_FARMER = 4         # ...plus 1 for every this many finished huts
-FARM_DISTANCE = (3, 14)     # a plot goes this far from one of its faction's bonfires
-FARM_EDGE = 2               # it weeds this many tiles round the plot (the crop is on the first ring)
+FARM_DISTANCE = (3, 14)     # the war band's farmer brings seeds of a plant growing this near where it turns up
 PLANT_TURNS = 1             # a farmer's turns to plant a seed
-FARMER_SEEDS_KEPT = 3       # seeds of each kind it farms that it keeps on it
-FARMER_START_SEEDS = 7      # seeds the war band's farmer brings: a block's 4, and the 3 it keeps
-FARMER_HAUL = 6             # it takes its harvest to a war chest once it carries this much to put away
-FARM_PLAN_WAIT = 25         # a farmer that finds nowhere for a plot looks again after this many turns
-FORAGE_RANGE = MINE_RANGE   # how far from its bonfire a farmer looks for wild plants...
-FORAGE_FAR = 35             # ...or this far, when it has nothing else to do
-FARM_ABANDON = 150          # a plot with no plants left that nobody has planted in for this long is given up
-FARM_KINDS = [k for k, info in plants.PLANTS.items() if info.get("wild", True) and not info.get("conway")]
-
-
-def stillLifeCrops(cells):
-    """([offsets beside the shape with exactly 2 neighbors in it: they crop], True if the shape is really still)."""
-    cellSet, counts = set(cells), {}
-    for x, y in cells:
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx or dy:
-                    counts[(x + dx, y + dy)] = counts.get((x + dx, y + dy), 0) + 1
-    still = all(2 <= counts.get(c, 0) <= 3 for c in cells) and all(n != 3 for c, n in counts.items() if c not in cellSet)
-    return [c for c, n in counts.items() if n == 2 and c not in cellSet], still
-
-
-assert all(stillLifeCrops(cells)[1] for cells in STILL_LIFES.values())
-# the shapes, best crop per seed first
-PLOT_SHAPES = sorted(STILL_LIFES.items(), key=lambda s: -len(stillLifeCrops(s[1])[0]) / len(s[1]))
+FARMER_SEEDS_KEPT = 3       # seeds it keeps on it beyond what its empty beds need
+FARMER_START_SEEDS = 7      # seeds the war band's farmer brings (and a farmer with none fetches)
+FARMER_HAUL = 6             # it puts its harvest away once it carries this much more than it keeps
+FARM_PAIR_REACH = 8         # a builder works on a farming hut only while its farmer is this close
 
 
 def farmerCount(gm, f):
@@ -1656,32 +1754,75 @@ def farmerCount(gm, f):
 
 
 def farms(f):
-    return f.__dict__.setdefault("farms", [])  # (factions from saves made before farmers)
+    """f's farming huts."""
+    return [h for h in f.huts if h.get("kind") == "farm"]
 
 
 def farmTiles(f):
-    return {t for p in farms(f) for t in p["cells"] + p["edge"]}
+    return {t for h in farms(f) for t in h["floor"]}
 
 
 def allFarmTiles(gm):
     return {t for f in camp(gm)["factions"].values() for t in farmTiles(f)}
 
 
-def myPlots(f, u):
-    """The plots farmer u looks after: its own, then any whose farmer is gone (up to FARM_PLOTS)."""
-    mine = [p for p in farms(f) if p.get("farmer") is u]
-    for p in farms(f):
-        if len(mine) >= FARM_PLOTS:
-            break
-        owner = p.get("farmer")
-        if owner is not u and (owner is None or owner.hp <= 0 or factionOf(owner) != f.id):
-            p["farmer"] = u
-            mine.append(p)
+def seedOf(kind):
+    return plants.PLANTS[kind]["seed"]
+
+
+def kindsFor(floor):
+    """The plants a farmer can grow on this floor type."""
+    return [k for k in FARM_KINDS if floor in plants.PLANTS[k]["floors"]]
+
+
+def carriedSeeds(u, kinds=FARM_KINDS):
+    return sum(u.materials.get(seedOf(k), 0) for k in kinds)
+
+
+def farmFloor(u):
+    """The floor type that suits most of the seeds farmer u carries (a farming hut built with it gets this floor)."""
+    floors = {}
+    for k in FARM_KINDS:
+        for floor in plants.PLANTS[k]["floors"]:
+            floors[floor] = floors.get(floor, 0) + u.materials.get(seedOf(k), 0)
+    return max(floors, key=lambda fl: (floors[fl], fl == "Stone"))
+
+
+def farmerGone(f, farmer):
+    return farmer is None or farmer.hp <= 0 or factionOf(farmer) != f.id
+
+
+def farmHutOf(f, u):
+    """Farmer u's farming hut: its own, or one whose farmer is gone (it takes it over), or None."""
+    mine = next((h for h in farms(f) if h.get("farmer") is u), None)
+    if mine is None:
+        mine = next((h for h in farms(f) if farmerGone(f, h.get("farmer"))), None)
+        if mine is not None:
+            mine["farmer"] = u
     return mine
 
 
-def seedOf(kind):
-    return plants.PLANTS[kind]["seed"]
+def unhousedFarmer(gm, f):
+    """A farmer of f carrying seeds that has no farming hut (and none left over for it to take on), or None."""
+    if any(farmerGone(f, h.get("farmer")) for h in farms(f)):
+        return None  # a farming hut without a farmer: one will take it on
+    housed = {id(h.get("farmer")) for h in farms(f)}
+    return next((u for _, u in factionUnits(gm, f) if u.name == "Goblin Farmer" and id(u) not in housed
+                 and carriedSeeds(u) > 0), None)
+
+
+def ourCrop(f, tile):
+    return tile[0] == 8 and getattr(tile[2], "planted", False) and getattr(tile[2], "faction", None) == f.id
+
+
+def farmChest(gm, hut):
+    """The farming hut's chest, if it's standing."""
+    c = hut.get("chest")
+    return c if c is not None and isinstance(chestAt(gm, c), CampChest) else None
+
+
+def farmChests(gm, f):
+    return [c for h in farms(f) if h["done"] for c in [farmChest(gm, h)] if c is not None]
 
 
 def chestStock(gm, f):
@@ -1691,6 +1832,15 @@ def chestStock(gm, f):
         for it in chestAt(gm, c):
             if isinstance(it, resources.MaterialStack):
                 stock[it.materialId] = stock.get(it.materialId, 0) + it.amount
+    return stock
+
+
+def stockIn(gm, chest):
+    """{material id: amount} in one chest."""
+    stock = {}
+    for it in chestAt(gm, chest) if chest is not None else ():
+        if isinstance(it, resources.MaterialStack):
+            stock[it.materialId] = stock.get(it.materialId, 0) + it.amount
     return stock
 
 
@@ -1715,10 +1865,6 @@ def withdraw(gm, chest, unit, materialId, amount):
     gm.change = True
 
 
-def keepSeeds(plots):
-    return {seedOf(p["kind"]): FARMER_SEEDS_KEPT for p in plots}
-
-
 def spare(u, keep):
     """{material id: amount} the farmer carries beyond the seeds it keeps."""
     return {m: a - keep.get(m, 0) for m, a in u.materials.items() if a > keep.get(m, 0)}
@@ -1734,108 +1880,92 @@ def putAway(gm, chest, u, keep):
             u.materials[m] = u.materials.get(m, 0) + a
 
 
-def planPlot(gm, f, u, i):
-    """A new plot near one of the faction's bonfires, of a kind there are seeds for (not counting seeds the faction's
-    other plots still need), or None."""
-    have = chestStock(gm, f)
-    for m, a in u.materials.items():
-        have[m] = have.get(m, 0) + a
-    for p in farms(f):
-        seed = seedOf(p["kind"])
-        have[seed] = have.get(seed, 0) - sum(1 for t in p["cells"] if gm.grid[t][0] != 8)
-    kinds = sorted((k for k in FARM_KINDS if have.get(seedOf(k), 0) > 0), key=lambda k: -have[seedOf(k)])
-    if not kinds:
-        return None
-    claimed = claimedTiles(gm)
-    low, high = FARM_DISTANCE
-    for bonfire in sorted(f.bonfires, key=lambda b: dist(gm, b, i)):
-        anchors = [(dx, dy) for dy in range(-high, high + 1) for dx in range(-high, high + 1)]
-        rand.shuffle(anchors)
-        for dx, dy in anchors[:200]:
-            anchor = offsetTile(gm, bonfire, dx, dy)
-            if anchor is None or not low <= dist(gm, anchor, bonfire) <= high:
-                continue
-            enemyBonfire = nearestEnemyBonfire(gm, f, anchor)
-            if enemyBonfire is not None and enemyBonfire < dist(gm, anchor, bonfire):
-                continue  # the other faction's ground
-            for name, shape in PLOT_SHAPES:
-                plot = layOutPlot(gm, anchor, shape, claimed)
-                if plot is None:
-                    continue
-                for kind in kinds:
-                    if have[seedOf(kind)] >= len(shape) and \
-                            all(plants.canGrow(kind, t, gm.grid, gm.rooms) for t in plot["cells"]):
-                        plot.update(kind=kind, shape=name, farmer=u, tended=gm.turnCount)
-                        return plot
-    return None
-
-
-def layOutPlot(gm, anchor, shape, claimed):
-    """The plot's tiles for this shape at anchor: {"cells": its plants, "edge": the tiles round it it weeds}, or
-    None if it doesn't fit (off the map, on claimed ground, or something in the way)."""
-    cells = [offsetTile(gm, anchor, dx, dy) for dx, dy in shape]
-    if None in cells or any(gm.grid[t][0] != 0 or t in claimed for t in cells):
-        return None
-    shapeSet = set(shape)
-    around_ = {(x + dx, y + dy) for x, y in shape for dx in range(-FARM_EDGE, FARM_EDGE + 1)
-               for dy in range(-FARM_EDGE, FARM_EDGE + 1)} - shapeSet
-    edge = [t for t in (offsetTile(gm, anchor, dx, dy) for dx, dy in around_) if t is not None]
-    if any(t in claimed or gm.grid[t][0] in (3, 4, 6, 7, 9, CAMP) for t in edge):
-        return None  # no chests, doors, stations, piles or camp pieces in it
-    return {"cells": cells, "edge": edge}
-
-
-def farmJob(gm, i, u, f, plots, home):
-    """What the farmer does next: ("harvest", plant), ("plant", tile, kind), ("fetch", chest, seed, amount),
-    ("stash", chest, seeds kept), ("plot",) for a new plot it just laid out, or None for nothing."""
+def farmJob(gm, i, u, f, hut):
+    """What the farmer does next in its (finished) farming hut: ("weed", tile), ("pick", tile), ("plant", tile, kind),
+    ("fetch", chest, seed, amount), ("stash", chest, seeds kept), or None for nothing."""
     nearest = lambda ts: min(ts, key=lambda t: dist(gm, t, i))
     aside = setAside(gm, u)  # what it couldn't get to lately
-    # 1. pick the crop and weeds round its plots, and anything else growing in the shape
-    todo = [t for p in plots for t in p["edge"] if gm.grid[t][0] == 8 and not organizers.isDemise(gm.grid[t])] + \
-           [t for p in plots for t in p["cells"] if gm.grid[t][0] == 8 and gm.grid[t][2].kind != p["kind"]
-            and not organizers.isDemise(gm.grid[t])]
-    todo = [t for t in todo if t not in aside]
-    if todo:
-        return ("harvest", nearest(todo))
-    keep = keepSeeds(plots)
+    beds, kinds, chest = set(hut["beds"]), kindsFor(hut.get("floorType", "Stone")), farmChest(gm, hut)
+    # 1. pull up whatever else grows in its hut
+    weeds = [t for t in hut["inside"] if t not in aside and gm.grid[t][0] == 8
+             and not (t in beds and ourCrop(f, gm.grid[t])) and not organizers.isDemise(gm.grid[t])]
+    if weeds:
+        return ("weed", nearest(weeds))
+    empty = [t for t in hut["beds"] if t not in aside and gm.grid[t][0] == 0
+             and plants.floorOf(t, gm.rooms) == hut.get("floorType", "Stone")]
+    stored = stockIn(gm, chest)
+    seedsHave = carriedSeeds(u, kinds) + sum(stored.get(seedOf(k), 0) for k in kinds)
+    short = seedsHave < len(hut["beds"]) + FARMER_SEEDS_KEPT  # (enough to sow every bed again: crops can wither)
+    # 2. pick what's ripe and sow the empty beds, whichever is nearest (less walking). Picking uses a plant up, so a
+    #    plant is only picked in the stage it wants (gone to seed while it's short of seeds, else ready to harvest),
+    #    or in its last stage (it won't change any more). A plant in its other first stage is left to ripen on.
+    want = "seed" if short else "harvest"
+    ripe = [t for t in hut["beds"] if t not in aside and ourCrop(f, gm.grid[t]) and gm.grid[t][2].ready
+            and (gm.grid[t][2].stage == want or gm.grid[t][2].lastStage)]
+    best = max(kinds, key=lambda k: u.materials.get(seedOf(k), 0)) if kinds else None
+    sow = empty if best is not None and u.materials.get(seedOf(best), 0) > 0 else []
+    seeding = [t for t in ripe if gm.grid[t][2].stage == "seed"]
+    if short and seeding:
+        return ("pick", nearest(seeding))
+    if ripe or sow:
+        t = nearest(ripe + sow)
+        return ("pick", t) if t in ripe else ("plant", t, best)
+    keep = {seedOf(k): len(empty) + FARMER_SEEDS_KEPT for k in kinds}
     extra = spare(u, keep)
-    own = [c for c in chests(gm, f) if roomIn(gm, c, u) and c not in aside]
-    if own and sum(extra.values()) >= FARMER_HAUL:
-        return ("stash", nearest(own), keep)
-    # 2. replant what its plots have lost
-    for p in list(plots):
-        gaps = [t for t in p["cells"] if gm.grid[t][0] == 0]
-        if gaps and all(t in aside for t in gaps) and \
-                not any(gm.grid[t][0] == 8 and gm.grid[t][2].kind == p["kind"] for t in p["cells"]):
-            farms(f).remove(p)  # it can't get to any of it: give the plot up
-            continue
-        gaps = [t for t in gaps if t not in aside]
-        if not gaps:
-            continue
-        seed = seedOf(p["kind"])
-        if u.materials.get(seed, 0) > 0:
-            return ("plant", nearest(gaps), p["kind"])
-        chest = chestWith(gm, f, seed, i)
-        if chest is not None and chest not in aside:
-            return ("fetch", chest, seed, len(gaps) + FARMER_SEEDS_KEPT)
-        wild = plantNear(gm, home, FORAGE_RANGE, home, FORAGE_RANGE, p["kind"], avoid=aside)
-        if wild is not None:
-            return ("harvest", wild)  # no seeds anywhere: pick wild ones for seeds
-    # 3. a new plot
-    if len(plots) < FARM_PLOTS and gm.turnCount >= getattr(u, "planAfter", 0):
-        plot = planPlot(gm, f, u, i)
-        if plot is not None:
-            farms(f).append(plot)
-            return ("plot",)
-        u.planAfter = gm.turnCount + FARM_PLAN_WAIT
-    # 4. pick wild plants near the camp (further out if it has no plots), for the chests
-    reach = FORAGE_RANGE if plots else FORAGE_FAR
-    wild = plantNear(gm, home, reach, home, reach, avoid=aside)
-    if wild is not None:
-        return ("harvest", wild)
-    if own and extra:
-        return ("stash", nearest(own), keep)
+    store = chest if chest is not None and chest not in aside and roomIn(gm, chest, u) else \
+        next((c for c in sorted(chests(gm, f), key=lambda c: dist(gm, c, i)) if c not in aside and roomIn(gm, c, u)), None)
+    if store is not None and sum(extra.values()) >= FARMER_HAUL:
+        return ("stash", store, keep)
+    # 3. no seeds for its empty beds: fetch some (from its hut's chest, else the war chests)
+    if empty:
+        for k in sorted(kinds, key=lambda k: -stored.get(seedOf(k), 0)):
+            seed = seedOf(k)
+            if stored.get(seed, 0) > 0 and chest not in aside:
+                return ("fetch", chest, seed, len(empty) + FARMER_SEEDS_KEPT)
+            other = seedChest(gm, f, seed, i, aside)
+            if other is not None:  # another farming hut's chest
+                return ("fetch", other, seed, len(empty) + FARMER_SEEDS_KEPT)
+            war = chestWith(gm, f, seed, i)
+            if war is not None and war not in aside:
+                return ("fetch", war, seed, len(empty) + FARMER_SEEDS_KEPT)
+    if store is not None and extra:
+        return ("stash", store, keep)
     return None
+
+
+def seedChest(gm, f, seed, position, aside=()):
+    """The nearest of f's farming huts' chests holding seed, or None."""
+    have = [c for c in farmChests(gm, f) if c not in aside and stockIn(gm, c).get(seed, 0) > 0]
+    return min(have, key=lambda c: dist(gm, c, position)) if have else None
+
+
+def seedsJob(gm, i, u, f):
+    """A farmer with no seeds: fetch some (of the kind f has most of, from a farming hut's chest or a war chest)."""
+    stock = chestStock(gm, f)
+    for c in farmChests(gm, f):
+        for m, a in stockIn(gm, c).items():
+            stock[m] = stock.get(m, 0) + a
+    aside = setAside(gm, u)
+    for k in sorted((k for k in FARM_KINDS if stock.get(seedOf(k), 0) > 0), key=lambda k: -stock[seedOf(k)]):
+        c = seedChest(gm, f, seedOf(k), i, aside) or chestWith(gm, f, seedOf(k), i)
+        if c is not None and c not in aside:
+            return ("fetch", c, seedOf(k), FARMER_START_SEEDS)
+    return None
+
+
+def helpBuild(gm, i, u, f, hut, ctx):
+    """The farmer's farming hut is going up: it helps lay the floor, then waits there for the builders."""
+    if hutStage(gm, hut) == "floor":
+        todo = [t for t in hut["floor"] if not floored(gm, hut, t) and gm.grid[t][0] != 2]
+        if todo:
+            t = min(todo, key=lambda t: dist(gm, t, i))
+            position, there = goNextTo(gm, i, u, t, f, ctx, standOn=True)
+            if there and work(hut, ("floor", t), FLOOR_TURNS):
+                layFloor(gm, hut, t)
+            return position
+    if dist(gm, i, hut["center"]) > 4:
+        return goNextTo(gm, i, u, hut["center"], f, ctx)[0]
+    return i
 
 
 def farmerTurn(gm, i, u, ctx):
@@ -1845,41 +1975,51 @@ def farmerTurn(gm, i, u, ctx):
         if f is not None and migrating(f) is not None and dist(gm, i, f.migrating) > 3:
             return migrateTurn(gm, i, u, f, ctx)
         return organizers.wander(gm, i)
+    hut = farmHutOf(f, u)
+    if hut is not None and not hut["done"] and not hut.get("built"):
+        return helpBuild(gm, i, u, f, hut, ctx)  # (once it's been finished, it keeps farming while it's repaired)
     if getattr(u, "rest", 0) > 0:
         u.rest -= 1
         return organizers.wander(gm, i)
-    for p in list(farms(f)):  # plots that died out and nobody has replanted: given up
-        if gm.turnCount - p.get("tended", 0) > FARM_ABANDON and \
-                not any(gm.grid[t][0] == 8 and gm.grid[t][2].kind == p["kind"] for t in p["cells"]):
-            farms(f).remove(p)
-    job = farmJob(gm, i, u, f, myPlots(f, u), home)
+    if hut is None:  # waiting for a builder to build it a farming hut (it needs seeds for one)
+        job = seedsJob(gm, i, u, f) if carriedSeeds(u) == 0 else None
+        if job is None:
+            if dist(gm, i, home) > BONFIRE_REACH:
+                return step(gm, i, u, home, f.walls(), ctx)
+            u.rest = rand.randint(4, 10)
+            return organizers.wander(gm, i)
+    else:
+        job = farmJob(gm, i, u, f, hut)
     if job is None:
-        u.rest = rand.randint(4, 10)
-        return organizers.wander(gm, i)
-    if job[0] == "plot":
+        u.rest = rand.randint(3, 6)
         return i
     position, there = goNextTo(gm, i, u, job[1], f, ctx)
     if not there:
         tooLong(gm, u, job[1], FARM_GIVE_UP)  # (it can't get there: set aside, it does something else next turn)
         return position
     u.headingFor = None
-    action = job[0]
-    if action == "harvest":
-        harvestBy(gm, u, job[1])
-    elif action == "plant" and work(u, ("plant", job[1]), PLANT_TURNS):
+    action, t = job[0], job[1]
+    if action == "weed":
+        gm.grid[t] = [0, gm.grid[t][1]]  # pulled up: nothing kept
+        gm.change = True
+    elif action == "pick":
+        plant = gm.grid[t][2]
+        stage = plant.pick()  # (it's used up, whatever it gives)
+        for materialId, amount in loot.rollPick(plant, stage) if stage else ():
+            u.materials[materialId] = u.materials.get(materialId, 0) + amount
+        gm.grid[t] = [0, gm.grid[t][1]]
+        gm.change = True
+    elif action == "plant" and work(u, ("plant", t), PLANT_TURNS):
         seed = seedOf(job[2])
         u.materials[seed] -= 1
         if u.materials[seed] <= 0:
             del u.materials[seed]
-        gm.grid[job[1]] = [8, gm.grid[job[1]][1], plants.Plant(job[2])]
-        for p in farms(f):
-            if job[1] in p["cells"]:
-                p["tended"] = gm.turnCount
+        gm.grid[t] = [8, gm.grid[t][1], plants.Plant(job[2], planted=True, faction=f.id)]
         gm.change = True
     elif action == "fetch":
-        withdraw(gm, job[1], u, job[2], job[3])
+        withdraw(gm, t, u, job[2], min(job[3], fitAmount(u, job[2])))
     elif action == "stash":
-        putAway(gm, job[1], u, job[2])
+        putAway(gm, t, u, job[2])
     return i
 
 
@@ -1898,6 +2038,9 @@ def buildChests(gm, i, b, f, hut, ctx):
         if kind in (2, 4, 6, 7, 9, CAMP):  # something there now: leave it out
             hut["skip"].add(t)
             continue
+        if not any(organizers.passable(gm.grid[n], demise=False) or gm.grid[n][0] in (1, 5) for n in gm.neighbors(t)):
+            hut["skip"].add(t)  # chests all round it: nowhere left to stand to build it, so it's left out
+            continue
         if t != i:
             todo.append(t)
     if not todo:
@@ -1909,9 +2052,9 @@ def buildChests(gm, i, b, f, hut, ctx):
     t = pick(gm, hut, b, todo, i)
     position, there = goNextTo(gm, i, b, t, f, ctx)
     if there and gm.grid[t][0] != 0:  # one of its own goblins standing there: shoo it
-        return makeWay(gm, ctx, i, t, f)
-    if there and wouldTrap(gm, t):  # it would shut someone (maybe itself) in: step away and let them out first
-        return organizers.wander(gm, i)
+        return makeWay(gm, ctx, i, t, f, b)
+    if there and wouldTrap(gm, t) is not None:  # it would shut someone (maybe itself) in: let them out first
+        return leaveNook(gm, ctx, i, b, t, f)
     if there and work(hut, ("chest", t), CHEST_TURNS):
         gm.grid[t] = [3, gm.grid[t][1], CampChest(f.id, f.look)]
         chests(gm, f).add(t)
@@ -1919,16 +2062,32 @@ def buildChests(gm, i, b, f, hut, ctx):
     return position
 
 
+def otherWayOut(gm, n, t):
+    """Has tile n a way out besides t? Goblins beside it count, since they move (or swap places)."""
+    return any(m != t and (organizers.passable(gm.grid[m], demise=False) or gm.grid[m][0] == 5)
+               for m in gm.neighbors(n))
+
+
 def wouldTrap(gm, t):
     """Would filling tile t box in a goblin standing beside it (no way out but t: walls, chests and camp pieces all
-    round)? Other goblins round it count as a way out, since they move."""
+    round)? Returns where that goblin stands, or None."""
     for n in gm.neighbors(t):
-        if gm.grid[n][0] != 5:
-            continue
-        if not any(m != t and (organizers.passable(gm.grid[m], demise=False) or gm.grid[m][0] == 5)
-                   for m in gm.neighbors(n)):
-            return True
-    return False
+        if gm.grid[n][0] == 5 and not otherWayOut(gm, n, t):
+            return n
+    return None
+
+
+def leaveNook(gm, ctx, i, b, t, f):
+    """Builder b at i is about to fill tile t, but that would box somebody in. If it's someone else, b steps away so
+    they can get out; if it's b itself (standing in a nook only t leads out of), it goes round to a spot beside t
+    that has another way out, and works from there."""
+    if wouldTrap(gm, t) != i:
+        return organizers.wander(gm, i)
+    spots = [n for n in gm.neighbors(t) if n != i and organizers.passable(gm.grid[n], demise=False)
+             and otherWayOut(gm, n, t)]
+    if not spots:
+        return organizers.wander(gm, i)
+    return goNextTo(gm, i, b, min(spots, key=lambda n: dist(gm, n, i)), f, ctx, standOn=True)[0]
 
 
 def storageChests(gm, f):
@@ -1942,7 +2101,7 @@ def storageNeeded(gm, f):
     chests has room (or it has none)."""
     if finishedHuts(f) < FIRST_STORAGE_HUTS:
         return False
-    return not any(len(chestAt(gm, c)) < CAMP_CHEST_SLOTS for c in storageChests(gm, f))
+    return not any(len(chestAt(gm, c)) < chestSlots(chestAt(gm, c)) for c in storageChests(gm, f))
 
 
 def stashChest(gm, f, unit, i, home):
@@ -1961,8 +2120,8 @@ def carriedFood(unit):
 
 
 def foodChest(gm, f, position):
-    """The nearest of f's war chests with food in it, or None."""
-    have = [c for c in chests(gm, f) if any(isinstance(it, resources.MaterialStack) and it.materialId in FOOD
+    """The nearest of f's war chests or farming huts' chests with food in it, or None."""
+    have = [c for c in list(chests(gm, f)) + farmChests(gm, f) if any(isinstance(it, resources.MaterialStack) and it.materialId in FOOD
                                            and it.amount > 0 for it in chestAt(gm, c))]
     return min(have, key=lambda c: dist(gm, c, position)) if have else None
 
@@ -2070,9 +2229,10 @@ def factionUnits(gm, f):
 
 
 def schism(gm, f, units):
-    """Half of f leaves: half its squads (whole squads), half its builders and half its farmers. They become a new
-    faction in new colors and march to a spot far from every bonfire (farAway) to set up a camp there. The two are
-    at peace until the new camp's first bonfire is lit. Huts, chests and farm plots all stay with f."""
+    """Half of f breaks away: half its squads (whole squads), half its builders and half its farmers become a new
+    faction in new colors. If there's somewhere far enough from every camp (farAway), they march there to set up a
+    camp, at peace with f until its first bonfire is lit; huts and chests all stay with f. If the floor is too
+    crowded for that, they rise up where they are instead (takeOver): at war with f at once, they take half its huts."""
     squads = [s for s in f.squads if any(m.hp > 0 for m in s.members)]
     rand.shuffle(squads)
     leaving = squads[:len(squads) // 2]
@@ -2085,13 +2245,11 @@ def schism(gm, f, units):
     where = {id(u): p for p, u in units}
     start = next((where[id(u)] for u in goers if id(u) in where), None)
     if start is None:
-        return
+        return False
     goal = farAway(gm, start)
-    if goal is None:
-        return
     new = newFaction(gm, pickLook(gm))
-    new.peaceWith, new.peaceUntil, new.migrating = f.id, gm.turnCount + SCHISM_PEACE, goal
-    f.lastSchism = new.lastSchism = gm.turnCount
+    if goal is not None:
+        new.peaceWith, new.peaceUntil, new.migrating = f.id, gm.turnCount + SCHISM_PEACE, goal
     for s in leaving:
         f.squads.remove(s)
         new.squads.append(s)
@@ -2103,8 +2261,57 @@ def schism(gm, f, units):
     for p in farms(f):
         if p.get("farmer") in goers:
             p["farmer"] = None
-    packUp(gm, f, goers)
+    if goal is None:
+        takeOver(gm, f, new)
+    else:
+        packUp(gm, f, goers)
     gm.change = True
+    return True
+
+
+def takeOver(gm, f, new):
+    """A schism with nowhere to go: new takes half of f's huts where they stand, the half furthest from f's first
+    bonfire, with their spawners, chests and farming huts' chests, their walls repainted in its colors. Any of f's
+    bonfires and war chests nearer the huts it takes than the ones f keeps go with it (f always keeps its first
+    bonfire). There's no peace between them."""
+    if not f.huts:
+        return
+    heart = f.first if f.first in f.bonfires else (f.bonfires[0] if f.bonfires else f.huts[0]["center"])
+    huts = sorted(f.huts, key=lambda h: -dist(gm, h["center"], heart))
+    taken = huts[:max(1, len(huts) // 2)]
+    for h in taken:
+        f.huts.remove(h)
+        new.huts.append(h)
+        h["builder"] = None
+        if h.get("kind") == "farm" and factionOf(h.get("farmer")) != new.id:
+            h["farmer"] = None
+        for t in h["walls"]:
+            if gm.grid[t][0] == 2 and getattr(gm.grid[t][2], "paint", None):
+                paintHutWall(gm, h, t, new.look)
+        c = h["center"]
+        if gm.grid[c][0] == CAMP:
+            gm.grid[c][2].faction = new.id  # its spawner
+        for t in h.get("chests", []) + ([c] if h.get("kind") == "farm" else []):
+            box = chestAt(gm, t)
+            if isinstance(box, CampChest):
+                box.faction, box.look = new.id, new.look
+                chests(gm, f).discard(t)
+                if h.get("kind") != "farm":
+                    chests(gm, new).add(t)
+    near = lambda t, hs: min((dist(gm, t, h["center"]) for h in hs), default=1e9)
+    for b in list(f.bonfires):
+        if b != heart and near(b, taken) < near(b, f.huts):
+            f.bonfires.remove(b)
+            new.bonfires.append(b)
+            if gm.grid[b][0] == CAMP:
+                gm.grid[b][2].faction = new.id
+    new.first = new.bonfires[0] if new.bonfires else None
+    for c in list(chests(gm, f)):  # the war chests by its bonfires
+        if near(c, taken) < near(c, f.huts):
+            box = chestAt(gm, c)
+            box.faction, box.look = new.id, new.look
+            chests(gm, f).discard(c)
+            chests(gm, new).add(c)
 
 
 def packUp(gm, f, goers):
@@ -2142,16 +2349,24 @@ def packUp(gm, f, goers):
                 want -= n
 
 
-def farAway(gm, start):
-    """A roomy open tile reachable from start, at least SCHISM_DISTANCE from every faction's bonfires (or as far as
-    there is), or None."""
+def campsAround(gm, ignore=None):
+    """Where every faction (but ignore) is: its bonfires, its huts and, for a group on its way to a new camp, where
+    it's going."""
+    factions = [g for g in camp(gm)["factions"].values() if g is not ignore]
+    return [b for g in factions for b in g.bonfires] + [h["center"] for g in factions for h in g.huts] + \
+        [migrating(g) for g in factions if migrating(g) is not None]
+
+
+def farAway(gm, start, ignore=None):
+    """A roomy open tile reachable from start, at least SCHISM_DISTANCE from every faction's bonfires and huts and
+    from every other leaving group's destination (campsAround), or None if there's no such spot: the floor is too
+    crowded for another camp."""
     reach = walkingDistances(gm, start, gm.numberOfSpots)
-    fires = [b for g in camp(gm)["factions"].values() for b in g.bonfires]
+    fires = campsAround(gm, ignore)
     clearance = lambda t: min((dist(gm, t, b) for b in fires), default=1e9)
-    open_ = [t for t in reach if gm.grid[t][0] == 0]
-    if not open_:
+    pool = [t for t in reach if gm.grid[t][0] == 0 and clearance(t) >= SCHISM_DISTANCE]
+    if not pool:
         return None
-    pool = [t for t in open_ if clearance(t) >= SCHISM_DISTANCE] or sorted(open_, key=clearance, reverse=True)[:200]
     sample = rand.sample(pool, min(200, len(pool)))
     roomy = lambda t: sum(1 for dy in range(-4, 5) for dx in range(-4, 5)
                           if (n := offsetTile(gm, t, dx, dy)) is not None and gm.grid[n][0] == 0)
@@ -2162,8 +2377,18 @@ def migrating(f):
     return getattr(f, "migrating", None)
 
 
+MIGRATE_RECHECK = 25        # a leaving group checks this often that nobody has camped near where it's going
+
+
 def migrateTurn(gm, i, unit, f, ctx):
-    """A step toward where its faction is going to set up camp (a floor-wide path map, like a bonfire's)."""
+    """A step toward where its faction is going to set up camp (a floor-wide path map, like a bonfire's). Now and
+    then it checks nobody has settled within SCHISM_DISTANCE of it meanwhile, and if so, picks somewhere else."""
+    if gm.turnCount - f.__dict__.setdefault("migrateChecked", gm.turnCount) >= MIGRATE_RECHECK:
+        f.migrateChecked = gm.turnCount
+        if any(dist(gm, f.migrating, t) < SCHISM_DISTANCE for t in campsAround(gm, ignore=f)):
+            goal = farAway(gm, i, ignore=f)
+            if goal is not None:
+                f.migrating = goal
     return step(gm, i, unit, f.migrating, f.walls(), ctx, bonfireField(gm, f.migrating))
 
 
@@ -2239,16 +2464,37 @@ def stepCamp(gm):
                     e.rally = nearest
     if bonfires and gm.turnCount % WANDERER_TURNS == 0:
         wanderIn(gm, bonfires)
-    if gm.turnCount % SPLIT_CHECK_TURNS == 0:
-        for f in list(state["factions"].values()):
-            if migrating(f) is not None or not f.bonfires:
-                continue
-            if gm.turnCount - f.__dict__.setdefault("lastSchism", gm.turnCount) < SCHISM_COOLDOWN:
-                continue
-            units = factionUnits(gm, f)
-            if len(units) >= SPLIT_UNITS and sum(u.name == "Goblin Builder" for _, u in units) >= SPLIT_BUILDERS \
-                    and sum(u.name == "Goblin Farmer" for _, u in units) >= SPLIT_FARMERS:
-                schism(gm, f, units)
+    for f in list(state["factions"].values()):
+        if migrating(f) is not None or not f.bonfires:
+            continue
+        units = factionUnits(gm, f)
+        f.food = foodCount(gm, f)
+        if not f.__dict__.setdefault("canSchism", True):
+            continue
+        if len(units) < SPLIT_UNITS or sum(u.name == "Goblin Builder" for _, u in units) < SPLIT_BUILDERS \
+                or sum(u.name == "Goblin Farmer" for _, u in units) < SPLIT_FARMERS:
+            continue  # (its chance stays where it is until it meets them again)
+        chance = f.__dict__.setdefault("schismChance", SCHISM_CHANCE)
+        if rand.random() < chance and schism(gm, f, units):
+            f.schismChance = SCHISM_CHANCE
+        else:
+            f.schismChance = chance + schismStep(gm, f, units)
+
+
+def foodCount(gm, f):
+    """All the food f has: in its war chests and farming huts' chests, and stocked in its spawners."""
+    chestsHave = list(chests(gm, f)) + farmChests(gm, f)
+    stored = sum(it.amount for c in chestsHave for it in chestAt(gm, c)
+                 if isinstance(it, resources.MaterialStack) and it.materialId in FOOD)
+    return stored + sum(s.__dict__.get("food", 0) for _, s in spawnersOf(gm, f))
+
+
+def schismStep(gm, f, units):
+    """How much f's chance of a schism grows this turn: SCHISM_CHANCE_STEP, up to (1 + SCHISM_HUNGER) times that
+    while its food (f.food) is short of what its spawners and goblins need."""
+    need = FOOD_NEED_SPAWNER * len(spawnersOf(gm, f)) + FOOD_NEED_UNIT * len(units)
+    short = max(0.0, 1 - f.food / need) if need else 0.0
+    return SCHISM_CHANCE_STEP * (1 + SCHISM_HUNGER * short)
 
 
 def stepSpawner(gm, t, s):
@@ -2357,6 +2603,8 @@ def startingCrop(gm, start):
 def newFaction(gm, look):
     state = camp(gm)
     f = Faction(state["next"], look)
+    f.canSchism = rand.random() >= NO_SCHISM_CHANCE  # (a few factions never split)
+    f.schismChance, f.food = SCHISM_CHANCE, 0
     state["next"] += 1
     state["factions"][f.id] = f
     return f
@@ -2383,13 +2631,26 @@ def pickLook(gm):
 
 # ---------------------------------------------------------------- you and the camp
 
+def crack(gm, piece, damage):
+    """A spawner or warcamp chest took damage: it cracks like a wall (wall.Wall.takeDamage), more of its picture
+    chipped the bigger the share of its HP the hit took (renderer.crackedPicture draws them)."""
+    maxHp = getattr(piece, "maxHp", None) or CHEST_HP
+    ts = gm.tileSize
+    share = int(min(damage, max(piece.hp, 0) + damage) / maxHp * ts * ts)
+    points = piece.__dict__.setdefault("brokenPoints", set())
+    points |= wall.getRandomPoints((1, ts - 1), (1, ts - 1), share)
+
+
 def hitStructure(gm, t):
-    """You hit a spawner (it takes your wall damage) or a bonfire (BONFIRE_HITS hits put it out)."""
+    """You hit a spawner (it takes your wall damage, and cracks like a wall) or a bonfire (BONFIRE_HITS hits put it
+    out)."""
     s = gm.grid[t][2]
-    s.hp -= gm.player.getWallDamage() if s.kind == "spawner" else 1
+    damage = gm.player.getWallDamage() if s.kind == "spawner" else 1
+    s.hp -= damage
     gm.change = True
+    if s.kind == "spawner":
+        crack(gm, s, damage)
     if s.hp > 0:
-        gm.addPopup(f"{s.name} {max(0, s.hp)}/{s.maxHp}" if s.kind == "spawner" else "The fire gutters", t)
         return
     gm.grid[t] = [0, gm.grid[t][1]]
     camp(gm)["structures"].discard(t)
@@ -2397,7 +2658,6 @@ def hitStructure(gm, t):
     if s.kind == "bonfire":
         if f and t in f.bonfires:
             f.bonfires.remove(t)
-        gm.addPopup("Put out", t)
     else:
         gm.collectDrops(SPAWNER_DROPS, s.name, t)
 

@@ -1461,6 +1461,41 @@ class renderer():
         self.paintTile(grid, i, rooms, playerDirection, lighting)
         self.tileSigs[i] = signature
 
+    def crackedPicture(self, picture, piece, kind):
+        """A spawner's or warcamp chest's picture with the cracks its hits made (expansion.crack: piece.brokenPoints),
+        drawn like a wall's: each chipped pixel of the picture is its own color darkened by 100. Pixels where the
+        picture is see-through (the floor shows) stay as they are. Cached per piece and crack count."""
+        points = getattr(piece, "brokenPoints", None)
+        if not points:
+            return picture
+        cache = self.__dict__.setdefault("crackCache", {})
+        key = (id(piece), kind, len(points), self.tileSize)
+        hit = cache.get(key)
+        if hit is not None and hit[0] is piece:
+            return hit[1]
+        out = picture.copy()
+        w, h = out.get_size()
+        for px, py in points:
+            if 0 <= px < w and 0 <= py < h:
+                r, g, b, a = out.get_at((px, py))
+                if a > 0:
+                    out.set_at((px, py), (max(0, r - 100), max(0, g - 100), max(0, b - 100), a))
+        if len(cache) > 512:
+            cache.clear()
+        cache[key] = (piece, out)
+        return out
+
+    def plantPicture(self, plant):
+        """A plant's picture for its stage (plants.Plant.stage): a sprout, a young plant (growing), or full grown
+        (wild, or ripe), with seed pods when it has gone to seed."""
+        if plant.staged and not plant.ready:
+            return self.sprites["sprouts" if plant.stage == "planted" else "youngPlants"].get(plant.kind)
+        picture = self.sprites["plants"].get(plant.kind)
+        if picture is not None and plant.staged and plant.stage == "seed":
+            picture = picture.copy()
+            picture.blit(self.sprites["seedPods"], (0, 0))
+        return picture
+
     def tileLighting(self, i, x, y, playerPosition, visionRange, light):
         """(dither level, fire tint alpha) for a tile in view: the brighter of your light and any fire's."""
         offsetX, offsetY, reach = light
@@ -1490,16 +1525,16 @@ class renderer():
             glint = self.glintPhase(i, self.frameTicks) if not memorized and isinstance(obj, walls.OreVein) else None
             extra = (obj.name, len(obj.brokenPoints), getattr(obj, "corruptedBy", None), getattr(obj, "paint", None), glint)
         elif kind == 3:
-            extra = getattr(obj, "look", None)
+            extra = (getattr(obj, "look", None), len(getattr(obj, "brokenPoints", ())))
         elif kind == 9:
             extra = obj.look
         elif kind == 7:
             extra = (obj.id, obj.hp, obj.claimed)
         elif kind == 8:
-            extra = obj.kind
+            extra = (obj.kind, getattr(obj, "stage", None), obj.ready if obj.staged else None)
         elif kind == expansion.CAMP:
-            extra = (obj.kind, obj.hp, self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"])
-                     if obj.kind == "bonfire" else None)
+            extra = (obj.kind, obj.hp, len(getattr(obj, "brokenPoints", ())),
+                     self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"]) if obj.kind == "bonfire" else None)
         elif kind == 5 and not memorized and obj is not None:
             extra = (obj.name, getattr(obj, "look", None), i in getattr(self, "smokeHere", {}),
                      sprites.shardFrameFor(getattr(self, "lightTime", 0.0)) if obj.name == "Unsealed" else None)
@@ -1551,7 +1586,7 @@ class renderer():
                     self.mapSurface.blit(self.sprites["piles"][standingIn.look], (x * ts, y * ts))
                 self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
                 if standingIn is not None and hasattr(standingIn, "kind"):  # in a plant: it's drawn over you, see-through
-                    picture = self.sprites["plants"].get(standingIn.kind)
+                    picture = self.plantPicture(standingIn)
                     if picture is not None:
                         picture = picture.copy()
                         picture.set_alpha(150)
@@ -1566,7 +1601,7 @@ class renderer():
                 self.floorFill(i, rooms, memorized, x, y)
                 look = getattr(grid[i][2], "look", None)
                 if look in self.sprites["campChests"]:
-                    self.mapSurface.blit(self.sprites["campChests"][look], (x * ts, y * ts))
+                    self.mapSurface.blit(self.crackedPicture(self.sprites["campChests"][look], grid[i][2], ("chest", look)), (x * ts, y * ts))
                 else:
                     self.mapSurface.blit(self.sprites["chests"][sprites.chestColorFor(i)], (x * ts, y * ts))
             case 9:  # An item pile: one of the pile pictures, picked when the pile was made
@@ -1587,7 +1622,7 @@ class renderer():
                     pygame.draw.rect(self.mapSurface, self.color("enemy"), pygame.Rect(x * ts + 1, y * ts + ts - 2, max(1, (ts - 2) * station.hp // station.maxHp), 1))
             case 8:  # A plant: the floor, then the plant (kept in full color when remembered, like chests)
                 self.floorFill(i, rooms, memorized, x, y)
-                picture = self.sprites["plants"].get(grid[i][2].kind)
+                picture = self.plantPicture(grid[i][2])
                 if picture is not None:
                     self.mapSurface.blit(picture, (x * ts, y * ts))
             case expansion.CAMP:  # A spawner or a bonfire (kept in full color when remembered, like stations)
@@ -1596,11 +1631,8 @@ class renderer():
                 if piece.kind == "bonfire":
                     frame = self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"])
                     self.mapSurface.blit(self.sprites["bonfire"][frame], (x * ts, y * ts))
-                else:
-                    self.mapSurface.blit(self.sprites["spawner"], (x * ts, y * ts))
-                    if piece.hp < piece.maxHp:  # a damage bar along the bottom
-                        pygame.draw.rect(self.mapSurface, (40, 10, 10), pygame.Rect(x * ts + 1, y * ts + ts - 2, ts - 2, 1))
-                        pygame.draw.rect(self.mapSurface, self.color("enemy"), pygame.Rect(x * ts + 1, y * ts + ts - 2, max(1, (ts - 2) * piece.hp // piece.maxHp), 1))
+                else:  # (cracked as it's hit, like a wall: no damage bar)
+                    self.mapSurface.blit(self.crackedPicture(self.sprites["spawner"], piece, ("spawner",)), (x * ts, y * ts))
             case 6:  # Door back to the previous level
                 self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))

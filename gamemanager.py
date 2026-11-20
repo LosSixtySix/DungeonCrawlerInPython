@@ -1532,14 +1532,19 @@ class gameManager():
         self.collectDrops(drops, name, position)
 
     def harvestPlant(self, position):
-        """A plant was picked: its herb (and sometimes a seed) goes straight into the pouch."""
+        """A plant was picked: what its stage gives (its herb, or seeds) goes straight into the pouch."""
         plant = self.grid[position][2]
         name = plant.name
         if plant.kind == organizers.DEMISE and not self.player.hasEffect("demise_ward"):
             self.addPopup("Needs Thornward Gloves", position)  # its thorns can't be picked bare-handed
             return
+        stage = plant.pick()  # picking uses it up; what it gives depends on its stage (plants.Plant)
         self.grid[position] = [0, self.grid[position][1]]
-        self.collectDrops(loot.roll(loot.PLANT_LOOT, name), name, position)
+        self.change = True
+        if stage is None:
+            self.addPopup("Not ripe", position)  # (pulled up as a sprout or growing: nothing)
+            return
+        self.collectDrops(loot.rollPick(plant, stage), loot.plantSource(plant, stage), position)
 
     def killEnemy(self, position, killer="player"):
         """An enemy died. killer is "player", the enemy that killed it, or None (the environment, e.g.
@@ -1716,7 +1721,9 @@ class gameManager():
         self.windowSel["items"] = 0
         if len(self.roomItems) == 0:
             spot = self.itemsSpot()
-            self.setGround(spot, [0, self.groundAt(spot)[1]])
+            ground = self.groundAt(spot)
+            if not (len(ground) > 2 and isinstance(ground[2], expansion.CampChest)):  # a goblin chest stays, empty
+                self.setGround(spot, [0, ground[1]])
             self.roomItems = None
             self.closeWindow("items")
 
@@ -2845,7 +2852,7 @@ class gameManager():
         self.stepFloorEvent()
         growth = events.plantRules(self.activeEvent())
         if self.turnCount % growth.get("growTurns", plants.GROW_TURNS) == 0:
-            changed = plants.step(self.grid, self.rooms, self.rowLength, **growth)
+            changed = plants.step(self.grid, self.rooms, self.rowLength, noBirth=expansion.allFarmTiles(self), **growth)
             changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
             if changed:
                 self.change = True
@@ -3154,7 +3161,10 @@ class gameManager():
         if tile[0] == 2:
             return tile[2].name
         if tile[0] == 8:
-            return tile[2].name + (" (yours)" if tile[2].planted else "")
+            plant = tile[2]
+            notes = [n for n in (("yours" if plant.planted and getattr(plant, "faction", None) is None else
+                                  "goblin crop" if plant.planted else ""), plant.stageLabel()) if n]
+            return plant.name + (f" ({', '.join(notes)})" if notes else "")
         if tile[0] == 7:
             station = tile[2]
             return f"{station.name} ({station.hp}/{station.maxHp})" if station.claimed else f"{station.name} (unclaimed)"

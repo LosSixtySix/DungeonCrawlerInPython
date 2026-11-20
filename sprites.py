@@ -535,6 +535,46 @@ PLANT_SPRITES = {  # all seen from above, like the rest of the map
     ],
 }
 
+# A planted plant's early stages (plants.Plant.stage), in its kind's colors, seen from above: a sprout of two leaves,
+# then a young rosette. Ripe, it's drawn as its full sprite; gone to seed, with SEED_PODS on top.
+SPROUT = [
+    "..........",
+    "..........",
+    "..........",
+    "..kk..kk..",
+    ".kCckkcCk.",
+    "..kcCCck..",
+    "...kkkk...",
+    "..........",
+    "..........",
+    "..........",
+]
+YOUNG_PLANT = [
+    "..........",
+    "..........",
+    "...kkkk...",
+    "..kcCCck..",
+    ".kcCccCck.",
+    ".kcCccCck.",
+    "..kcCCck..",
+    "...kkkk...",
+    "..........",
+    "..........",
+]
+SEED_PODS = [  # pale pods dotted over a plant gone to seed
+    "..........",
+    ".pP....Pp.",
+    ".Pp....pP.",
+    "..........",
+    "....pP....",
+    "....Pp....",
+    "..........",
+    "..........",
+    ".pP....Pp.",
+    ".Pp....pP.",
+]
+SEED_POD_COLORS = {"p": (150, 118, 64), "P": (240, 222, 160)}
+
 STATION_SPRITES = {"smelter": (SMELTER, SMELTER_COLORS), "anvil": (ANVIL, ANVIL_COLORS),
                    "shrine": (SHRINE, SHRINE_COLORS), "forge": (FORGE, FORGE_COLORS),
                    "cauldron": (CAULDRON, CAULDRON_COLORS)}
@@ -650,6 +690,9 @@ def buildSprites(colors, tileSize):
         "doorUp": makeSurface(MOONBEAM, roles(colors, colors["doorPrev"]), tileSize),
         "stations": {sid: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for sid, (rows, fixed) in STATION_SPRITES.items()},
         "plants": {kind: makeShadowed(rows, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind, rows in PLANT_SPRITES.items()},
+        "sprouts": {kind: makeShadowed(SPROUT, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind in PLANT_SPRITES},
+        "youngPlants": {kind: makeShadowed(YOUNG_PLANT, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind in PLANT_SPRITES},
+        "seedPods": makeSurface(SEED_PODS, SEED_POD_COLORS, tileSize),
         "factions": {(name, look): makeShadowed(rows, enemyRoles(colors, fixed), tileSize)
                      for look in EXPANSION_LOOKS for name, (rows, fixed) in factionPictures(look).items()},
         "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
