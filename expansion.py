@@ -171,6 +171,7 @@ WANDERER_TURNS = 60         # a wild goblin wanders in from out of sight this of
 # faction on the floor is using.
 LOOKS = ["warpaint", "ashen", "ochre", "nightcult", "tidewater", "ember"]
 FIRST_LOOKS = LOOKS[:3]
+NEUTRAL_LOOK = "abandoned"  # a dead faction's camp, until someone claims it (never one of LOOKS)
 
 GOBLIN_NAMES = ("Goblin", "Goblin Chieftan")
 
@@ -190,8 +191,8 @@ def hutWalls(doors, r=3):
 def paintHutWall(gm, hut, t, look):
     """Paints the hut wall at t in a faction's colors: the renderer draws its mortar joints in the look's cloak color
     (renderer.drawMortar). wall.paint is (look, side of the hut it's on, parity): the joints are turned to face out
-    of the hut and alternate from one wall tile to the next, like laid stone. It keeps its paint when its faction
-    dies out, so an abandoned camp still shows whose it was."""
+    of the hut and alternate from one wall tile to the next, like laid stone. When its faction dies out, the camp
+    is repainted in NEUTRAL_LOOK (abandon)."""
     w, r = gm.grid[t][2], hut.get("radius", 3)
     for dx, dy in hutWalls((), r):
         if offsetTile(gm, hut["center"], dx, dy) == t:
@@ -231,6 +232,7 @@ class Faction:
         self.migrating = None     # where a schism's new half is going to set up camp
         self.peaceWith = None     # the faction it's at peace with for now (a schism's other half)
         self.seizing = None       # (faction id, hut center): the spawner a group that lost its builders goes to take
+        self.abandoned = False    # died out (no goblins, no food to spawn more): its camp stands empty, for the taking
 
     def walls(self):
         """Its huts' walls, built or planned: its own goblins never dig through these."""
@@ -991,21 +993,66 @@ def stash(gm, chest, unit):
 
 
 def raidTarget(gm, f, home):
-    """The nearest chest of another faction (one it isn't at peace with) within RAID_REACH of home, or None."""
-    theirs = [c for g in camp(gm)["factions"].values() if g is not f and not atPeace(f.id, g.id) for c in chests(gm, g)]
+    """The nearest chest (war chest or farming hut's) or spawner of another faction (one it isn't at peace with)
+    within RAID_REACH of home, or None."""
+    theirs = []
+    for g in camp(gm)["factions"].values():
+        if g is not f and not atPeace(f.id, g.id):
+            theirs += list(chests(gm, g)) + farmChests(gm, g) + [t for t, _ in spawnersOf(gm, g)]
     near_ = [c for c in theirs if dist(gm, c, home) <= RAID_REACH]
     return min(near_, key=lambda c: dist(gm, c, home)) if near_ else None
 
 
+def raidable(gm, f, t):
+    """Is t still another faction's chest or spawner?"""
+    tile = gm.grid[t]
+    if tile[0] == 3:
+        return isinstance(tile[2], CampChest) and tile[2].faction != f.id
+    return tile[0] == CAMP and tile[2].kind == "spawner" and tile[2].faction != f.id
+
+
+def wallInTheWay(gm, i, f, target):
+    """A wall of the hut target is in (another faction's) right beside i: raiders break through it rather than
+    walk round to a door."""
+    for g in camp(gm)["factions"].values():
+        if g is f:
+            continue
+        for h in g.huts:
+            if target in h["floor"]:
+                return next((j for j in gm.neighbors(i) if j in h["walls"] and gm.grid[j][0] == 2), None)
+    return None
+
+
 def raidTurn(gm, i, unit, squad, f, ctx):
-    """To the other faction's chest; smash it open, take what's in it, then haul it home."""
+    """To the other faction's chest or spawner, breaking through the walls of its hut on the way. A chest it smashes
+    open, takes what's in it, then hauls it home; a spawner it smashes to rubble."""
     target = squad.raid
     tile = gm.grid[target]
-    if tile[0] != 3 or not isinstance(tile[2], CampChest) or tile[2].faction == f.id:
+    if not raidable(gm, f, target):
         squad.raid = None  # someone else got it first
         return i
-    if target not in gm.neighbors(i):  # chests don't move: the floor-wide path map, like a bonfire's
+    owner = camp(gm)["factions"].get(tile[2].faction)
+    if owner is not None and getattr(owner, "abandoned", False):  # an empty camp: walk in and claim it (claimStep)
+        if target in gm.neighbors(i):
+            squad.raid = None
+            return i
         return step(gm, i, unit, target, f.walls(), ctx, bonfireField(gm, target))
+    if target not in gm.neighbors(i):  # chests don't move: the floor-wide path map, like a bonfire's
+        wall_ = wallInTheWay(gm, i, f, target) if unit.wallDamage > 0 else None
+        if wall_ is not None:
+            digWall(gm, i, unit, wall_, unit.wallDamage)
+            return i
+        return step(gm, i, unit, target, f.walls(), ctx, bonfireField(gm, target))
+    if tile[0] == CAMP:
+        s = tile[2]
+        damage = max(unit.damage, unit.wallDamage)
+        s.hp -= damage
+        crack(gm, s, damage)
+        gm.change = True
+        if s.hp <= 0:
+            breakSpawner(gm, target, unit)
+            squad.raid = None
+        return i
     chest = tile[2]
     chest.hp -= unit.damage
     crack(gm, chest, unit.damage)
@@ -1805,8 +1852,15 @@ def farmerGone(f, farmer):
 
 
 def farmHutOf(f, u):
-    """Farmer u's farming hut: its own, or one whose farmer is gone (it takes it over), or None."""
+    """Farmer u's farming hut: its own, or one whose farmer is gone (it takes it over), or None. One still waiting
+    for its hut to be built moves into a finished one whose farmer is gone instead (the builder finishes the other
+    one for the next farmer)."""
     mine = next((h for h in farms(f) if h.get("farmer") is u), None)
+    if mine is not None and not mine["done"] and not mine.get("built"):
+        free = next((h for h in farms(f) if h["done"] and farmerGone(f, h.get("farmer"))), None)
+        if free is not None:
+            mine["farmer"], free["farmer"] = None, u
+            return free
     if mine is None:
         mine = next((h for h in farms(f) if farmerGone(f, h.get("farmer"))), None)
         if mine is not None:
@@ -2360,17 +2414,106 @@ def seizeTarget(gm, f, units):
     return best[1:] if best else None
 
 
+def dyingOut(gm, f):
+    """Has f died out: no goblins left, and no spawner with the food to make one? (Its camp, if it has one, turns
+    neutral: abandoned.)"""
+    if factionUnits(gm, f):
+        return False
+    return (f.huts or f.bonfires or chests(gm, f)) and \
+        not any(s.__dict__.get("food", 0) >= FOOD_PER_SPAWN for _, s in spawnersOf(gm, f))
+
+
+def abandon(gm, f):
+    """f has died out: its camp turns neutral, its hut walls and chests repainted in NEUTRAL_LOOK."""
+    f.abandoned, f.seizing, f.migrating, f.peaceWith = True, None, None, None
+    f.look = NEUTRAL_LOOK
+    for h in f.huts:
+        for t in h["walls"]:
+            if gm.grid[t][0] == 2 and getattr(gm.grid[t][2], "paint", None):
+                paintHutWall(gm, h, t, NEUTRAL_LOOK)
+    for c in list(chests(gm, f)) + farmChests(gm, f) + [c for h in f.huts for c in h.get("chests", [])]:
+        box = chestAt(gm, c)
+        if isinstance(box, CampChest):
+            box.look = NEUTRAL_LOOK
+    gm.change = True
+
+
+def claimZone(gm, f):
+    """Where a goblin standing claims an abandoned camp: inside any of its huts, within 3 of a bonfire, or beside
+    one of its war chests."""
+    zone = {t for h in f.huts for t in h["inside"] if t is not None}
+    for b in f.bonfires:
+        zone |= {t for dy in range(-3, 4) for dx in range(-3, 4)
+                 if (t := offsetTile(gm, b, dx, dy)) is not None and dist(gm, t, b) <= 3}
+    for c in chests(gm, f):
+        zone |= set(gm.neighbors(c))
+    return zone
+
+
+def claimStep(gm, f):
+    """An abandoned camp (its faction died out) stands neutral until a goblin walks into it (claimZone): a faction's
+    goblin claims all of it for its faction; a wild goblin claims it for a new faction in new colors, which it
+    founds. Its huts, spawners (hungry: they spawn once fed), bonfires and chests all change hands."""
+    zone = claimZone(gm, f)
+    if not zone:
+        camp(gm)["factions"].pop(f.id, None)  # nothing left of it
+        return
+    for t in zone:
+        tile = gm.grid.get(t)
+        if not tile or tile[0] != 5 or len(tile) < 3:
+            continue
+        u = tile[2]
+        owner = faction(gm, u)
+        if owner is not None and not getattr(owner, "abandoned", False):
+            claimCamp(gm, f, owner)
+            return
+        if owner is None and u.name in GOBLIN_NAMES and u.hp > 0:
+            new = newFaction(gm, pickLook(gm))
+            setFaction(u, new)
+            u.rally = u.foe = None
+            if u.name not in WORKERS:
+                joinSquad(gm, u, new)
+            claimCamp(gm, f, new)
+            return
+
+
+def claimCamp(gm, f, new):
+    """All of abandoned f's camp goes to new."""
+    for h in list(f.huts):
+        giveHut(gm, f, new, h)
+    for b in list(f.bonfires):
+        f.bonfires.remove(b)
+        new.bonfires.append(b)
+        if gm.grid[b][0] == CAMP:
+            gm.grid[b][2].faction = new.id
+    if new.first is None or new.first not in new.bonfires:
+        new.first = new.bonfires[0] if new.bonfires else None
+    for c in list(chests(gm, f)):
+        box = chestAt(gm, c)
+        if isinstance(box, CampChest):
+            box.faction, box.look = new.id, new.look
+            chests(gm, new).add(c)
+        chests(gm, f).discard(c)
+    if migrating(new) is not None and new.bonfires:  # (a group on its way to a new camp has one now)
+        new.migrating = new.peaceWith = None
+    camp(gm)["factions"].pop(f.id, None)
+    gm.change = True
+
+
 def seizeStep(gm, f):
     """A group that has lost all its builders before it lit a bonfire (so it can't start a camp) goes to take a
     spawner from the nearest other faction instead: peace or not, it marches on it, fights whatever it meets near
     it, and once one of its goblins is inside the hut with none of the owners left in it, the hut is its. Its
-    goblins put the food they carry in the spawner, which makes it a builder first (fed or not), and the builder
+    goblins put the food they carry in the spawner, which makes it a builder next (once it has the food), and the builder
     lights the new camp's bonfire beside the hut. If there's no spawner to take, it carries on where it was going."""
     units = factionUnits(gm, f)
     if not units:
         f.seizing = None
         return
     seizing = getattr(f, "seizing", None)
+    if seizing is not None and (f.huts or f.bonfires):  # it got a camp some other way (claimed an abandoned one)
+        f.seizing = f.migrating = None
+        return
     if seizing is None:
         if f.bonfires or f.huts or any(u.name == "Goblin Builder" for _, u in units):
             return
@@ -2578,7 +2721,12 @@ def stepCamp(gm):
     if bonfires and gm.turnCount % WANDERER_TURNS == 0:
         wanderIn(gm, bonfires)
     for f in list(state["factions"].values()):
-        if not f.bonfires:
+        if getattr(f, "abandoned", False):
+            claimStep(gm, f)
+        elif dyingOut(gm, f):
+            abandon(gm, f)
+    for f in list(state["factions"].values()):
+        if not f.bonfires and not getattr(f, "abandoned", False):
             seizeStep(gm, f)
     for f in list(state["factions"].values()):
         if migrating(f) is not None or not f.bonfires:
@@ -2623,11 +2771,12 @@ def stepSpawner(gm, t, s):
     free = [x for x in inside if x is not None and gm.grid[x][0] == 0]
     needBuilder = f is not None and not f.bonfires and not any(u.name == "Goblin Builder" for u in builders(gm)
                                                                if factionOf(u) == f.id)
-    if not free or f is None or (s.__dict__.setdefault("food", SPAWNER_START_FOOD) < FOOD_PER_SPAWN and not needBuilder):
-        s.timer = 1  # full, or out of food: try again next turn
+    if not free or f is None or getattr(f, "abandoned", False) \
+            or s.__dict__.setdefault("food", SPAWNER_START_FOOD) < FOOD_PER_SPAWN:
+        s.timer = 1  # full, or out of food (it never spawns without food): try again next turn
         return
     s.timer = rand.randint(*SPAWN_TURNS)
-    s.food = max(0, s.food - FOOD_PER_SPAWN)
+    s.food -= FOOD_PER_SPAWN
     roll, kind = rand.random() * 100, SPAWN_ODDS[-1][0]
     for name, chance in SPAWN_ODDS:
         if roll < chance:
@@ -2635,7 +2784,7 @@ def stepSpawner(gm, t, s):
             break
         roll -= chance
     if needBuilder:
-        kind = "Goblin Builder"  # a seized hut with no camp yet: a builder to light its bonfire, fed or not
+        kind = "Goblin Builder"  # a seized hut with no camp yet: a builder to light its bonfire
     elif kind == "Goblin Farmer" and farmerCount(gm, f) >= BASE_FARMERS + finishedHuts(f) // HUTS_PER_FARMER:
         kind = "Goblin"  # enough farmers for a camp this size
     if hut is not None:
@@ -2772,14 +2921,29 @@ def hitStructure(gm, t):
         crack(gm, s, damage)
     if s.hp > 0:
         return
+    if s.kind == "spawner":
+        breakSpawner(gm, t)
+        return
     gm.grid[t] = [0, gm.grid[t][1]]
     camp(gm)["structures"].discard(t)
     f = camp(gm)["factions"].get(s.faction)
-    if s.kind == "bonfire":
-        if f and t in f.bonfires:
-            f.bonfires.remove(t)
-    else:
+    if f and t in f.bonfires:
+        f.bonfires.remove(t)
+
+
+def breakSpawner(gm, t, unit=None):
+    """A spawner is smashed: its drops go to you, or to the goblin that broke it (what it can't carry is left on
+    the floor). Its faction's builders build it back (damaged)."""
+    s = gm.grid[t][2]
+    gm.grid[t] = [0, gm.grid[t][1]]
+    camp(gm)["structures"].discard(t)
+    gm.change = True
+    if unit is None:
         gm.collectDrops(SPAWNER_DROPS, s.name, t)
+        return
+    left, gold = take(unit, [resources.MaterialStack(m, n) for m, n in SPAWNER_DROPS])
+    if left or gold:
+        gm.placeItems(t, left, gold)
 
 
 def bonfires(gm):

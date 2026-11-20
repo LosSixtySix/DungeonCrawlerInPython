@@ -197,6 +197,8 @@ EXPANSION_LOOKS = {
     "nightcult": {"goblin": {"c": (92, 52, 140), "C": (60, 32, 96)}, "chief": {"r": (52, 30, 72), "f": (120, 80, 170), "i": (70, 40, 100)}, "mallet": (150, 154, 162)},
     "tidewater": {"goblin": {"c": (40, 132, 130), "C": (24, 88, 86)}, "chief": {"r": (22, 70, 66), "f": (40, 132, 130), "i": (16, 48, 46)}, "mallet": (150, 154, 162)},
     "ember": {"goblin": {"c": (214, 104, 30), "C": (150, 66, 18)}, "chief": {"r": (70, 66, 64), "f": (214, 104, 30), "i": (44, 42, 40)}, "mallet": (150, 154, 162)},
+    # an abandoned camp (expansion.NEUTRAL_LOOK): weathered, lichen-grey cloth and mortar. No faction is given it.
+    "abandoned": {"goblin": {"c": (98, 104, 86), "C": (66, 72, 58)}, "chief": {"r": (58, 62, 52), "f": (98, 104, 86), "i": (40, 44, 36)}, "mallet": (120, 124, 132)},
 }
 
 
