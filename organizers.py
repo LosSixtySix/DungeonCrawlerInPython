@@ -313,7 +313,7 @@ def attack(gm, i, org, target):
         gm.hitPlayer(org, i)
         return
     enemy = gm.grid[target][2]
-    enemy.hp -= org.damage
+    enemy.hp -= gm.enemyDodge(enemy, org.damage, target)
     gm.bleed(target)
     gm.change = True
     if enemy.hp <= 0:

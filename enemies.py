@@ -1,6 +1,10 @@
 import items
 import random as rand
 
+CLEAN_DODGE_BASE = 0.05  # (the player's starts the same; see playerClass.CLEAN_DODGE_BASE)
+FAST = 1.25  # speed of the quick ones: Dire Rats, Goblin Chieftains and the Unsealed
+
+
 class Enemy():
     def __init__(self,hp,ac,speed,wallDamage,damage,name,goldWorth):
         self.hp = hp
@@ -23,6 +27,10 @@ class Enemy():
         self.look = None     # its faction's colors (sprites.EXPANSION_LOOKS)
         self.foe = None      # an enemy that hit it: it fights back (expansion.otherTurn)
         self.rally = None    # a bonfire it's marching to (wild goblins, expansion.stepCamp)
+        # speed: actions each turn; a fraction builds up, so 1.25 acts twice every fourth turn (gameManager.enemyActions)
+        self.actionPool = 0.0
+        self.evasion = 0.0     # chance an attack on it is evaded (see gameManager.dodge)
+        self.cleanDodge = CLEAN_DODGE_BASE  # chance an evaded attack misses entirely instead of doing half damage
 
     def CanDig(self):
         if self.wallDamage > 0:
@@ -34,10 +42,11 @@ class Goblin(Enemy):
         self.inventory = [items.goblinEquipmentList[rand.randint(0,len(items.goblinEquipmentList)-1)]]
 class GoblinChief(Enemy):
     def __init__(self):
-        super().__init__(10,12,2,2,3,"Goblin Chieftan",15)
+        super().__init__(10,12,FAST,2,3,"Goblin Chieftan",15)
 class DireRat(Enemy):
     def __init__(self):
-        super().__init__(3,2,2,0,2,"Dire Rat",5)
+        super().__init__(3,2,FAST,0,2,"Dire Rat",5)
+        self.evasion = 0.10  # quick and small: a little hard to hit
         self.visionRange = 7
 class DireMole(Enemy):
     def __init__(self):
@@ -47,7 +56,7 @@ class DireMole(Enemy):
         self.visionRange = 3
 class Unsealed(Enemy):
     def __init__(self):
-        super().__init__(10, 3, 2, 3, 3, "Unsealed", 25)
+        super().__init__(10, 3, FAST, 3, 3, "Unsealed", 25)
         self.allSight = True
         self.fireResistPercent = 0.8  # fire barely touches it
 

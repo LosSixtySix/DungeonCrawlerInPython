@@ -23,6 +23,7 @@ RELICS = {
     "hollow_blade": {"name": "Hollow Blade", "slot": "Hands", "etype": "Damage", "bonus": 8, "power": "lifedrinker"},
     "thornward_gloves": {"name": "Thornward Gloves", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "demise_ward"},
     "vestigial_hand": {"name": "Discarded Vestigial Hand", "slot": "Back", "etype": "Unique", "bonus": 0, "power": "extra_hand"},
+    "lightning_vambraces": {"name": "Lightning Vambraces", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "lightning"},
 }
 
 # Relics that can be in a chest: (relic id, first floor, floor types it can appear on or None for any)
@@ -33,10 +34,13 @@ CHEST_RELICS = [
     ("hollow_blade", 8, None),
     ("thornward_gloves", 2, None),
     ("vestigial_hand", 3, None),
+    ("lightning_vambraces", 6, None),
 ]
 RELIC_CHEST_CHANCE = 0.25  # chance that a floor has one relic chest (if any relic can appear there)
 
 # What each effect does, in a few words (shown in the Character window and on item descriptions)
+LIGHTNING_SPEED = 2  # Lightning Vambraces: added to your speed (actions each turn)
+
 EFFECTS = {
     "burrow": ("Burrow", "Burrow through soft walls"),
     "seal_ward": ("Seal Ward", "The Unsealed don't appear"),
@@ -57,6 +61,7 @@ EFFECTS = {
     "lucky": ("Lucky", "+1 gold per kill"),
     "keen_eye": ("Keen Eye", "1 in 4 veins give an extra ore"),
     "extra_hand": ("Third Hand", "Grows another hand slot from your back"),
+    "lightning": ("Lightning", f"+{LIGHTNING_SPEED} speed: more actions every turn"),
     # Meals from the Cooking Pot (they last a number of turns; see recipes.MEALS and PlayerClass.buffs)
     "fed_mend": ("Mending", "Heals 1 HP every 5 turns"),
     "fed_guard": ("Sturdy", "+1 Defense"),
@@ -65,6 +70,7 @@ EFFECTS = {
     "fed_dig": ("Miner's Fill", "+2 wall damage"),
     "fed_thorns": ("Thorn Blood", "Enemies that hit you take 2 magic damage"),
     "fed_sick": ("Demise Sickness", "Lose 1 HP every 8 turns (never below 1)"),
+    "fed_footwork": ("Light Feet", "+20% Clean Dodge"),
 }
 
 # A meal's drawbacks: they stay when you eat another meal (only the good part is replaced), and run their turns out

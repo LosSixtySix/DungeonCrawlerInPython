@@ -53,9 +53,10 @@ QUALITIES = [("Crude", 0.75), ("Common", 1.0), ("Fine", 1.25), ("Masterwork", 1.
 
 def qualityWeights(intelligenceBonus):
     """Relative chances of each quality. Intelligence (player.attributeBonuses["intelligence"]) moves the odds
-    away from Crude and towards Fine and Masterwork."""
+    away from Crude and towards Fine and Masterwork. At INT 1 (bonus 0) it's 55% Crude, 45% Common, and no Fine
+    or Masterwork at all."""
     b = intelligenceBonus
-    return {"Crude": max(5, 30 - 2 * b), "Common": 45, "Fine": 20 + 2 * b, "Masterwork": 5 + b}
+    return {"Crude": max(5, 55 - 2.5 * b), "Common": 45, "Fine": 2 * b, "Masterwork": 0.75 * b}
 
 
 def qualityOdds(intelligenceBonus):
@@ -163,6 +164,8 @@ MEALS = [
      "A heavy pot of meat and moss with glowcaps on top. Good for a long dig."),
     ("hunters_feast", "Hunter's Feast", 4, {"meat": 2, "bloodcap": 1, "emberroot": 1}, 5, {"fed_strength": 80, "hardy": 80},
      "Two cuts, seared with emberroot and bloodcap. The best meal the pot makes."),
+    ("quickstep_skewers", "Quickstep Skewers", 2, {"meat": 1, "shadowfern": 1, "glowcap": 1}, 2, {"fed_footwork": 60},
+     "Light, bitter and bright. You're quicker on your feet: a blow you slip is more likely to miss you entirely."),
     ("demise_stew", "Demise Stew", 3, {"meat": 1, "organizers_demise": 1}, 1,
      {"demise_ward": 60, "fed_thorns": 60, "fed_sick": 60},
      "Meat boiled with Organizer's Demise. Its thorns grow in your blood, and it makes you sick."),
@@ -210,6 +213,9 @@ RECIPES = [
            f"A leather belt lined with vial loops. Up to {POTION_BELT_STACK} of the same potion share one inventory slot.",
            f"Belt  Potions stack to {POTION_BELT_STACK}",
            makeItem=lambda b, b2: items.equipment("PotionStack", "Potion Belt", "Belt", POTION_BELT_STACK)),
+    Recipe("soft_boots", "Soft-Soled Boots", "workbench", 2, {"hide": 4, "wood": 1}, "item",
+           "Quiet hide soles. When you slip a blow, it's more likely to miss you entirely.", "Feet  Clean Dodge +10%",
+           bonus=10, makeItem=gear("CleanDodge", "Soft-Soled Boots", "Feet", None)),
     Recipe("cooking_pot", "Cooking Pot", "workbench", 3, {"stone": 6, "wood": 3}, "station",
            "A stone pot that sits on a few coals. Cooks meat, alone or with herbs.", "Unlocks the Cooking Pot", makes="cooking_pot"),
     *[Recipe(mealId, name, "cooking_pot", turns, needs, "potion", description, mealResult(heal, buffs),

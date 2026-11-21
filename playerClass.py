@@ -16,6 +16,14 @@ def storageOf(item):
     return item.bonus if item != "None" and item.Etype == "Storage" else 0
 
 
+# Dexterity: speed (actions each turn) and evasion (the chance to evade an enemy's attack), both from the DEX
+# attribute bonus, so they grow very slowly. Clean Dodge (how often an evaded attack misses entirely instead of
+# doing half damage) doesn't come from DEX: only "CleanDodge" gear and the fed_footwork meal buff raise it.
+SPEED_PER_DEX_BONUS = 0.01    # speed = 1 + this per point of DEX bonus (DEX 2: 1.04, DEX 8: 1.12, DEX 16: 1.16)
+EVASION_PER_DEX_BONUS = 0.005  # evasion chance per point of DEX bonus (DEX 2: 2%, DEX 8: 6%, DEX 16: 8%); no cap
+CLEAN_DODGE_BASE = 0.05
+FOOTWORK_CLEAN_DODGE = 0.20   # Quickstep Skewers (fed_footwork)
+
 POTION_STACK = "PotionStack"  # Etype of a Potion Belt: its bonus is how many of one potion share an inventory slot
 
 
@@ -72,6 +80,8 @@ class PlayerClass():
         self.burnTurns = 0       # turns of burning left (fire can set you alight; see gameManager.applyFire)
         self.buffs = {}          # effects from the meal you last ate: effect tag -> turns left (see eat and stepBuffs)
         self.meal = None         # that meal's name, while any of its buffs last
+        self.actionPool = 0.0    # leftover fraction of speed, carried into the next turn (see startRound)
+        self.startRound()
 
     def levelUp(self,attribute):
         if self.gold >= self.nextLevelGold:
@@ -82,6 +92,35 @@ class PlayerClass():
             self.attributeBonuses[attribute] = int(math.log2(self.attributes[attribute])*4)
             if self.damageTaken > 0:
                 self.damageTaken = 0
+
+    def getSpeed(self):
+        """Actions each turn (a fraction builds up into an extra action now and then)."""
+        return 1 + SPEED_PER_DEX_BONUS * self.attributeBonuses["dexterity"] + relics.LIGHTNING_SPEED * self.countEffect("lightning")
+
+    def evasion(self):
+        """Chance (0..1) to evade an enemy's attack."""
+        return EVASION_PER_DEX_BONUS * self.attributeBonuses["dexterity"]
+
+    def cleanDodge(self):
+        """Chance (0..1) an evaded attack misses entirely; otherwise it does half damage."""
+        return CLEAN_DODGE_BASE + self.getequipmentBonus("CleanDodge") / 100 + FOOTWORK_CLEAN_DODGE * self.countEffect("fed_footwork")
+
+    def startRound(self):
+        """A new turn: speed goes into the pool, and every whole action in it can be spent this turn."""
+        pool = getattr(self, "actionPool", 0.0) + self.getSpeed()
+        self.actionsAllowed = int(pool)
+        self.actionPool = pool - self.actionsAllowed
+        self.actionsSpent = 0
+
+    def spendAction(self):
+        """Uses one action. Returns True if that was the last one this turn (the world takes its turn then)."""
+        if not hasattr(self, "actionsAllowed"):  # (saves from before speed)
+            self.startRound()
+        self.actionsSpent += 1
+        if self.actionsSpent >= self.actionsAllowed:
+            self.startRound()
+            return True
+        return False
 
     def getequipmentBonus(self,Etype,secondBonus = False):
         bonus = 0

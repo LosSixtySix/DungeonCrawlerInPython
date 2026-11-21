@@ -97,7 +97,7 @@ DOOR_SHADE_MOST = 0.45  # doors are never forgotten: they take the same falloff,
 # Each new floor picks one of these as its chance that any given tile starts as a wall (0.15 open to 0.75 dense)
 WALL_DENSITIES = [round(0.15 + 0.05 * step, 2) for step in range(13)]
 INVENTORY_ROWS = 2  # rows the Inventory window shows; a Backpack's row is reached by arrowing down (it scrolls)
-EQUIP_TURNS = 1         # turns to put one item on or take one off (a swap is both)
+EQUIP_ACTIONS = 1       # actions to put one item on or take one off (a swap is both); faster with more speed
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
 CRAFT_MORE = 5       # Shift+Enter crafts up to this many in a row
 THROWN_EFFECTS = {"Fire", "Smoke", "Magic","Explosive"}  # potions you aim and throw instead of drinking
@@ -772,7 +772,7 @@ class gameManager():
                     before = len(self.player.inventory)
                     self.player.equipItem(index)
                     if len(self.player.inventory) < before:
-                        self.spendTurns(EQUIP_TURNS)
+                        self.spendActions(EQUIP_ACTIONS)
                         self.fitSelections()
         elif windowId == "equipment":
             slot = list(self.player.equipment.keys())[index]
@@ -782,7 +782,7 @@ class gameManager():
                     if self.player.sheds(old) and not self.roomToSpill():
                         return
                     self.spill(self.player.swapEquip(self.swap["index"], slot))
-                    self.spendTurns(2 * EQUIP_TURNS)  # taking one off and putting one on
+                    self.spendActions(2 * EQUIP_ACTIONS)  # taking one off and putting one on
                     self.swap = None
                     self.focus = "inventory" if "inventory" in self.openWindows else "equipment"
                     self.fitSelections()
@@ -794,7 +794,7 @@ class gameManager():
                 if problem:
                     self.addPopup(problem, self.playerPositionFlat)
                 else:
-                    self.spendTurns(EQUIP_TURNS)
+                    self.spendActions(EQUIP_ACTIONS)
                     self.fitSelections()
         elif windowId == "levelup":
             self.player.levelUp(list(self.player.attributes.keys())[index])
@@ -971,10 +971,12 @@ class gameManager():
     # Equipping with every fitting slot full opens the Equipment window on that slot; Enter swaps the item in
     # (the old one takes its place in the inventory), Esc cancels. Arrows only move between the slots it fits.
 
-    def spendTurns(self, turns):
-        """Equipping, unequipping and swapping take turns: the enemies move once for each."""
-        for _ in range(turns):
-            self.enemyTurn()
+    def spendActions(self, actions):
+        """Spends your actions (moving, attacking, equipping...). Each time this turn's actions run out, the
+        world takes its turn. More speed (from DEX) now and then gives you an extra action before it does."""
+        for _ in range(actions):
+            if self.player.spendAction():
+                self.enemyTurn()
         self.change = True
 
     def startSwap(self, inventoryIndex):
@@ -1376,15 +1378,39 @@ class gameManager():
             enemy.lastPlayerPosition = None
             self.addPopup("Flees!", enemyPosition)
             return
+        dodged = self.dodge(player.evasion(), player.cleanDodge())
+        if dodged == "clean":  # missed you entirely: no Ward used up, no thorns
+            self.addPopup("Dodged", self.playerPositionFlat)
+            return
         if player.hasEffect("ward") and player.wardReady:
             player.wardReady = False
             self.addPopup("Warded", self.playerPositionFlat)
             return
-        player.damageTaken += player.hitDamage(enemy.damage)
+        damage = player.hitDamage(enemy.damage)
+        if dodged == "partial":
+            damage = math.ceil(damage / 2)
+            self.addPopup("Grazed", self.playerPositionFlat)
+        player.damageTaken += damage
         self.bleed(self.playerPositionFlat)
         tile = self.grid.get(enemyPosition)
         if player.hasEffect("fed_thorns") and tile and tile[0] == 5 and len(tile) > 2 and tile[2] is enemy:
             self.magicEnemy(enemyPosition, relics.THORN_DAMAGE)  # Demise Stew: the thorns in your blood bite back
+
+    def dodge(self, evasion, cleanDodge):
+        """Rolls whether an attack is evaded: None (it hits), "clean" (it misses) or "partial" (half damage).
+        Fire, magic, bombs and falling can't be evaded; only melee hits go through this."""
+        if rand.random() >= evasion:
+            return None
+        return "clean" if rand.random() < cleanDodge else "partial"
+
+    def enemyDodge(self, enemy, damage, position):
+        """How much of a melee hit on an enemy lands, after its evasion (a Dire Rat has some)."""
+        dodged = self.dodge(getattr(enemy, "evasion", 0), getattr(enemy, "cleanDodge", enemies.CLEAN_DODGE_BASE))
+        if dodged is None:
+            return damage
+        if self.grid.get(position, [0, 0])[1] == 1:  # only popups you can see
+            self.addPopup("Dodged" if dodged == "clean" else "Grazed", position)
+        return 0 if dodged == "clean" else math.ceil(damage / 2)
 
     def placeRelicChest(self, grid, depth, proportion):
         """Sometimes a floor has a chest with a relic in it."""
@@ -1550,11 +1576,11 @@ class gameManager():
                     self.currentLocation = currentWall
                     self.playerPositionFlat = target
         elif tile[0] == 5:  # enemy
-            dealt = self.player.DealDamage()
+            dealt = self.enemyDodge(tile[2], self.player.DealDamage(), target)
             tile[2].hp -= dealt
             if dealt > 0:
                 self.bleed(target)
-            self.thirst()
+                self.thirst()
             if tile[2].hp <= 0:
                 self.killEnemy(target)
         elif tile[0] in (3, 9):  # a chest or an item pile
@@ -3110,126 +3136,141 @@ class gameManager():
         for i in list(self.EnemyPositions):  # a copy: an Organizer can kill an enemy partway through
             if self.grid[i][0] != 5 or len(self.grid[i]) < 3:
                 continue  # stale position, the enemy is no longer here
-            currentEnemy: enemies.Enemy = self.grid[i].pop()
-            if isinstance(currentEnemy, enemies.Organizer):  # builders: their own turn (organizers.py)
-                finalPosition, currentEnemy = organizers.takeTurn(self, i, currentEnemy, organizerContext)
-                self.grid[finalPosition].append(currentEnemy)
-                listOfNewPositions.add(finalPosition)
-                continue
-            if getattr(currentEnemy, "faction", None) is not None:  # an Expansion faction's goblin (expansion.py)
-                finalPosition = expansion.takeTurn(self, i, currentEnemy, campContext)
-                self.grid[finalPosition].append(currentEnemy)
-                listOfNewPositions.add(finalPosition)
-                continue
-            finalPosition = expansion.otherTurn(self, i, currentEnemy, campContext)  # fighting back, or drawn to a bonfire
-            if finalPosition is not None:
-                self.grid[finalPosition].append(currentEnemy)
-                listOfNewPositions.add(finalPosition)
-                continue
-            finalPosition = i
-            passes = 0
-            moving = True
-            sight = None  # what it can see from i: the same on every pass (nothing changes until it moves or digs)
-            while moving:
-                passes += 1
-                if passes > 4:
-                    break
-                if sight is None:
-                    sight = self.rayCircleVision(i, currentEnemy.visionRange, 5, currentEnemy.tremorSense)
-                visiblePositions = set(sight)
-                if currentEnemy.lastPlayerPosition is not None:
-                    if currentEnemy.lastPlayerPosition == i or self.grid[currentEnemy.lastPlayerPosition][0] == 5:
-                        currentEnemy.lastPlayerPosition = None
-                visiblePositions.discard(i)
-                if currentEnemy.allSight:
-                    visiblePositions.add(self.playerPositionFlat)
-                if self.peaceful:  # developer console /peaceful: you're invisible to them
-                    visiblePositions.discard(self.playerPositionFlat)
-                    if currentEnemy.lastPlayerPosition == self.playerPositionFlat:
-                        currentEnemy.lastPlayerPosition = None
-                if len(visiblePositions) == 0:
-                    break
-                if self.playerPositionFlat in visiblePositions and self.playerHidden() and not currentEnemy.tremorSense \
-                        and self.playerPositionFlat not in self.neighbors(i):
-                    visiblePositions.discard(self.playerPositionFlat)  # hidden: only an enemy right beside you notices
-                    if currentEnemy.lastPlayerPosition == self.playerPositionFlat:
-                        currentEnemy.lastPlayerPosition = None
-                    if not visiblePositions:
-                        break
-                torchSpot = None if currentEnemy.tremorSense else self.torchSpotSeen(visiblePositions)
-                if self.playerPositionFlat in visiblePositions:
-                    currentEnemy.lastPlayerPosition = self.playerPositionFlat
-                elif torchSpot is not None and currentEnemy.lastPlayerPosition != self.playerPositionFlat:
-                    currentEnemy.lastPlayerPosition = torchSpot  # it sees your torchlight: heads into the light
-                elif currentEnemy.lastPlayerPosition is None:
-                    currentEnemy.lastPlayerPosition = rand.choice(list(visiblePositions))
-
-                target = currentEnemy.lastPlayerPosition
-                direction = 1 if target > i else -1
-
-                if self.sameColumn(i, target):
-                    newPosition = (direction * self.rowLength) + i
-                elif self.sameRow(i, target):
-                    newPosition = direction + i
-                elif rand.randint(0, 1):
-                    newPosition = (direction * self.rowLength) + i
-                else:
-                    newPosition = direction + i
-
-                if newPosition not in self.grid:
-                    currentEnemy.lastPlayerPosition = None
-                    continue
-
-                moving = False
-                movedToNewPosition = False
-                tileType = self.grid[newPosition][0]
-                if tileType == 0:
-                    movedToNewPosition = True
-                elif tileType == 1:
-                    self.hitPlayer(currentEnemy, i)
-                elif tileType == 2:
-                    if currentEnemy.dig:
-                        self.chip(newPosition, i)
-                        self.grid[newPosition][2].takeDamage(currentEnemy.wallDamage, self.tileSize)
-                        if self.grid[newPosition][2].hp <= 0:
-                            self.enemyBrokeWall(newPosition, currentEnemy)
-                    elif currentEnemy.burrow:
-                        self.chip(newPosition, i)
-                        self.enemyOccupiedItemSpaces[newPosition] = copy.copy(self.grid[newPosition])
-                        self.enemyOccupiedItemSpaces[newPosition][2].hp -= 1
-                        self.grid[newPosition] = [0, self.grid[newPosition][1]]
-                        movedToNewPosition = True
-                    elif currentEnemy.lastPlayerPosition == newPosition:
-                        currentEnemy.lastPlayerPosition = None
-                        moving = True
-                elif tileType == 7:  # a station: diggers wear it down, everyone else goes around
-                    station = self.grid[newPosition][2]
-                    if currentEnemy.dig and station.claimed:
-                        station.hp -= currentEnemy.wallDamage
-                        if station.hp <= 0:
-                            self.destroyStation(newPosition)
-                    elif currentEnemy.lastPlayerPosition == newPosition:
-                        currentEnemy.lastPlayerPosition = None
-                        moving = True
-                elif tileType in (3, 9) or (tileType == 8 and self.grid[newPosition][2].walkable):
-                    self.enemyOccupiedItemSpaces[newPosition] = copy.copy(self.grid[newPosition])
-                    self.grid[newPosition] = [0, self.grid[newPosition][1]]
-                    movedToNewPosition = True
-
-                if movedToNewPosition:
-                    # put back whatever this enemy was standing on (items / burrowed wall)
-                    if i in self.enemyOccupiedItemSpaces:
-                        self.grid[i] = self.enemyOccupiedItemSpaces.pop(i)
-                    else:
-                        self.grid[i][0] = 0
-                    self.grid[newPosition][0] = 5
-                    finalPosition = newPosition
-
-            self.grid[finalPosition].append(currentEnemy)
-            listOfNewPositions.add(finalPosition)
+            currentEnemy: enemies.Enemy = self.grid[i][2]
+            position = i
+            for action in range(self.enemyActions(currentEnemy)):  # a fast one sometimes acts twice
+                tile = self.grid[position]
+                if action and (tile[0] != 5 or len(tile) < 3 or tile[2] is not currentEnemy):
+                    break  # it died (or something took its place) during its first action
+                tile.pop()
+                position, currentEnemy = self.enemyAct(position, currentEnemy, organizerContext, campContext)
+                self.grid[position].append(currentEnemy)
+            listOfNewPositions.add(position)
         # leave out anyone an Organizer killed after it had already moved
         self.EnemyPositions = {p for p in listOfNewPositions if self.grid[p][0] == 5 and len(self.grid[p]) > 2}
         self.movedEnemies = set()
+
+
+    def enemyActions(self, enemy):
+        """How many actions an enemy takes this turn: its speed goes into a pool, and it acts once for each
+        whole action there (the rest carries over)."""
+        speed = getattr(enemy, "speed", 1)
+        if speed == 2:  # saved before speed counted, when the quick ones had 2 (now enemies.FAST)
+            speed = enemy.speed = enemies.FAST
+        pool = getattr(enemy, "actionPool", 0.0) + speed
+        actions = int(pool)
+        enemy.actionPool = pool - actions
+        return actions
+
+    def enemyAct(self, i, currentEnemy, organizerContext, campContext):
+        """One action for the enemy at i (already lifted off its tile). Returns (where it ends up, the enemy)."""
+        if isinstance(currentEnemy, enemies.Organizer):  # builders: their own turn (organizers.py)
+            return organizers.takeTurn(self, i, currentEnemy, organizerContext)
+        if getattr(currentEnemy, "faction", None) is not None:  # an Expansion faction's goblin (expansion.py)
+            return expansion.takeTurn(self, i, currentEnemy, campContext), currentEnemy
+        finalPosition = expansion.otherTurn(self, i, currentEnemy, campContext)  # fighting back, or drawn to a bonfire
+        if finalPosition is not None:
+            return finalPosition, currentEnemy
+        finalPosition = i
+        passes = 0
+        moving = True
+        sight = None  # what it can see from i: the same on every pass (nothing changes until it moves or digs)
+        while moving:
+            passes += 1
+            if passes > 4:
+                break
+            if sight is None:
+                sight = self.rayCircleVision(i, currentEnemy.visionRange, 5, currentEnemy.tremorSense)
+            visiblePositions = set(sight)
+            if currentEnemy.lastPlayerPosition is not None:
+                if currentEnemy.lastPlayerPosition == i or self.grid[currentEnemy.lastPlayerPosition][0] == 5:
+                    currentEnemy.lastPlayerPosition = None
+            visiblePositions.discard(i)
+            if currentEnemy.allSight:
+                visiblePositions.add(self.playerPositionFlat)
+            if self.peaceful:  # developer console /peaceful: you're invisible to them
+                visiblePositions.discard(self.playerPositionFlat)
+                if currentEnemy.lastPlayerPosition == self.playerPositionFlat:
+                    currentEnemy.lastPlayerPosition = None
+            if len(visiblePositions) == 0:
+                break
+            if self.playerPositionFlat in visiblePositions and self.playerHidden() and not currentEnemy.tremorSense \
+                    and self.playerPositionFlat not in self.neighbors(i):
+                visiblePositions.discard(self.playerPositionFlat)  # hidden: only an enemy right beside you notices
+                if currentEnemy.lastPlayerPosition == self.playerPositionFlat:
+                    currentEnemy.lastPlayerPosition = None
+                if not visiblePositions:
+                    break
+            torchSpot = None if currentEnemy.tremorSense else self.torchSpotSeen(visiblePositions)
+            if self.playerPositionFlat in visiblePositions:
+                currentEnemy.lastPlayerPosition = self.playerPositionFlat
+            elif torchSpot is not None and currentEnemy.lastPlayerPosition != self.playerPositionFlat:
+                currentEnemy.lastPlayerPosition = torchSpot  # it sees your torchlight: heads into the light
+            elif currentEnemy.lastPlayerPosition is None:
+                currentEnemy.lastPlayerPosition = rand.choice(list(visiblePositions))
+
+            target = currentEnemy.lastPlayerPosition
+            direction = 1 if target > i else -1
+
+            if self.sameColumn(i, target):
+                newPosition = (direction * self.rowLength) + i
+            elif self.sameRow(i, target):
+                newPosition = direction + i
+            elif rand.randint(0, 1):
+                newPosition = (direction * self.rowLength) + i
+            else:
+                newPosition = direction + i
+
+            if newPosition not in self.grid:
+                currentEnemy.lastPlayerPosition = None
+                continue
+
+            moving = False
+            movedToNewPosition = False
+            tileType = self.grid[newPosition][0]
+            if tileType == 0:
+                movedToNewPosition = True
+            elif tileType == 1:
+                self.hitPlayer(currentEnemy, i)
+            elif tileType == 2:
+                if currentEnemy.dig:
+                    self.chip(newPosition, i)
+                    self.grid[newPosition][2].takeDamage(currentEnemy.wallDamage, self.tileSize)
+                    if self.grid[newPosition][2].hp <= 0:
+                        self.enemyBrokeWall(newPosition, currentEnemy)
+                elif currentEnemy.burrow:
+                    self.chip(newPosition, i)
+                    self.enemyOccupiedItemSpaces[newPosition] = copy.copy(self.grid[newPosition])
+                    self.enemyOccupiedItemSpaces[newPosition][2].hp -= 1
+                    self.grid[newPosition] = [0, self.grid[newPosition][1]]
+                    movedToNewPosition = True
+                elif currentEnemy.lastPlayerPosition == newPosition:
+                    currentEnemy.lastPlayerPosition = None
+                    moving = True
+            elif tileType == 7:  # a station: diggers wear it down, everyone else goes around
+                station = self.grid[newPosition][2]
+                if currentEnemy.dig and station.claimed:
+                    station.hp -= currentEnemy.wallDamage
+                    if station.hp <= 0:
+                        self.destroyStation(newPosition)
+                elif currentEnemy.lastPlayerPosition == newPosition:
+                    currentEnemy.lastPlayerPosition = None
+                    moving = True
+            elif tileType in (3, 9) or (tileType == 8 and self.grid[newPosition][2].walkable):
+                self.enemyOccupiedItemSpaces[newPosition] = copy.copy(self.grid[newPosition])
+                self.grid[newPosition] = [0, self.grid[newPosition][1]]
+                movedToNewPosition = True
+
+            if movedToNewPosition:
+                # put back whatever this enemy was standing on (items / burrowed wall)
+                if i in self.enemyOccupiedItemSpaces:
+                    self.grid[i] = self.enemyOccupiedItemSpaces.pop(i)
+                else:
+                    self.grid[i][0] = 0
+                self.grid[newPosition][0] = 5
+                finalPosition = newPosition
+
+        return finalPosition, currentEnemy
 
     # ----------------------------------------------------------------- items
 
@@ -3430,7 +3471,10 @@ class gameManager():
         if windowId == "character":
             minDamage, maxDamage = player.getMinMaxDamage()
             spec["rows"] = [("Health", f"{player.getCurrentHealth()} / {player.getMaxHealth()}"),
-                            ("AC", player.damageReduction()), ("Fire Resist", player.fireResistance()),
+                            ("Actions", f"{getattr(player, 'actionsSpent', 0)} / {getattr(player, 'actionsAllowed', 1)}"),
+                            ("AC", player.damageReduction()),
+                            ("Evasion", f"{player.evasion() * 100:.1f}%"), ("Clean Dodge", f"{player.cleanDodge() * 100:.0f}%"),
+                            ("Fire Resist", player.fireResistance()),
                             ("Magic Resist", player.magicResistance()),
                             ("Door Sense", f"{self.doorSense()} tile" + ("s" if self.doorSense() != 1 else "")),
                             ("Status", ", ".join(([f"Burning ({player.burnTurns})"] if getattr(player, "burnTurns", 0) > 0 else []) +
@@ -3533,7 +3577,7 @@ class gameManager():
 
     STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health",
                   "FireRes": "Fire Resist", "MagicRes": "Magic Resist", "Storage": "Inventory Slots",
-                  pc.POTION_STACK: "Potions per Slot"}
+                  pc.POTION_STACK: "Potions per Slot", "CleanDodge": "Clean Dodge %"}
 
     def statLines(self, item):
         """[(stat name, bonus)] for a piece of gear."""
@@ -3724,8 +3768,7 @@ class gameManager():
             self.stepAutoPlay(pygame.time.get_ticks())
 
             if self.enemyMove:
-                self.change = True
-                self.enemyTurn()
+                self.spendActions(1)
                 self.enemyMove = False
 
             if self.currentLocation[0] == expansion.HOLE:  # you stepped on a hole, or the floor broke under you

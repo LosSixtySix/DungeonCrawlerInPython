@@ -655,7 +655,7 @@ def attack(gm, i, unit, target, targetPosition):
     if target == "player":
         gm.hitPlayer(unit, i)
         return
-    target.hp -= unit.damage
+    target.hp -= gm.enemyDodge(target, unit.damage, targetPosition)
     gm.bleed(targetPosition)
     gm.change = True
     if isinstance(target, enemies.Organizer):
