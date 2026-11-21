@@ -1522,6 +1522,8 @@ class gameManager():
             self.colorIndex = max(0, min(2, self.colorIndex + dx))
         if self.aim:
             start = self.playerPositionFlat if self.currentAimSpot is None else self.currentAimSpot
+            if dx and not self.sameRow(start, start + dx):
+                return  # the map's left/right edge: the aim stops there
             self.currentAimSpot = start + dx + (dy * self.rowLength)
             self.aimLine = self.createARay(self.playerPositionFlat, self.currentAimSpot)
         elif self.rotate:
@@ -1532,6 +1534,8 @@ class gameManager():
             self.moveSelection(dx, dy)
         else:
             self.player.playerDirection = newDirection
+            if dx and not self.sameRow(self.playerPositionFlat, self.playerPositionFlat + dx):
+                return  # the map's left/right edge is solid: no wrapping onto the next row
             self.movePlayer(self.playerPositionFlat + dx + (dy * self.rowLength))
 
     def movePlayer(self, newPosition):
@@ -1972,6 +1976,8 @@ class gameManager():
                 self.PlayerLookPosition = self.playerPositionFlat + self.rowLength
             case _:
                 self.PlayerLookPosition = self.playerPositionFlat - 1
+        if not self.sameRow(self.playerPositionFlat, self.PlayerLookPosition) and self.player.playerDirection in (0, 1):
+            self.PlayerLookPosition = -1  # facing the map's edge: nothing there (not the far side of the next row)
         return self.PlayerLookPosition
 
     def sameColumn(self, i, j):
