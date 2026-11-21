@@ -78,7 +78,10 @@ class renderer():
         self.rowLength = 0
         self.columnLength = 0
         self.mapSurface = None
-        self.mapOffset = (0, 0)
+        self.mapOffset = (0, 0)  # where the map's top-left corner is drawn (on the view: see placeCamera)
+        self.zoom = 1            # how many screen pixels each map pixel takes (see placeCamera)
+        self.viewOrigin = (0, 0) # where the zoomed view's top-left lands on the screen
+        self.viewSurface = None  # the smaller picture the map is drawn on before it's scaled up (zoom above 1)
         self.shades = {}  # (amount index, x parity, y parity) -> transparent tile Surface with the dither pattern
         self.sprites = {}  # chest / door pictures in the current theme's colors (see sprites.py)
         self.pitCache = {}  # (pit style, floor color) -> pit picture, made the first time it's needed
@@ -100,6 +103,7 @@ class renderer():
         self.windowSmallFont = pygame.ftfont.Font(font, 16)
         self.hudFont = pygame.ftfont.Font(font, 20)
         self.popupFont = pygame.ftfont.Font(font, 18)
+        self.popupFonts = {1: self.popupFont}  # zoom -> the popup font at that zoom (see zoomedPopupFont)
         self.consoleFont = pygame.font.SysFont("consolas,couriernew,dejavusansmono,monospace", 16)  # lines up the columns
 
         # Field Journal menu. Its layout was designed in "k" units; k grows with the screen height.
@@ -198,6 +202,37 @@ class renderer():
     def getCenterCartesian(self):
         return int(self.rowLength / 2), int(self.columnLength / 2)
 
+    def placeCamera(self, playerPosition, zoom):
+        """Centers the map on the player and returns the surface to draw the map on. At zoom 1 that's the screen;
+        above it, a smaller view (the screen size divided by the zoom) that draw() scales up afterwards, pixel for
+        pixel, so tiles stay crisp. Snaps a whole tile per step: the player's tile is always in the middle."""
+        self.zoom = max(1, int(zoom))
+        W, H = self.screenWidth, self.screenHeight
+        if self.zoom == 1:
+            view = self.win
+            vw, vh = W, H
+        else:
+            vw, vh = -(-W // self.zoom), -(-H // self.zoom)  # rounded up, so the scaled view covers the screen
+            if self.viewSurface is None or self.viewSurface.get_size() != (vw, vh):
+                self.viewSurface = pygame.Surface((vw, vh))
+            view = self.viewSurface
+            view.fill((0, 0, 0))
+        self.viewOrigin = ((W - vw * self.zoom) // 2, (H - vh * self.zoom) // 2)
+        ts = self.tileSize
+        px, py = (playerPosition % self.rowLength, playerPosition // self.rowLength) if playerPosition is not None else (0, 0)
+        self.mapOffset = (vw // 2 - ts // 2 - px * ts, vh // 2 - ts // 2 - py * ts)
+        return view
+
+    def toScreen(self, x, y):
+        """A point on the view (where the map is drawn) to where it ends up on the screen."""
+        return self.viewOrigin[0] + x * self.zoom, self.viewOrigin[1] + y * self.zoom
+
+    def tileOnScreen(self, position):
+        """Where a map tile ends up on the screen, after the camera and zoom."""
+        rect = self.screenTile(position)
+        x, y = self.toScreen(rect.x, rect.y)
+        return pygame.Rect(x, y, rect.w * self.zoom, rect.h * self.zoom)
+
     def setTileSize(self, tileSize) -> int:
         """The map fills the screen. Any leftover pixels (when the screen size isn't a multiple of the tile
         size) are split evenly around the map."""
@@ -228,7 +263,7 @@ class renderer():
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
              console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None,
-             memoryFalloff=None):
+             memoryFalloff=None, zoom=1, automap=None, mapRecall=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -239,10 +274,12 @@ class renderer():
         overlayOnly: nothing on the map changed (only popups, messages, flames and the like), so the map is kept
         and only its animated tiles (bonfires, the Unsealed) are brought up to date.
         Whichever it is, a tile is only redrawn when its look changed since it was last drawn (see tileSignature).
+        zoom: the camera keeps the player in the middle of the screen; zoom (1 and up) scales the map up around them.
+        automap: when the map overlay (M) is open, a key that changes whenever what you can see changes (see drawAutomap).
         fireLight: {tile: (the fire lighting it, its light radius)} for tiles in reach of a fire's or bonfire's light.
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
-        self.win.fill(self.color("fog"))
+        self.win.fill((0, 0, 0))  # past the floor's edges is black
         self.frameTicks = pygame.time.get_ticks()  # one clock reading for the whole frame (glints, bonfire flames)
         self.blood = blood or {}  # map position -> how much blood is on that floor tile (0-1)
         self.bloodDry = bloodDry or {}
@@ -276,11 +313,21 @@ class renderer():
                     self.refreshTile(*args[:1], t, *args[1:])
         self.drawAimline(aimLine)
         self.aimDrawn = set(aimLine or ())
+        # Everything that sits on the map is drawn on the view, with the camera centered on the player, and then
+        # the view is scaled up to the screen (at zoom 1 the view is just the screen).
+        screen = self.win
+        self.win = self.placeCamera(playerPosition, zoom)
         self.win.blit(self.mapSurface, self.mapOffset)
         self.drawMemoryFalloff(grid, playerPosition, self.aimDrawn)
         if throws is not None:
             self.drawThrows(throws)
+        view, self.win = self.win, screen
+        if view is not screen:
+            w, h = view.get_size()
+            self.win.blit(pygame.transform.scale(view, (w * self.zoom, h * self.zoom)), self.viewOrigin)
 
+        if automap is not None:
+            self.drawAutomap(grid, rooms, playerPosition, automap, mapRecall)
         self.drawPopups(popups)
         if hud is not None:
             self.drawHud(*hud)
@@ -355,17 +402,20 @@ class renderer():
 
     # ----------------------------------------------------------- title screen
 
-    def drawTitle(self, options, selectedIndex, message="", fade=255, heading="", hint="Up/Down  choose      Enter  select", note=""):
+    def drawTitle(self, options, selectedIndex, message="", fade=255, heading="", hint="Up/Down  choose      Enter  select", note="", fog=None):
         """fade (0-255) is how far "CRUEL" has faded in. It's drawn the same way as the splash messages
         (drawMessage), run in reverse: a black veil and the title text both go from invisible to full together.
         The menu only appears once the fade reaches 255, and the veil stays so nothing jumps when it does.
-        heading names the page under the title (e.g. "Settings"); note is a muted line above the hint."""
+        heading names the page under the title (e.g. "Settings"); note is a muted line above the hint.
+        fog (titlefog.TitleFog) rolls behind the text in the text's color, and fades in with the title."""
         W, H = self.screenWidth, self.screenHeight
         font, muted, select, boxLine = self.color("font"), self.color("muted"), self.color("select"), self.color("boxLine")
         alpha = max(0, min(255, int(fade)))
         self.win.fill(self.color("fog"))
         self.overlay.fill((0, 0, 0, alpha))
         self.win.blit(self.overlay, (0, 0))
+        if fog is not None:
+            fog.draw(self.win, font, alpha)
 
         titleY = int(H * 0.33)
         title = self.titleFont.render("CRUEL", True, font)
@@ -448,18 +498,97 @@ class renderer():
 
     # -------------------------------------------------------------------- hud
 
+    def zoomedPopupFont(self):
+        """The popup font grown with the map's zoom, made the first time each zoom is used."""
+        if self.zoom not in self.popupFonts:
+            self.popupFonts[self.zoom] = pygame.ftfont.Font(paths.resourcePath('Forgore.otf'), 18 * self.zoom)
+        return self.popupFonts[self.zoom]
+
+    # ------------------------------------------------------------ the map (M)
+    # One pixel per tile, laid over the game and centered on you. Explored floor shows in its room's floor color
+    # and the walls around it in the room's wall color, both from the floor's theme, so stone, wood, sand and gold
+    # rooms stand apart. It shows tiles you see or still remember, plus ones the game has forgotten that the map
+    # still holds for a while (more Intelligence, longer: gameManager.mapRemember).
+    AUTOMAP_FLOOR_ALPHA = 200
+    AUTOMAP_WALL_ALPHA = 255
+    AUTOMAP_DIM = 160       # how dark the game gets behind the open map (0-255), so the map stands out
+    AUTOMAP_BRIGHTEN = 0.35  # map colors are mixed this far toward white, so they don't match the game's own tiles
+    AUTOMAP_MARKS = {3: "chest", 4: "doorNext", 6: "doorPrev", 7: "select", 9: "select", expansion.CAMP: "marker"}
+
+    def automapPixel(self):
+        """How many screen pixels one map tile takes (8 on a 1080p screen)."""
+        return max(2, round(self.screenHeight / 135))
+
+    def buildAutomap(self, grid, rooms, recall=None):
+        """The map as a small picture, one pixel per tile, then scaled up (pixel for pixel, so it stays blocky).
+        recall: {tile: [turns, tile as it was]} for forgotten tiles the map still shows."""
+        R, C = self.rowLength, self.columnLength
+        pixels = bytearray(R * C * 4)
+        shown = {i: tile for i, tile in grid.items() if tile[1]}  # seen or remembered
+        for i, (_, tile) in (recall or {}).items():
+            shown.setdefault(i, tile)
+        openTiles = {i for i, tile in shown.items() if tile[0] != 2}
+        for i, tile in shown.items():
+            kind = tile[0]
+            if kind == 2:  # a wall: only the ones bordering explored floor, so rooms show as outlines
+                x = i % R
+                if not ((x > 0 and i - 1 in openTiles) or (x < R - 1 and i + 1 in openTiles)
+                        or i - R in openTiles or i + R in openTiles):
+                    continue
+                name = getattr(tile[2], "name", None) if len(tile) > 2 else None
+                color = self.wallColor(name, False) if name else self.roomWallColor(i, rooms, False)
+                alpha = self.AUTOMAP_WALL_ALPHA
+            elif kind == expansion.HOLE or kind == 1:
+                continue  # holes stay dark; you're drawn on top afterwards
+            elif kind == 5 and tile[1] != 1:
+                color, alpha = self.floorColor(i, rooms, False), self.AUTOMAP_FLOOR_ALPHA  # an enemy you can't see
+            elif kind == 5:
+                color, alpha = self.color("enemy"), 255
+            elif kind in self.AUTOMAP_MARKS:
+                color, alpha = self.color(self.AUTOMAP_MARKS[kind]), 255
+            else:
+                color, alpha = self.floorColor(i, rooms, False), self.AUTOMAP_FLOOR_ALPHA
+            if alpha < 255 or kind == 2:  # floors and walls (not the marks) get lifted toward white
+                color = themes.mix(color, (255, 255, 255), self.AUTOMAP_BRIGHTEN)
+            p = i * 4
+            pixels[p:p + 4] = (color[0], color[1], color[2], alpha)
+        small = pygame.image.frombuffer(bytes(pixels), (R, C), "RGBA")
+        size = self.automapPixel()
+        return pygame.transform.scale(small, (R * size, C * size))
+
+    def drawAutomap(self, grid, rooms, playerPosition, key, recall=None):
+        """Draws the map over the game, centered on you. It's only rebuilt when key changes (you moved, saw new
+        tiles, or the theme changed); animation frames reuse it."""
+        key = (key, id(self.theme), self.rowLength)
+        if getattr(self, "automapKey", None) != key:
+            self.automapKey = key
+            self.automapPicture = self.buildAutomap(grid, rooms, recall)
+        size = self.automapPixel()
+        W, H = self.screenWidth, self.screenHeight
+        self.overlay.fill((0, 0, 0, self.AUTOMAP_DIM))  # dim the game behind the map
+        self.win.blit(self.overlay, (0, 0))
+        px, py = playerPosition % self.rowLength, playerPosition // self.rowLength
+        cx, cy = W // 2 - size // 2, H // 2 - size // 2
+        self.win.blit(self.automapPicture, (cx - px * size, cy - py * size))
+        you = pygame.Rect(cx, cy, size, size).inflate(size // 2, size // 2)  # a bit bigger than a tile
+        pygame.draw.rect(self.win, (0, 0, 0), you.inflate(4, 4))  # a dark rim so you stand out on any floor
+        self.win.fill((255, 255, 255), you.inflate(2, 2))
+        self.win.fill(self.color("player"), you)
+
     def drawPopups(self, popups):
-        """Rising "+2 Wood" texts over the map: each floats up from its tile and fades out (age goes 0 to 1)."""
+        """Rising "+2 Wood" texts over the map: each floats up from its tile and fades out (age goes 0 to 1).
+        They grow with the zoom, but are drawn at their full size on the screen so the text stays sharp."""
+        font, z = self.zoomedPopupFont(), self.zoom
         for text, position, age in popups:
-            x = self.mapOffset[0] + (position % self.rowLength) * self.tileSize + self.tileSize // 2
-            y = self.mapOffset[1] + (position // self.rowLength) * self.tileSize - int(age * 26) - 4
+            tile = self.tileOnScreen(position)
+            x, y = tile.centerx, tile.top - int(age * 26 * z) - 4 * z
             alpha = int(255 * (1 - age))
-            shadow = self.popupFont.render(text, True, (0, 0, 0))
-            label = self.popupFont.render(text, True, self.color("select"))
+            shadow = font.render(text, True, (0, 0, 0))
+            label = font.render(text, True, self.color("select"))
             shadow.set_alpha(alpha // 2)
             label.set_alpha(alpha)
             rect = label.get_rect(midbottom=(x, y))
-            self.win.blit(shadow, rect.move(1, 1))
+            self.win.blit(shadow, rect.move(z, z))
             self.win.blit(label, rect)
 
     def drawHud(self, health, maxHealth, gold, floor):
@@ -543,7 +672,8 @@ class renderer():
                 rects[spec["id"]] = clamp(*self.autoPlaced[spec["id"]], w, h)
         rank = {windowId: i for i, windowId in enumerate(openOrder)}
         new = sorted((s for s in windows if s["id"] not in rects), key=lambda s: rank.get(s["id"], len(rank)))
-        player = self.screenTile(playerPosition).inflate(self.tileSize * 4, self.tileSize * 4) if playerPosition is not None else None
+        reach = self.tileSize * 4 * self.zoom
+        player = self.tileOnScreen(playerPosition).inflate(reach, reach) if playerPosition is not None else None
         for spec in new:
             w, h = sizes[spec["id"]]
             spot = self.findSpot(spec["id"], w, h, list(rects.values()), player)

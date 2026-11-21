@@ -1,0 +1,11 @@
+{
+  "name": "explosion",
+  "sample_rate": 44100,
+  "files": [
+    "explosion_01.wav",
+    "explosion_02.wav",
+    "explosion_03.wav",
+    "explosion_04.wav",
+    "explosion_05.wav"
+  ]
+}

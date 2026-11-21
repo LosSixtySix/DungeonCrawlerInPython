@@ -3,8 +3,8 @@ import pygame
 import paths
 
 """
-Player settings that should survive between runs: the hotkeys, where each window was dragged to and the display
-(resolution, fullscreen or windowed).
+Player settings that should survive between runs: the hotkeys, where each window was dragged to, the display
+(resolution, fullscreen or windowed), the sound (volumes and mute) and the map's zoom.
 They are stored as JSON (plain text you can open and read), separate from the pickled save game,
 because they belong to the player rather than to one run of the dungeon.
 """
@@ -24,18 +24,25 @@ HOTKEY_ACTIONS = [
     ("equipment", "Equipment", pygame.K_u),
     ("inventory", "Inventory", pygame.K_i),
     ("level_up", "Level Up", pygame.K_l),
-    ("materials", "Pouch", pygame.K_m),
+    ("materials", "Pouch", pygame.K_p),
+    ("map", "Map", pygame.K_m),
     ("loot_table", "Loot Table", pygame.K_t),
     ("crafting", "Crafting", pygame.K_k),
     ("aim", "Aim (hold)", pygame.K_LCTRL),
     ("rotate", "Rotate (hold)", pygame.K_LALT),
-    ("color_picker", "Color Picker", pygame.K_p),
 ]
 DEFAULT_HOTKEYS = {action: key for action, _, key in HOTKEY_ACTIONS}
+
+# Defaults that changed: (action, old default, new default). Saved settings from before HOTKEY_VERSION still on the
+# old default get the new one, once; a key you picked yourself is left alone.
+HOTKEY_VERSION = 2
+MOVED_DEFAULTS = [("materials", pygame.K_m, pygame.K_p)]  # version 2: Pouch moved to P (the Color Picker hotkey is gone)
 ACTION_LABELS = {action: label for action, label, _ in HOTKEY_ACTIONS}
 
 # Keys that always do the same thing, so you can never lock yourself out of the menus.
 FIXED_KEYS = [("Enter", "Confirm"), ("Esc", "Back / Pause"), ("Arrow Keys", "Move"), ("Mouse", "Drag a window by its title")]
+MAP_ZOOMS = [1, 2, 3, 4]  # Ctrl + mouse wheel steps through these (whole numbers keep the pixel art crisp)
+VOLUME_STEP = 1  # Left/Right on the Sound page changes a volume by this much (0 to 100); hold the key to keep going
 LIGHT_STYLES = ["sway", "flicker"]  # the order the pause menu cycles through them
 
 RESERVED_KEYS = {pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE, pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT,
@@ -50,6 +57,11 @@ class Settings():
         self.lightStyle = "sway"   # how the light animates: "sway" or "flicker"
         self.resolution = None     # [width, height] of the game, or None to match the desktop
         self.fullscreen = True     # False: a normal window
+        self.masterVolume = 80     # 0-100: everything the game plays
+        self.musicVolume = 70      # 0-100: the music, on top of the master volume
+        self.effectsVolume = 80    # 0-100: sound effects (the bomb going off), on top of the master volume
+        self.muted = False
+        self.mapZoom = 1           # one of MAP_ZOOMS: how far the map is zoomed in around you
         self.load()
 
     def load(self):
@@ -61,6 +73,11 @@ class Settings():
         for action, key in data.get("hotkeys", {}).items():
             if action in self.hotkeys and isinstance(key, int):
                 self.hotkeys[action] = key
+        if data.get("hotkeyVersion", 1) < HOTKEY_VERSION:
+            for action, old, new in MOVED_DEFAULTS:
+                taken = any(k == new for a, k in self.hotkeys.items() if a != action)
+                if self.hotkeys.get(action) == old and not taken:
+                    self.hotkeys[action] = new
         for windowId, pos in data.get("windowPositions", {}).items():
             if isinstance(pos, list) and len(pos) == 2:
                 self.windowPositions[windowId] = pos
@@ -71,11 +88,20 @@ class Settings():
             self.resolution = resolution
         if isinstance(data.get("fullscreen"), bool):
             self.fullscreen = data["fullscreen"]
+        for name in ("masterVolume", "musicVolume", "effectsVolume"):
+            volume = data.get(name)
+            if isinstance(volume, int) and not isinstance(volume, bool):
+                setattr(self, name, max(0, min(100, volume)))
+        if isinstance(data.get("muted"), bool):
+            self.muted = data["muted"]
+        if data.get("mapZoom") in MAP_ZOOMS:
+            self.mapZoom = data["mapZoom"]
 
     def save(self):
         with open(self.fileName, "w") as f:
-            json.dump({"hotkeys": self.hotkeys, "windowPositions": self.windowPositions, "lightStyle": self.lightStyle,
-                       "resolution": self.resolution, "fullscreen": self.fullscreen}, f, indent=2)
+            json.dump({"hotkeys": self.hotkeys, "hotkeyVersion": HOTKEY_VERSION, "windowPositions": self.windowPositions, "lightStyle": self.lightStyle,
+                       "resolution": self.resolution, "fullscreen": self.fullscreen, "masterVolume": self.masterVolume,
+                       "musicVolume": self.musicVolume, "effectsVolume": self.effectsVolume, "muted": self.muted, "mapZoom": self.mapZoom}, f, indent=2)
 
     def keyName(self, key):
         name = pygame.key.name(key)

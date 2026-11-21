@@ -22,8 +22,10 @@ import organizers
 import expansion
 import devconsole
 import updater
+import sound
+import titlefog
 from version import VERSION
-from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES
+from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES, VOLUME_STEP, MAP_ZOOMS
 from renderer import renderer as rend, SWAY_FPS, FIRE_LIGHT_RADIUS
 import pickle
 
@@ -94,6 +96,10 @@ FORGET_DISTANCE = 10
 FORGET_TURNS = 50
 FORGET_CURVE = 2  # higher keeps nearby remembered tiles bright for longer before the falloff
 DOOR_SHADE_MOST = 0.45  # doors are never forgotten: they take the same falloff, but never get darker than this
+# The map (M) keeps a forgotten tile a little longer than the game does: MAP_MEMORY_PER_INT more turns for every
+# point of Intelligence above 1. With 1 Intelligence the map forgets exactly when the game does. Only the map
+# keeps them: in the game they're still forgotten.
+MAP_MEMORY_PER_INT = 2
 # Each new floor picks one of these as its chance that any given tile starts as a wall (0.15 open to 0.75 dense)
 WALL_DENSITIES = [round(0.15 + 0.05 * step, 2) for step in range(13)]
 INVENTORY_ROWS = 2  # rows the Inventory window shows; a Backpack's row is reached by arrowing down (it scrolls)
@@ -168,6 +174,8 @@ class gameManager():
         self.clock = pygame.time.Clock()
 
         self.settings = Settings()
+        self.sound = sound.Sound(self.settings)  # music and sound effects (see sound.py)
+        self.titleFog = titlefog.TitleFog()      # the fog rolling across the title screen
         self.painter = None
         self.applyDisplay()
 
@@ -178,6 +186,7 @@ class gameManager():
         # where that makes sense: see isRepeatable. keysHeld tells a repeat apart from a fresh press.
         pygame.key.set_repeat(KEY_REPEAT_DELAY, KEY_REPEAT_INTERVAL)
         self.keysHeld = set()
+        self.rebinding = None  # checked for every held key, so it must exist on the title screen too (resetSession sets it again)
 
         self.EventDispatcher = ED.EventDispatcher()
         self.SubscribeToEvents()
@@ -247,7 +256,9 @@ class gameManager():
             self.console.toggle()
         self.titleMessage = message
         self.titleSel = 0
-        self.titlePage = "main"  # "main", "settings" or "display": the title stays, only the buttons change
+        self.titlePage = "main"  # "main", "settings", "display" or "sound": the title stays, only the buttons change
+        self.sound.stopGameTheme()
+        self.sound.playMenuTheme()  # keeps playing if it already was (e.g. back from the Attempts list)
         self.titleFade = 0  # 0 -> 255: "CRUEL" fades in, then the menu appears. Any key or click skips it.
         self.painter.setTheme(themes.randomTheme(rand.choice(list(themes.THEMES))))
         self.change = True
@@ -262,7 +273,10 @@ class gameManager():
 
     def titleOptions(self):
         if self.titlePage == "settings":
-            return ["Display Settings", "Main Menu"]
+            return ["Display Settings", "Sound Settings", "Main Menu"]
+        if self.titlePage == "sound":
+            return [f"Master Volume:  {self.settings.masterVolume}%", f"Music Volume:  {self.settings.musicVolume}%",
+                    f"Effects Volume:  {self.settings.effectsVolume}%", f"Mute:  {'On' if self.settings.muted else 'Off'}", "Back"]
         if self.titlePage == "display":
             w, h = self.pendingDisplay["resolution"]
             mode = "Fullscreen" if self.pendingDisplay["fullscreen"] else "Windowed"
@@ -280,6 +294,8 @@ class gameManager():
         if self.titlePage == "display":
             note = "A saved run only continues at the resolution it was started in" if os.path.exists(SAVE_FILE) else ""
             return "Display Settings", "Up/Down  choose      Left/Right  change      Enter  select      Esc  back", note
+        if self.titlePage == "sound":
+            return "Sound Settings", "Up/Down  choose      Left/Right  change      Enter  select      Esc  back", self.sound.problem
         note = f"v{VERSION}  -  update available" if self.updater.latest else f"v{VERSION}"
         return "", "Up/Down  choose      Enter  select", note
 
@@ -318,6 +334,7 @@ class gameManager():
         self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
         self.fallen = {}  # floor -> [(position, tile)]: what fell into it through a hole, put there when you arrive
         self.memoryFade = {}  # floor -> {tile: turns it has been fading} (see stepForgetting)
+        self.mapMemory = {}  # floor -> {tile: [turns since forgotten, the tile as it was]} (see mapRecall)
         self.enemyOccupiedItemSpaces = {}
 
         playerposx, playerposy = self.painter.getCenterCartesian()
@@ -345,6 +362,8 @@ class gameManager():
     def resetSession(self):
         """State that only matters while the game is running. Reset for a new game and after loading a save."""
         self.scene = "playing"
+        self.sound.stopMenuTheme()  # the menu music fades out as the run starts
+        self.sound.playGameTheme()  # and the quiet in-game music comes in
         self.enemyMove = False
 
         self.picker = {"ChangingColor": False, "ColorSelected": False}
@@ -494,11 +513,12 @@ class gameManager():
             self.focus = "map"
             self.cycleUsed = True
             return
+        if self.isAction(key, "map"):
+            self.showMap = not getattr(self, "showMap", False)  # the map overlay (see renderer.drawAutomap)
+            return
         for windowId in WINDOW_ORDER:
             if windowId != "items" and self.isAction(key, WINDOW_HOTKEY[windowId]):
                 return self.onWindowHotkey(windowId)
-        if self.isAction(key, "color_picker"):
-            return self.onColorPickerKey()
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT) and self.focus in ("inventory", "equipment")                     and not self.pickerActive():
                 return self.dropFocusedItem()
@@ -551,6 +571,8 @@ class gameManager():
             return self.onSettingsKey(key, options[self.titleSel])
         if self.titlePage == "display":
             return self.onDisplayKey(key, move)
+        if self.titlePage == "sound":
+            return self.onSoundKey(key, move)
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             choice = options[self.titleSel]
             if choice == "Continue":
@@ -585,6 +607,28 @@ class gameManager():
             self.titleSel = self.titleOptions().index("Settings")  # back on the button you came from
         elif enter and choice == "Display Settings":
             self.openTitlePage("display")
+        elif enter and choice == "Sound Settings":
+            self.openTitlePage("sound")
+
+    def onSoundKey(self, key, move):
+        """Rows: Master Volume, Music Volume, Effects Volume, Mute, Back. Left/Right changes a volume (Enter flips Mute), and it's
+        heard and saved right away."""
+        enter = key in (pygame.K_RETURN, pygame.K_KP_ENTER)
+        step = move[0] if move is not None else 0
+        if key == pygame.K_ESCAPE or (enter and self.titleSel == 4):
+            self.openTitlePage("settings", 1)  # back on the Sound Settings button
+            return
+        if self.titleSel in (0, 1, 2) and step:
+            name = ("masterVolume", "musicVolume", "effectsVolume")[self.titleSel]
+            setattr(self.settings, name, max(0, min(100, getattr(self.settings, name) + step * VOLUME_STEP)))
+            if self.titleSel == 2:
+                self.sound.playExplosion(sample=True)  # so you can hear how loud effects are
+        elif self.titleSel == 3 and (step or enter):
+            self.settings.muted = not self.settings.muted
+        else:
+            return
+        self.settings.save()
+        self.sound.applyVolume()
 
     def onDisplayKey(self, key, move):
         """Rows: Resolution, Mode, Apply, Back. Left/Right (or Enter) changes a value; nothing happens until Apply."""
@@ -1484,6 +1528,8 @@ class gameManager():
         if self.console.open:
             self.console.scrollBy(event.y * 3)
             return
+        if event.y and pygame.key.get_mods() & pygame.KMOD_CTRL:  # Ctrl + wheel: zoom the map in (up) or out (down)
+            return self.zoomMap(1 if event.y > 0 else -1)
         if self.picker["ChangingColor"]:
             keys = list(self.painter.colorDict.keys())
             newIndex = self.pickerIndex - event.y
@@ -1497,6 +1543,16 @@ class gameManager():
                 self.painter.clearTileCaches()  # the theme's colors changed in place: redraw every tile
                 self.painter.drawnGrid = None
         self.change = True
+
+    def zoomMap(self, step):
+        """One step in or out through settings.MAP_ZOOMS. The camera stays centered on you; the zoom is saved."""
+        levels = MAP_ZOOMS
+        current = levels.index(self.settings.mapZoom) if self.settings.mapZoom in levels else 0
+        zoom = levels[max(0, min(len(levels) - 1, current + step))]
+        if zoom != self.settings.mapZoom:
+            self.settings.mapZoom = zoom
+            self.settings.save()
+            self.change = True
 
     # ------------------------------------------------------------- gameplay
 
@@ -2362,7 +2418,8 @@ class gameManager():
         if attribute == "intelligence":
             odds = dict(recipes.qualityOdds(bonus))
             return [("Crafted Masterwork", f"{odds['Masterwork']}%"), ("Crafted Fine", f"{odds['Fine']}%"),
-                    ("Crafted Crude", f"{odds['Crude']}%"), ("Taking apart gives", f"{self.salvagePercent():g}%")]
+                    ("Crafted Crude", f"{odds['Crude']}%"), ("Taking apart gives", f"{self.salvagePercent():g}%"),
+                    ("Map remembers", f"+{self.mapMemoryTurns()} turns")]
         if attribute == "wisdom":
             nothing, _, _ = loot.wallOdds(player.attributes["wisdom"])
             return [("Healing potions", f"+{bonus}"), ("Walls give nothing", f"{nothing:g}%"),
@@ -2607,6 +2664,7 @@ class gameManager():
                 self.addPopup("Nothing there", landing)
         elif shot["effect"] == "Explosive":
             hit = 0
+            self.sound.playExplosion()
             self.igniteArea(area + [p for p in self.plantsAtEdge(landing, radius) if p not in area])
             for position in area:
                 tile = self.grid[position]
@@ -3014,9 +3072,37 @@ class gameManager():
             if turns >= FORGET_TURNS:
                 tile[1] = 0
                 fading.pop(i, None)
+                self.mapRemember(i, tile)
             else:
                 fading[i] = turns
             self.change = True
+
+    def mapRecallHere(self):
+        """This floor's tiles the game has forgotten but the map still shows: {tile: [turns since, tile as it was]}."""
+        if not hasattr(self, "mapMemory"):
+            self.mapMemory = {}
+        return self.mapMemory.setdefault(self.level, {})
+
+    def mapMemoryTurns(self):
+        """How many turns the map keeps a tile after the game forgets it (Intelligence, see MAP_MEMORY_PER_INT)."""
+        return MAP_MEMORY_PER_INT * max(0, self.player.attributes["intelligence"] - 1)
+
+    def mapRemember(self, i, tile):
+        """The game just forgot tile i: the map holds on to how it looked, if Intelligence lets it."""
+        if self.mapMemoryTurns() > 0:
+            kind = 0 if tile[0] in (1, 5) else tile[0]  # you and enemies aren't kept, just the floor under them
+            self.mapRecallHere()[i] = [0, [kind, 2] + list(tile[2:])]
+
+    def stepMapMemory(self):
+        """A turn passed: tiles the map is holding get one turn older and drop off at mapMemoryTurns. One you can
+        see or remember again is the game's own again."""
+        recall, most = self.mapRecallHere(), self.mapMemoryTurns()
+        for i in list(recall):
+            entry = recall[i]
+            entry[0] += 1
+            if self.grid[i][1] or entry[0] > most:
+                del recall[i]
+                self.change = True
 
     def memoryShades(self):
         """How dark each remembered tile is painted into the map, 0..1. Past FORGET_DISTANCE that's black (a door
@@ -3110,6 +3196,7 @@ class gameManager():
         self.stepBlood()
         self.stepSmoke()
         self.stepForgetting()
+        self.stepMapMemory()
         self.stepThrows()
         self.stepFloorEvent()
         growth = events.plantRules(self.activeEvent())
@@ -3352,6 +3439,7 @@ class gameManager():
             "camps": self.camps,
             "fallen": self.fallen,
             "memoryFade": self.memoryFade,
+            "mapMemory": getattr(self, "mapMemory", {}),
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -3375,6 +3463,7 @@ class gameManager():
             self.camps = data.get("camps", {})
             self.fallen = data.get("fallen", {})
             self.memoryFade = data.get("memoryFade", {})
+            self.mapMemory = data.get("mapMemory", {})
             self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
             self.enemyOccupiedItemSpaces = {}  # (also only set by newGame)
             self.doorPositions = data["doorPositions"]
@@ -3690,7 +3779,7 @@ class gameManager():
 
     def draw(self, lightOnly=False, glintOnly=False, overlayOnly=False):
         if self.scene == "title":
-            self.painter.drawTitle(self.titleOptions(), self.titleSel, self.titleMessage, self.titleFade, *self.titleView())
+            self.painter.drawTitle(self.titleOptions(), self.titleSel, self.titleMessage, self.titleFade, *self.titleView(), fog=self.titleFog)
             return
         if self.scene == "attempts":
             self.painter.drawAttempts(self.attemptList, self.attemptScroll)
@@ -3723,7 +3812,9 @@ class gameManager():
             fireLight=getattr(self, "fireLight", {}),
             memoryFade=self.memoryShades(), memoryFalloff=(FORGET_DISTANCE, FORGET_CURVE, DOOR_SHADE_MOST),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
-            smoke=self.smoke,
+            smoke=self.smoke, zoom=self.settings.mapZoom,
+            automap=(id(self.grid), getattr(self, "mapVersion", 0)) if getattr(self, "showMap", False) else None,
+            mapRecall=self.mapRecallHere() if getattr(self, "showMap", False) else None,
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
         if messageKey is not None and messageFinished:
@@ -3734,18 +3825,21 @@ class gameManager():
     def RunGame(self):
         while self.running:
             self.clock.tick(FPS)
+            self.sound.update()
 
             if self.scene in ("title", "attempts"):
-                if self.scene == "title" and self.titleFade < 255:
+                if self.scene == "title":
                     self.titleFade = min(255, self.titleFade + TITLE_FADE_STEP)
-                    self.change = True
+                    self.change = True  # the fog is always moving, so the title redraws every frame
                 if self.updater.takeChange():  # the update check found a newer version: show the button
                     if self.scene == "title" and self.titlePage == "main" and self.titleSel == len(self.titleOptions()) - 2:
                         self.titleSel += 1  # the button went in above Quit: keep Quit selected, not the update
                     self.change = True
                 for event in pygame.event.get():
                     self.EventDispatcher.dispatch(event)
-                if self.change and self.running:
+                # A run that just started (New Game / Continue) is drawn by the playing part of the loop, which works
+                # out what you can see first. Drawing it here would show a blank floor and use up the redraw.
+                if self.change and self.running and self.scene in ("title", "attempts"):
                     self.draw()
                     self.change = False
                 continue
@@ -3820,6 +3914,7 @@ class gameManager():
                 self.setLookPosition()
                 self.roomItems = self.getItemsFromGrid()
                 self.setPositionsVisible()
+                self.mapVersion = getattr(self, "mapVersion", 0) + 1  # what you see may have changed: the map redraws
                 self.draw()
                 self.change = False
                 self.lightChange = False

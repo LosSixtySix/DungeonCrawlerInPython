@@ -1,14 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
+import glob
+import os
+
 # PyInstaller build for CRUEL. Build with:   python -m PyInstaller CRUEL.spec
 # Output is a folder, dist\CRUEL\, holding CRUEL.exe plus an _internal folder it needs.
 # To share it, run distribution\release.ps1: it builds, zips and publishes to players over Tailscale. Saves are not in it: they live in %APPDATA%\CRUEL.
+
+# Every .json and .wav anywhere in music/ (the tracks and sound effects, in their folders), kept at the same path inside the build
+MUSIC = []
+for path in glob.glob(os.path.join(SPECPATH, 'music', '**', '*.json'), recursive=True) + glob.glob(os.path.join(SPECPATH, 'music', '**', '*.wav'), recursive=True):
+    relative = os.path.relpath(path, SPECPATH)
+    MUSIC.append((relative, os.path.dirname(relative)))
 
 a = Analysis(
     ['lineOfSight.py'],
     pathex=[],
     binaries=[],
-    # Read-only files the game loads at runtime (found through paths.resourcePath)
-    datas=[('Forgore.otf', '.'), ('icon.png', '.')],
+    # Read-only files the game loads at runtime (found through paths.resourcePath), music included
+    datas=[('Forgore.otf', '.'), ('icon.png', '.')] + MUSIC,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
