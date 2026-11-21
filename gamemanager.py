@@ -2351,6 +2351,8 @@ class gameManager():
             return [("STR bonus to gear", f"+{bonus}"), ("Damage", f"{low}-{high}"), ("Wall Damage", str(player.getWallDamage()))]
         if attribute == "constitution":
             return [("Max HP", str(player.getMaxHealth()))]
+        if attribute == "dexterity":  # (Clean Dodge doesn't come from DEX, so it isn't listed)
+            return [("Speed", f"{player.getSpeed():.2f}"), ("Evasion", f"{player.evasion() * 100:.1f}%")]
         if attribute == "intelligence":
             odds = dict(recipes.qualityOdds(bonus))
             return [("Crafted Masterwork", f"{odds['Masterwork']}%"), ("Crafted Fine", f"{odds['Fine']}%"),
