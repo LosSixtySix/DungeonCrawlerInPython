@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "Empty Road",
+  "bpm": 76,
+  "sample_rate": 44100,
+  "intro": null,
+  "loop": "empty_road_loop.wav",
+  "intro_bars": 0,
+  "loop_bars": 4,
+  "intro_samples": 0,
+  "loop_samples": 557056
+}

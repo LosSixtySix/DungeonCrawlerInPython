@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "Rainy Window",
+  "bpm": 66,
+  "sample_rate": 44100,
+  "intro": null,
+  "loop": "rainy_window_loop.wav",
+  "intro_bars": 0,
+  "loop_bars": 4,
+  "intro_samples": 0,
+  "loop_samples": 641472
+}

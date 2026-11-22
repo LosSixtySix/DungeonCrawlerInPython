@@ -110,6 +110,24 @@ PILE_LOOKS = 4   # how many pictures a pile can have (sprites.PILE_SPRITES)
 PILE_GOLD_LIMIT = 20  # gold in one pile; it has its own slot, so it doesn't count toward PILE_LIMIT
 
 
+GLOW = "Glow"  # a Glowrock's effect: set down on the floor, it lights its tile and the tiles around it
+
+
+def isGlowrock(item):
+    return getattr(item, "effect", None) == GLOW
+
+
+def pileGlows(pile):
+    """True if a Glowrock is lying in this pile."""
+    return any(isGlowrock(item) for item in getattr(pile, "items", ()))
+
+
+def onlyGlowrocks(pile):
+    """True if the pile is nothing but Glowrocks (no gold either): it's drawn as a small glowing stone, not a heap."""
+    things = getattr(pile, "items", ())
+    return bool(things) and not getattr(pile, "gold", 0) and all(isGlowrock(item) for item in things)
+
+
 class ItemPile():
     """Items lying loose on the floor (tile type 9): enemy drops, a broken station's scrap, things you drop.
     Unlike a chest (tile type 3) you and enemies can walk over it. look is which picture it's drawn with,

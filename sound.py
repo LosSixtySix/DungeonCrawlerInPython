@@ -18,7 +18,10 @@ each time, so repeats don't sound robotic).
     its own folder with its .json) is in the playlist: one is picked at random as the run starts and fades in as
     the menu theme fades out. After TRACK_MINUTES it fades out and a different one fades in. Going back to the
     title fades it out. A new track only needs its folder dropped into music/gameMusic/.
-  - A Bomb going off plays the explosion.
+  - A Bomb going off plays the explosion, and every swing at a wall plays a hit.
+  - Now and then in a run (every AMBIENCE_GAP seconds, picked at random each time), one of the sounds in
+    music/ambience/ plays quietly: a drip somewhere in the dark. Each sound has its own folder with its _sfx.json;
+    a new one only needs its folder dropped in.
 
 The volumes come from the Sound settings: Master x Music for the music, Master x Effects for sound effects, or
 nothing when muted. If the computer has no audio device, or the files are missing, the game just runs silently.
@@ -27,6 +30,10 @@ nothing when muted. If the computer has no audio device, or the files are missin
 MENU_THEME = "music/mainMenuTheme/dungeon_depths.json"
 GAME_MUSIC = "music/gameMusic"  # one folder per track, each with its .json
 EXPLOSION = "music/soundEffects/explosion/explosion_sfx.json"
+HIT = "music/soundEffects/hit/hit_sfx.json"
+AMBIENCE = "music/ambience"  # one folder per sound, each with its _sfx.json
+AMBIENCE_GAP = (45, 100)     # seconds between two ambient sounds: a random time in this range each time
+AMBIENCE_VOLUME = 0.6        # ambient sounds play at this much of the effects volume
 MENU_CHANNEL = 0    # these two are reserved for music, so a sound effect can never take one over
 GAME_CHANNEL = 1
 FADE_MS = 800       # the menu theme fades out over this long
@@ -39,7 +46,9 @@ GAME_THEME_VOLUME = 0.35  # the game music plays at this much of the music volum
 class Sound():
     def __init__(self, settings):
         self.settings = settings
-        self.menuTheme = self.explosion = None
+        self.menuTheme = self.explosion = self.hit = None
+        self.ambience = []      # the ambient sounds (SoundVariations), one per folder in music/ambience/
+        self.nextAmbience = None  # when the next ambient sound plays (pygame ticks), while in a run
         self.gameTracks = []    # every game track that loaded (LoopingMusic)
         self.gameTheme = None   # the one playing now
         self.inRun = False      # game music is wanted (between playGameTheme and stopGameTheme)
@@ -62,10 +71,23 @@ class Sound():
             track = self.loadMusic(manifest, GAME_CHANNEL)
             if track is not None:
                 self.gameTracks.append(track)
+        self.explosion = self.loadEffect(paths.resourcePath(EXPLOSION))
+        self.hit = self.loadEffect(paths.resourcePath(HIT))
+        for manifest in sorted(glob.glob(os.path.join(paths.resourcePath(AMBIENCE), "*", "*.json"))):
+            sound = self.loadEffect(manifest, AMBIENCE_VOLUME)
+            if sound is not None:
+                self.ambience.append(sound)
+
+    def loadEffect(self, manifest, share=1.0):
+        """A sound effect (SoundVariations), or None if its files are missing. share: how much of the effects volume
+        it plays at (kept on it, so applyVolume can set it again)."""
         try:
-            self.explosion = SoundVariations(paths.resourcePath(EXPLOSION), volume=self.effectsVolume())
+            sound = SoundVariations(manifest, volume=self.effectsVolume() * share)
         except (OSError, KeyError, ValueError, pygame.error):
             self.problem = "Sound files not found"
+            return None
+        sound.share = share
+        return sound
 
     def makeSilence(self):
         """A hundredth of a second of nothing. pygame plays a channel's queued sound when the channel stops, even after
@@ -109,8 +131,9 @@ class Sound():
             self.menuTheme.set_volume(self.musicVolume())
         if self.gameTheme is not None:
             self.gameTheme.set_volume(self.gameThemeVolume())
-        if self.explosion is not None:
-            self.explosion.set_volume(self.effectsVolume())
+        for sound in [self.explosion, self.hit] + self.ambience:
+            if sound is not None:
+                sound.set_volume(self.effectsVolume() * sound.share)
 
     def stopTheme(self, theme):
         if theme is not None and theme.is_playing:
@@ -126,8 +149,10 @@ class Sound():
         self.stopTheme(self.menuTheme)
 
     def playGameTheme(self):
-        """A run started: a random game track fades in (unless one is already playing)."""
+        """A run started: a random game track fades in (unless one is already playing), and the ambient sounds
+        start their timer."""
         self.inRun = True
+        self.scheduleAmbience()
         if self.gameTheme is None or not self.gameTheme.is_playing:
             self.startNextTrack()
 
@@ -147,6 +172,14 @@ class Sound():
         self.gameFadeStart = None
         self.stopTheme(self.gameTheme)
 
+    def scheduleAmbience(self):
+        self.nextAmbience = pygame.time.get_ticks() + int(random.uniform(*AMBIENCE_GAP) * 1000)
+
+    def playHit(self):
+        """A swing at a wall."""
+        if self.hit is not None:
+            self.hit.play()
+
     def playExplosion(self, sample=False):
         """A Bomb went off. sample: just letting you hear the Effects Volume, skipped while the last sample still plays."""
         if self.explosion is None:
@@ -161,7 +194,12 @@ class Sound():
         """Once per frame: keeps the loops queued so they repeat without a gap, and fades the game theme in."""
         if self.menuTheme is not None:
             self.menuTheme.update()
-        if self.gameTheme is None or not self.inRun:
+        if not self.inRun:
+            return
+        if self.ambience and self.nextAmbience is not None and pygame.time.get_ticks() >= self.nextAmbience:
+            random.choice(self.ambience).play()
+            self.scheduleAmbience()
+        if self.gameTheme is None:
             return
         self.gameTheme.update()
         if self.switching:

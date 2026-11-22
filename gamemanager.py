@@ -96,16 +96,17 @@ FORGET_DISTANCE = 10
 FORGET_TURNS = 50
 FORGET_CURVE = 2  # higher keeps nearby remembered tiles bright for longer before the falloff
 DOOR_SHADE_MOST = 0.45  # doors are never forgotten: they take the same falloff, but never get darker than this
-# The map (M) keeps a forgotten tile a little longer than the game does: MAP_MEMORY_PER_INT more turns for every
-# point of Intelligence above 1. With 1 Intelligence the map forgets exactly when the game does. Only the map
-# keeps them: in the game they're still forgotten.
-MAP_MEMORY_PER_INT = 2
 # Each new floor picks one of these as its chance that any given tile starts as a wall (0.15 open to 0.75 dense)
 WALL_DENSITIES = [round(0.15 + 0.05 * step, 2) for step in range(13)]
 INVENTORY_ROWS = 2  # rows the Inventory window shows; a Backpack's row is reached by arrowing down (it scrolls)
 EQUIP_ACTIONS = 1       # actions to put one item on or take one off (a swap is both); faster with more speed
 CRAFT_TURN_MS = 150  # while crafting, one turn passes this often, so you can watch enemies move in
 CRAFT_MORE = 5       # Shift+Enter crafts up to this many in a row
+# A Glowrock set on the floor lights the tiles around it, fading out to GLOW_RADIUS tiles away. Brightness is 0..1
+# (1 is the middle of your own light): GLOW_BRIGHTNESS on the rock's tile, a third less beside it, nothing at the edge. Your
+# own light adds on top of it (see renderer.tileLighting).
+GLOW_RADIUS = 2.5
+GLOW_BRIGHTNESS = 0.5
 THROWN_EFFECTS = {"Fire", "Smoke", "Magic","Explosive"}  # potions you aim and throw instead of drinking
 THROW_RANGE = 8      # how far (in tiles) a potion can be thrown
 FLIGHT_TURNS = [(3, 0), (6, 1), (THROW_RANGE, 2)]  # (up to this distance, turns in the air): close throws land at once
@@ -334,7 +335,6 @@ class gameManager():
         self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
         self.fallen = {}  # floor -> [(position, tile)]: what fell into it through a hole, put there when you arrive
         self.memoryFade = {}  # floor -> {tile: turns it has been fading} (see stepForgetting)
-        self.mapMemory = {}  # floor -> {tile: [turns since forgotten, the tile as it was]} (see mapRecall)
         self.enemyOccupiedItemSpaces = {}
 
         playerposx, playerposy = self.painter.getCenterCartesian()
@@ -512,9 +512,6 @@ class gameManager():
         if self.cycleHeld and move is not None and move[1] == -1:  # Tab + Up: back to the game, windows stay open
             self.focus = "map"
             self.cycleUsed = True
-            return
-        if self.isAction(key, "map"):
-            self.showMap = not getattr(self, "showMap", False)  # the map overlay (see renderer.drawAutomap)
             return
         for windowId in WINDOW_ORDER:
             if windowId != "items" and self.isAction(key, WINDOW_HOTKEY[windowId]):
@@ -808,6 +805,8 @@ class gameManager():
                 item = self.player.inventory[index]
                 if item.Etype == "Consume" and item.effect in THROWN_EFFECTS:
                     self.startThrow(index)
+                elif items.isGlowrock(item):
+                    self.dropFocusedItem()  # set it down at your feet, where it glows
                 elif item.Etype == "Consume":
                     self.useConsumable(index)
                 elif self.player.slotsFor(item) and self.player.freeSlotFor(item) is None:
@@ -1617,6 +1616,7 @@ class gameManager():
             return
         tile = self.grid[target]
         if tile[0] == 2:  # wall
+            self.sound.playHit()
             self.chip(target, self.playerPositionFlat)
             dig = not (self.player.burrow and tile[2].soft)
             if dig:
@@ -2338,6 +2338,23 @@ class gameManager():
                 if p not in best or d < best[p]:
                     best[p], self.fireLight[p] = d, (fire, radius)
 
+    def updateGlowLight(self):
+        """Which tiles Glowrocks light, as {tile: brightness 0..1}: each rock lights out to GLOW_RADIUS, fading
+        with distance (GLOW_BRIGHTNESS on its own tile, nothing at the edge), and walls stop it like they stop fire
+        light. Two rocks lighting the same tile add up. A rock in a pile, under you or under an enemy all count."""
+        R = self.rowLength
+        rocks = [p for p, tile in self.grid.items() if tile[0] == 9 and items.pileGlows(tile[2])]
+        if len(self.currentLocation) > 2 and items.pileGlows(self.currentLocation[2]):
+            rocks.append(self.playerPositionFlat)
+        rocks += [p for p, ground in self.enemyOccupiedItemSpaces.items() if len(ground) > 2 and items.pileGlows(ground[2])]
+        self.glowLight = {}
+        for rock in rocks:
+            for p in self.lightAround(rock, math.ceil(GLOW_RADIUS)):
+                d = math.hypot(p % R - rock % R, p // R - rock // R)
+                if d <= GLOW_RADIUS:
+                    glow = GLOW_BRIGHTNESS * (1 - d / (GLOW_RADIUS + 0.5))
+                    self.glowLight[p] = round(min(1.0, self.glowLight.get(p, 0.0) + glow), 3)
+
     def torchSpotSeen(self, seen):
         """The torchlit tile nearest you among the tiles in seen (what an enemy can see), or None. Enemies that see
         your torchlight head for it; once they see you, they go for you (enemies with tremor sense don't do this)."""
@@ -2367,17 +2384,24 @@ class gameManager():
             for position in self.fireLight:
                 if position not in visiblePositions and self.lineOfSight(self.playerPositionFlat, position):
                     self.grid[position][1] = 1
+        # Glowrock light: the same, from any distance you have a clear line to
+        self.updateGlowLight()
+        if self.playerPositionFlat not in self.smoke:
+            for position in self.glowLight:
+                if position not in visiblePositions and self.lineOfSight(self.playerPositionFlat, position):
+                    self.grid[position][1] = 1
         if self.player.hasEffect("see_enemies"):
             for position in self.EnemyPositions:
                 if position in self.grid and self.grid[position][0] == 5:
                     self.grid[position][1] = 1
         # torchlight: with a torch in hand, the tiles you see by your own light are lit, and enemies can spot them
         self.torchLight = set(visiblePositions) if self.player.holdingTorch() and not self.peaceful else set()
+        self.ownSight = set(visiblePositions)  # lit by your own light (Glowrock light adds to it, see renderer.tileLighting)
         if getattr(self, "revealMap", False):  # developer console /reveal: the whole floor is in view
             for tile in self.grid.values():
                 tile[1] = 1
         self.visibleGrid = self.grid  # (see the top of this function)
-        self.visibleTiles = list(self.grid) if getattr(self, "revealMap", False) else             [i for i in set(visiblePositions) | set(self.fireLight) | set(self.EnemyPositions)
+        self.visibleTiles = list(self.grid) if getattr(self, "revealMap", False) else             [i for i in set(visiblePositions) | set(self.fireLight) | set(self.glowLight) | set(self.EnemyPositions)
              if self.grid.get(i, (None, 0))[1] == 1]
         if self.player.seeDoor:
             self.grid[self.doorPositions[self.level]][1] = 2
@@ -2418,8 +2442,7 @@ class gameManager():
         if attribute == "intelligence":
             odds = dict(recipes.qualityOdds(bonus))
             return [("Crafted Masterwork", f"{odds['Masterwork']}%"), ("Crafted Fine", f"{odds['Fine']}%"),
-                    ("Crafted Crude", f"{odds['Crude']}%"), ("Taking apart gives", f"{self.salvagePercent():g}%"),
-                    ("Map remembers", f"+{self.mapMemoryTurns()} turns")]
+                    ("Crafted Crude", f"{odds['Crude']}%"), ("Taking apart gives", f"{self.salvagePercent():g}%")]
         if attribute == "wisdom":
             nothing, _, _ = loot.wallOdds(player.attributes["wisdom"])
             return [("Healing potions", f"+{bonus}"), ("Walls give nothing", f"{nothing:g}%"),
@@ -3072,37 +3095,9 @@ class gameManager():
             if turns >= FORGET_TURNS:
                 tile[1] = 0
                 fading.pop(i, None)
-                self.mapRemember(i, tile)
             else:
                 fading[i] = turns
             self.change = True
-
-    def mapRecallHere(self):
-        """This floor's tiles the game has forgotten but the map still shows: {tile: [turns since, tile as it was]}."""
-        if not hasattr(self, "mapMemory"):
-            self.mapMemory = {}
-        return self.mapMemory.setdefault(self.level, {})
-
-    def mapMemoryTurns(self):
-        """How many turns the map keeps a tile after the game forgets it (Intelligence, see MAP_MEMORY_PER_INT)."""
-        return MAP_MEMORY_PER_INT * max(0, self.player.attributes["intelligence"] - 1)
-
-    def mapRemember(self, i, tile):
-        """The game just forgot tile i: the map holds on to how it looked, if Intelligence lets it."""
-        if self.mapMemoryTurns() > 0:
-            kind = 0 if tile[0] in (1, 5) else tile[0]  # you and enemies aren't kept, just the floor under them
-            self.mapRecallHere()[i] = [0, [kind, 2] + list(tile[2:])]
-
-    def stepMapMemory(self):
-        """A turn passed: tiles the map is holding get one turn older and drop off at mapMemoryTurns. One you can
-        see or remember again is the game's own again."""
-        recall, most = self.mapRecallHere(), self.mapMemoryTurns()
-        for i in list(recall):
-            entry = recall[i]
-            entry[0] += 1
-            if self.grid[i][1] or entry[0] > most:
-                del recall[i]
-                self.change = True
 
     def memoryShades(self):
         """How dark each remembered tile is painted into the map, 0..1. Past FORGET_DISTANCE that's black (a door
@@ -3196,7 +3191,6 @@ class gameManager():
         self.stepBlood()
         self.stepSmoke()
         self.stepForgetting()
-        self.stepMapMemory()
         self.stepThrows()
         self.stepFloorEvent()
         growth = events.plantRules(self.activeEvent())
@@ -3439,7 +3433,6 @@ class gameManager():
             "camps": self.camps,
             "fallen": self.fallen,
             "memoryFade": self.memoryFade,
-            "mapMemory": getattr(self, "mapMemory", {}),
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -3463,7 +3456,6 @@ class gameManager():
             self.camps = data.get("camps", {})
             self.fallen = data.get("fallen", {})
             self.memoryFade = data.get("memoryFade", {})
-            self.mapMemory = data.get("mapMemory", {})
             self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
             self.enemyOccupiedItemSpaces = {}  # (also only set by newGame)
             self.doorPositions = data["doorPositions"]
@@ -3700,6 +3692,15 @@ class gameManager():
             lines.append(("hint", "Enter  eat", ""))
             lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines
+        if items.isGlowrock(item):
+            lines.append(("label", "LIGHT", ""))
+            lines.append(("body", "Set it down and it gives off a dim light on its tile and the tiles around it, "
+                                  "even after you walk away. Pick it back up any time", ""))
+            if player.potionStackLimit() > 1 or pc.countOf(item) > 1:
+                lines.append(("row", "In this stack", f"{pc.countOf(item)} / {player.potionStackLimit()}"))
+            lines.append(("hint", "Enter  set it down", ""))
+            lines.append(("hint", "Ctrl+Enter  drop", ""))
+            return lines
         if item.Etype == "Consume":
             lines.append(("label", "POTION", ""))
             bonus = player.attributeBonuses.get(item.attributeScaling, 0)
@@ -3809,12 +3810,10 @@ class gameManager():
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly, overlayOnly=overlayOnly,
-            fireLight=getattr(self, "fireLight", {}),
+            fireLight=getattr(self, "fireLight", {}), glowLight=getattr(self, "glowLight", {}), ownSight=getattr(self, "ownSight", set()),
             memoryFade=self.memoryShades(), memoryFalloff=(FORGET_DISTANCE, FORGET_CURVE, DOOR_SHADE_MOST),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
             smoke=self.smoke, zoom=self.settings.mapZoom,
-            automap=(id(self.grid), getattr(self, "mapVersion", 0)) if getattr(self, "showMap", False) else None,
-            mapRecall=self.mapRecallHere() if getattr(self, "showMap", False) else None,
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
         if messageKey is not None and messageFinished:
@@ -3914,7 +3913,6 @@ class gameManager():
                 self.setLookPosition()
                 self.roomItems = self.getItemsFromGrid()
                 self.setPositionsVisible()
-                self.mapVersion = getattr(self, "mapVersion", 0) + 1  # what you see may have changed: the map redraws
                 self.draw()
                 self.change = False
                 self.lightChange = False

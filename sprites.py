@@ -337,6 +337,22 @@ PILE_SPRITES = [
 ]
 
 
+# A Glowrock set down on the floor: a small pebble in the middle of the tile, lit from inside (top-down)
+GLOWROCK = [
+    "..........",
+    "..........",
+    "..........",
+    "....kk....",
+    "...kYGk...",
+    "...kGgk...",
+    "....kk....",
+    "..........",
+    "..........",
+    "..........",
+]
+GLOWROCK_COLORS = {"Y": (255, 250, 200), "G": (232, 220, 130), "g": (168, 150, 78)}
+
+
 def pileRoles(colors, fixedColors):
     palette = enemyRoles(colors, fixedColors)
     palette["h"] = (0, 0, 0, 115)
@@ -715,6 +731,7 @@ def buildSprites(colors, tileSize):
         "chests": [makeSurface(CHEST, chestRoles(colors, base, stud), tileSize) for base, stud in CHEST_COLORS.values()],
         "cursedChest": makeSurface(CHEST, chestRoles(colors, *CURSED_CHEST_COLOR), tileSize),
         "piles": [makeSurface(rows, pileRoles(colors, fixed), tileSize) for rows, fixed in PILE_SPRITES],
+        "glowrock": makeShadowed(GLOWROCK, enemyRoles(colors, GLOWROCK_COLORS), tileSize),
         "player": {facing: makePlayer(colors, facing, tileSize) for facing in PLAYER_TURNS},
         "enemies": {name: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for name, (rows, fixed) in ENEMY_SPRITES.items()},
         "unsealed": [makeShadowed(unsealedFrame(colors, f), enemyRoles(colors, UNSEALED_COLORS), tileSize) for f in range(SHARD_FRAMES)],

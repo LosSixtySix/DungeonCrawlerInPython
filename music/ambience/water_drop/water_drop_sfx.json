@@ -1,0 +1,11 @@
+{
+  "name": "water_drop",
+  "sample_rate": 44100,
+  "files": [
+    "water_drop_01.wav",
+    "water_drop_02.wav",
+    "water_drop_03.wav",
+    "water_drop_04.wav",
+    "water_drop_05.wav"
+  ]
+}

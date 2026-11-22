@@ -7,6 +7,7 @@ import themes
 import sprites
 import wall as walls
 import expansion
+import items
 import plants
 
 
@@ -24,6 +25,12 @@ FIRE_LIGHT_RADIUS = 3
 SMOKE_THIN_TURNS = 4          # Smoke Bomb smoke fades out over its last this many turns
 FIRE_TINT = (240, 128, 40)
 FIRE_TINT_ALPHA = 82          # the tint's strength on the fire's own tile (0-255); it fades to nothing at the edge
+# Glowrocks: a faint light that fades out a few tiles from the rock (gameManager.updateGlowLight works out how
+# bright each tile is, 0..1). It adds to your own light, which counts as LEVEL_BRIGHTNESS for each of its steps.
+LEVEL_BRIGHTNESS = {None: 1.0, 0: 0.75, 1: 0.5}  # your light's steps (see lightLevel) as brightness
+GLOW_DARK_MOST = 210          # how dark (0-255 over the dimmest dither) a tile at the very edge of a glow gets
+GLOW_TINT = (232, 220, 130)
+GLOW_TINT_ALPHA = 60          # the pale tint at full brightness; a Glowrock's tiles get a share of it
 
 # Corrupted walls (Overgrowth): vines creeping over the top of the wall, in the corrupting plant's colors.
 # c = its main color, C = its light color, s = its dark color (its main color if it has none).
@@ -263,7 +270,7 @@ class renderer():
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
              console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None,
-             memoryFalloff=None, zoom=1, automap=None, mapRecall=None):
+             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -275,8 +282,8 @@ class renderer():
         and only its animated tiles (bonfires, the Unsealed) are brought up to date.
         Whichever it is, a tile is only redrawn when its look changed since it was last drawn (see tileSignature).
         zoom: the camera keeps the player in the middle of the screen; zoom (1 and up) scales the map up around them.
-        automap: when the map overlay (M) is open, a key that changes whenever what you can see changes (see drawAutomap).
         fireLight: {tile: (the fire lighting it, its light radius)} for tiles in reach of a fire's or bonfire's light.
+        glowLight: {tile: brightness 0..1} for tiles a Glowrock lights. ownSight: the tiles your own light reaches.
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill((0, 0, 0))  # past the floor's edges is black
@@ -286,6 +293,8 @@ class renderer():
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
         self.lightStyleNow = lightStyle  # fires sway the same way (see fireLevel)
         self.fireLight = fireLight or {}
+        self.glowLight = glowLight or {}
+        self.ownSight = ownSight or set()
         self.memoryFade = memoryFade or {}  # remembered tile -> how far it has faded to black, 0..1
         self.memoryFalloff = memoryFalloff  # (radius, curve, door darkest) for drawMemoryFalloff, or None
         self.smokeHere = smoke or {}  # Smoke Bomb smoke: whoever stands in it isn't drawn
@@ -326,8 +335,6 @@ class renderer():
             w, h = view.get_size()
             self.win.blit(pygame.transform.scale(view, (w * self.zoom, h * self.zoom)), self.viewOrigin)
 
-        if automap is not None:
-            self.drawAutomap(grid, rooms, playerPosition, automap, mapRecall)
         self.drawPopups(popups)
         if hud is not None:
             self.drawHud(*hud)
@@ -503,77 +510,6 @@ class renderer():
         if self.zoom not in self.popupFonts:
             self.popupFonts[self.zoom] = pygame.ftfont.Font(paths.resourcePath('Forgore.otf'), 18 * self.zoom)
         return self.popupFonts[self.zoom]
-
-    # ------------------------------------------------------------ the map (M)
-    # One pixel per tile, laid over the game and centered on you. Explored floor shows in its room's floor color
-    # and the walls around it in the room's wall color, both from the floor's theme, so stone, wood, sand and gold
-    # rooms stand apart. It shows tiles you see or still remember, plus ones the game has forgotten that the map
-    # still holds for a while (more Intelligence, longer: gameManager.mapRemember).
-    AUTOMAP_FLOOR_ALPHA = 200
-    AUTOMAP_WALL_ALPHA = 255
-    AUTOMAP_DIM = 160       # how dark the game gets behind the open map (0-255), so the map stands out
-    AUTOMAP_BRIGHTEN = 0.35  # map colors are mixed this far toward white, so they don't match the game's own tiles
-    AUTOMAP_MARKS = {3: "chest", 4: "doorNext", 6: "doorPrev", 7: "select", 9: "select", expansion.CAMP: "marker"}
-
-    def automapPixel(self):
-        """How many screen pixels one map tile takes (8 on a 1080p screen)."""
-        return max(2, round(self.screenHeight / 135))
-
-    def buildAutomap(self, grid, rooms, recall=None):
-        """The map as a small picture, one pixel per tile, then scaled up (pixel for pixel, so it stays blocky).
-        recall: {tile: [turns, tile as it was]} for forgotten tiles the map still shows."""
-        R, C = self.rowLength, self.columnLength
-        pixels = bytearray(R * C * 4)
-        shown = {i: tile for i, tile in grid.items() if tile[1]}  # seen or remembered
-        for i, (_, tile) in (recall or {}).items():
-            shown.setdefault(i, tile)
-        openTiles = {i for i, tile in shown.items() if tile[0] != 2}
-        for i, tile in shown.items():
-            kind = tile[0]
-            if kind == 2:  # a wall: only the ones bordering explored floor, so rooms show as outlines
-                x = i % R
-                if not ((x > 0 and i - 1 in openTiles) or (x < R - 1 and i + 1 in openTiles)
-                        or i - R in openTiles or i + R in openTiles):
-                    continue
-                name = getattr(tile[2], "name", None) if len(tile) > 2 else None
-                color = self.wallColor(name, False) if name else self.roomWallColor(i, rooms, False)
-                alpha = self.AUTOMAP_WALL_ALPHA
-            elif kind == expansion.HOLE or kind == 1:
-                continue  # holes stay dark; you're drawn on top afterwards
-            elif kind == 5 and tile[1] != 1:
-                color, alpha = self.floorColor(i, rooms, False), self.AUTOMAP_FLOOR_ALPHA  # an enemy you can't see
-            elif kind == 5:
-                color, alpha = self.color("enemy"), 255
-            elif kind in self.AUTOMAP_MARKS:
-                color, alpha = self.color(self.AUTOMAP_MARKS[kind]), 255
-            else:
-                color, alpha = self.floorColor(i, rooms, False), self.AUTOMAP_FLOOR_ALPHA
-            if alpha < 255 or kind == 2:  # floors and walls (not the marks) get lifted toward white
-                color = themes.mix(color, (255, 255, 255), self.AUTOMAP_BRIGHTEN)
-            p = i * 4
-            pixels[p:p + 4] = (color[0], color[1], color[2], alpha)
-        small = pygame.image.frombuffer(bytes(pixels), (R, C), "RGBA")
-        size = self.automapPixel()
-        return pygame.transform.scale(small, (R * size, C * size))
-
-    def drawAutomap(self, grid, rooms, playerPosition, key, recall=None):
-        """Draws the map over the game, centered on you. It's only rebuilt when key changes (you moved, saw new
-        tiles, or the theme changed); animation frames reuse it."""
-        key = (key, id(self.theme), self.rowLength)
-        if getattr(self, "automapKey", None) != key:
-            self.automapKey = key
-            self.automapPicture = self.buildAutomap(grid, rooms, recall)
-        size = self.automapPixel()
-        W, H = self.screenWidth, self.screenHeight
-        self.overlay.fill((0, 0, 0, self.AUTOMAP_DIM))  # dim the game behind the map
-        self.win.blit(self.overlay, (0, 0))
-        px, py = playerPosition % self.rowLength, playerPosition // self.rowLength
-        cx, cy = W // 2 - size // 2, H // 2 - size // 2
-        self.win.blit(self.automapPicture, (cx - px * size, cy - py * size))
-        you = pygame.Rect(cx, cy, size, size).inflate(size // 2, size // 2)  # a bit bigger than a tile
-        pygame.draw.rect(self.win, (0, 0, 0), you.inflate(4, 4))  # a dark rim so you stand out on any floor
-        self.win.fill((255, 255, 255), you.inflate(2, 2))
-        self.win.fill(self.color("player"), you)
 
     def drawPopups(self, popups):
         """Rising "+2 Wood" texts over the map: each floats up from its tile and fades out (age goes 0 to 1).
@@ -1658,7 +1594,8 @@ class renderer():
         return picture
 
     def tileLighting(self, i, x, y, playerPosition, visionRange, light):
-        """(dither level, fire tint alpha) for a tile in view: the brighter of your light and any fire's."""
+        """(dither level, fire tint alpha, glow tint alpha, darkening alpha) for a tile in view: the brighter of
+        your light and any fire's, with any Glowrock's light added on top."""
         offsetX, offsetY, reach = light
         lightX = playerPosition % self.rowLength + offsetX
         lightY = playerPosition // self.rowLength + offsetY
@@ -1669,7 +1606,27 @@ class renderer():
             fireLevel, distance = self.fireLevel(x, y, fire)
             level = None if level is None or fireLevel is None else min(level, fireLevel)
             alpha = int(FIRE_TINT_ALPHA * max(0.0, 1 - distance / (fire[1] + 1)))
-        return level, alpha
+        glow = getattr(self, "glowLight", {}).get(i)
+        if not glow:
+            return level, alpha, 0, 0
+        # Glowrock light adds to whatever light is already here (yours, or a fire's), as brightness 0..1
+        lit = i in getattr(self, "ownSight", ()) or fire is not None
+        total = min(1.0, (LEVEL_BRIGHTNESS[level] if lit else 0.0) + glow)
+        level, dark = self.brightnessLook(total)
+        return level, alpha, int(GLOW_TINT_ALPHA * glow), dark
+
+    def brightnessLook(self, brightness):
+        """(dither level, darkening alpha) for a brightness 0..1. The top of the range is your light's own steps
+        (full, light dither, heavy dither); below the dimmest of those, the heavy dither also gets a sheet of the dark
+        laid over it, thicker the dimmer it is, so the light fades out smoothly."""
+        if brightness >= 0.95:
+            return None, 0
+        if brightness >= 0.7:
+            return 0, 0
+        if brightness >= 0.5:
+            return 1, 0
+        dark = int(GLOW_DARK_MOST * (0.5 - brightness) / 0.5)
+        return 1, dark // 12 * 12  # in steps, so nearby tiles share a cached sheet
 
     def tileSignature(self, grid, i, rooms, playerDirection, playerPosition, visionRange, light):
         """(signature, lighting) for tile i. The signature holds everything paintTile's result depends on, so two
@@ -1681,14 +1638,14 @@ class renderer():
         blood = self.blood.get(i) if self.blood else None
         extra = None
         if kind == 1:
-            extra = (playerDirection, getattr(obj, "look", None), getattr(obj, "kind", None))
+            extra = (playerDirection, getattr(obj, "look", None), getattr(obj, "kind", None), items.onlyGlowrocks(obj))
         elif kind == 2:
             glint = self.glintPhase(i, self.frameTicks) if not memorized and isinstance(obj, walls.OreVein) else None
             extra = (obj.name, len(obj.brokenPoints), getattr(obj, "corruptedBy", None), getattr(obj, "paint", None), glint)
         elif kind == 3:
             extra = (getattr(obj, "look", None), len(getattr(obj, "brokenPoints", ())))
         elif kind == 9:
-            extra = obj.look
+            extra = (obj.look, items.onlyGlowrocks(obj))
         elif kind == 7:
             extra = (obj.id, obj.hp, obj.claimed)
         elif kind == 8:
@@ -1704,7 +1661,7 @@ class renderer():
         lighting = None
         if memorized:  # a fading remembered tile: how dark it has got (gameManager.stepForgetting)
             lighting = ("fade", getattr(self, "memoryFade", {}).get(i, 0))
-        if not memorized and kind not in self.LIGHT_EXEMPT:
+        if not memorized and (kind not in self.LIGHT_EXEMPT or (kind == 9 and items.onlyGlowrocks(obj))):
             lighting = self.tileLighting(i, i % self.rowLength, i // self.rowLength, playerPosition, visionRange, light)
         signature = (kind, visibility, id(obj), self.roomOf(i, rooms), blood,
                      self.bloodDry.get(i) if blood else None, extra, lighting)
@@ -1725,11 +1682,17 @@ class renderer():
             if lighting[1] > 0:
                 self.mapSurface.blit(self.forgetShade(lighting[1]), (x * ts, y * ts))
         elif lighting is not None:
-            level, alpha = lighting
+            level, alpha, glowAlpha, dark = lighting
             if alpha > 0:
                 self.mapSurface.blit(self.fireTint(alpha), (x * ts, y * ts))
+            if glowAlpha > 0:
+                self.mapSurface.blit(self.glowTint(glowAlpha), (x * ts, y * ts))
             if level is not None and self.shades:
                 self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
+            if dark > 0:
+                self.mapSurface.blit(self.forgetShade(dark / 255), (x * ts, y * ts))
+            if grid[i][0] == 9 and items.onlyGlowrocks(grid[i][2]):  # the floor under it is lit like any other; the rock stays bright on top
+                self.mapSurface.blit(self.sprites["glowrock"], (x * ts, y * ts))
 
     def drawMemoryFalloff(self, grid, playerPosition, keep):
         """Darkens remembered tiles near you by distance: (distance / radius) ** curve, a door no darker than
@@ -1809,6 +1772,16 @@ class renderer():
             cache[(alpha, self.tileSize)] = self.tint(FIRE_TINT, alpha)
         return cache[(alpha, self.tileSize)]
 
+    def glowTint(self, alpha):
+        cache = self.__dict__.setdefault("glowTints", {})
+        if (alpha, self.tileSize) not in cache:
+            cache[(alpha, self.tileSize)] = self.tint(GLOW_TINT, alpha)
+        return cache[(alpha, self.tileSize)]
+
+    def pilePicture(self, pile):
+        """A pile's picture: a small Glowrock if that's all it holds, otherwise its heap."""
+        return self.sprites["glowrock"] if items.onlyGlowrocks(pile) else self.sprites["piles"][pile.look]
+
     def drawTile(self, grid, i, x, y, rooms, playerDirection, memorized):
         ts = self.tileSize
         match grid[i][0]:
@@ -1816,7 +1789,7 @@ class renderer():
                 self.floorFill(i, rooms, memorized, x, y)
                 standingIn = grid[i][2] if len(grid[i]) > 2 else None
                 if standingIn is not None and hasattr(standingIn, "look"):  # on an item pile: it's under your feet
-                    self.mapSurface.blit(self.sprites["piles"][standingIn.look], (x * ts, y * ts))
+                    self.mapSurface.blit(self.pilePicture(standingIn), (x * ts, y * ts))
                 self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
                 if standingIn is not None and hasattr(standingIn, "kind"):  # in a plant: it's drawn over you, see-through
                     picture = self.plantPicture(standingIn)
@@ -1839,7 +1812,7 @@ class renderer():
                     self.mapSurface.blit(self.sprites["chests"][sprites.chestColorFor(i)], (x * ts, y * ts))
             case 9:  # An item pile: one of the pile pictures, picked when the pile was made
                 self.floorFill(i, rooms, memorized, x, y)
-                self.mapSurface.blit(self.sprites["piles"][grid[i][2].look], (x * ts, y * ts))
+                self.mapSurface.blit(self.pilePicture(grid[i][2]), (x * ts, y * ts))
             case 4:  # Door to the next level: a pit in the floor, randomly an open pit or a collapsed grave
                 floor = self.floorColor(i, rooms, memorized)
                 self.fillTile(floor, x, y)

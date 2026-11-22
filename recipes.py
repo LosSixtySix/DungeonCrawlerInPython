@@ -193,6 +193,9 @@ RECIPES = [
            "Goes into every pick and weapon.", "1 Wooden Handle", makes="handle"),
     Recipe("torch", "Torch", "hand", 1, {"wood": 1, "coal": 1}, "item",
            "Pushes your light out further.", "Hands  Vision +2", bonus=2, makeItem=gear("Light", "Torch", "Hands", None)),
+    Recipe("glowrock", "Glowrock", "hand", 1, {"stone": 1, "glowcap": 1}, "potion",
+           "A stone rubbed with crushed Glowcap. Set it down and it glows faintly.",
+           "Set down: a dim light on its tile and the tiles around it", makeItem=potion("Glowrock", items.GLOW)),
 
     # ---- Workbench
     Recipe("stone_pick", "Stone Pick", "workbench", 2, {"handle": 1, "stone": 3}, "item",

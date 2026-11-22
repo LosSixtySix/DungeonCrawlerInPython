@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "Lonely Guitar Solo",
+  "bpm": 72,
+  "sample_rate": 44100,
+  "intro": null,
+  "loop": "lonely_guitar_solo_loop.wav",
+  "intro_bars": 0,
+  "loop_bars": 8,
+  "intro_samples": 0,
+  "loop_samples": 1176064
+}

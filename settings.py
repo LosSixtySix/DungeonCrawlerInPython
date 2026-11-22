@@ -25,7 +25,6 @@ HOTKEY_ACTIONS = [
     ("inventory", "Inventory", pygame.K_i),
     ("level_up", "Level Up", pygame.K_l),
     ("materials", "Pouch", pygame.K_p),
-    ("map", "Map", pygame.K_m),
     ("loot_table", "Loot Table", pygame.K_t),
     ("crafting", "Crafting", pygame.K_k),
     ("aim", "Aim (hold)", pygame.K_LCTRL),
