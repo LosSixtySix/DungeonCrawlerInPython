@@ -59,6 +59,15 @@ class GoldWall(Wall):
         self.hardness = 2
         self.soft = False
 
+class MoltenWall(Wall):
+    """Scorched Depths: rock running with lava. Breaking one burns you (gameManager.breakWall)."""
+    def __init__(self):
+        super().__init__()
+        self.name = "Molten Wall"
+        self.hp = 30
+        self.hardness = 5
+        self.soft = False
+
 
 # ---------------------------------------------------------------- ore veins
 # Veins are walls with ore in them. They're drawn in the room's own wall color with flecks of a fixed ore

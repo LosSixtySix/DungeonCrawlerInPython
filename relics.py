@@ -24,6 +24,9 @@ RELICS = {
     "thornward_gloves": {"name": "Thornward Gloves", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "demise_ward"},
     "vestigial_hand": {"name": "Discarded Vestigial Hand", "slot": "Back", "etype": "Unique", "bonus": 0, "power": "extra_hand"},
     "lightning_vambraces": {"name": "Lightning Vambraces", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "lightning"},
+    # Only ever in the chest at the middle of a Scorched Depths floor (not in CHEST_RELICS)
+    "molten_blade": {"name": "Molten Blade", "slot": "Hands", "etype": "Damage", "bonus": 6, "power": "molten",
+                     "scaling": ("strength", "intelligence")},
 }
 
 # Relics that can be in a chest: (relic id, first floor, floor types it can appear on or None for any)
@@ -40,9 +43,12 @@ RELIC_CHEST_CHANCE = 0.25  # chance that a floor has one relic chest (if any rel
 
 # What each effect does, in a few words (shown in the Character window and on item descriptions)
 LIGHTNING_SPEED = 2  # Lightning Vambraces: added to your speed (actions each turn)
+MOLTEN_FIRE = 2              # Molten Blade: fire damage added to every hit...
+MOLTEN_IGNITE_CHANCE = 0.25  # ...and the chance that hit sets the enemy burning
 
 EFFECTS = {
     "burrow": ("Burrow", "Burrow through soft walls"),
+    "molten": ("Molten", "Immune to fire. Hits deal 2 more fire damage, 1 in 4 sets the enemy burning"),
     "seal_ward": ("Seal Ward", "The Unsealed don't appear"),
     "searing_light": ("Searing Light", "Enemies in your light take 1 damage each turn"),
     "goblin_fear": ("Dread", "Goblins sometimes flee instead of attacking"),
@@ -79,7 +85,7 @@ THORN_DAMAGE = 2  # Demise Stew's Thorn Blood: magic damage to whatever hits you
 SICK_TURNS = 8    # Demise Sickness: 1 HP lost this often
 
 # Powers that are the relic itself: the Gilded Forge can't rekindle them away (the Hand would be just a hand)
-BOUND_POWERS = {"extra_hand"}
+BOUND_POWERS = {"extra_hand", "molten"}  # (the Molten Blade without its fire is just a blade)
 
 # Powers the Gilded Forge can give (not Burrow: that one is the Burrower's Amulet's alone)
 FORGE_POWERS = ["half_swings", "goblin_fear", "seal_ward", "lifedrinker", "far_sight", "gold_double"]
@@ -108,7 +114,7 @@ def describe(tags):
 def make(relicId):
     """A fresh copy of a relic, ready to put in a chest or drop."""
     info = RELICS[relicId]
-    scaling = "strength" if info["etype"] in ("Damage", "WallDamage", "Defense") else None
+    scaling = info.get("scaling") or ("strength" if info["etype"] in ("Damage", "WallDamage", "Defense") else None)
     item = items.equipment(info["etype"], info["name"], info["slot"], info["bonus"], describe([info["power"]]), attributeScaling=scaling)
     item.relic = True
     item.relicId = relicId

@@ -19,6 +19,7 @@ WALL_LOOT = {
     "Stone Wall": "stone",
     "Sand Wall": "sand",
     "Gold Wall": "gold",
+    "Molten Wall": "stone",
     "Coal Vein": "coal",
     "Copper Vein": "copper_ore",
     "Iron Vein": "iron_ore",

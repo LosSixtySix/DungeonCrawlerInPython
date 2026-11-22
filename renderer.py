@@ -1472,17 +1472,31 @@ class renderer():
             self.smokeKey = key
         return self.smokeTiles
 
+    @staticmethod
+    def enemyFacing(enemy):
+        """The way an enemy faces (0 left, 1 right, 2 up, 3 down): where it last moved, else as it's drawn."""
+        facing = getattr(enemy, "facing", None)
+        return sprites.baseFacing(enemy.name) if facing is None else facing
+
+    def giantQuarter(self, i, giant):
+        """Which piece of a big enemy's picture tile i shows (0 = its top-left tile, reading across)."""
+        R, a, n = self.rowLength, giant.anchor, giant.size
+        if a is None:
+            return 0
+        qx, qy = min(n - 1, max(0, i % R - a % R)), min(n - 1, max(0, i // R - a // R))
+        return qy * n + qx
+
     def fillTile(self, color, x, y):
         pygame.draw.rect(self.mapSurface, color, pygame.Rect(x * self.tileSize, y * self.tileSize, self.tileSize, self.tileSize))
 
-    ROOM_ORDER = ("Stone", "Wood", "Gold")  # a tile in none of these is Sand
+    ROOM_ORDER = ("Stone", "Wood", "Gold", "Molten")  # a tile in none of these is Sand (Molten last: a floor laid on it wins)
     COLOR_NAMES = {(prefix, memorized): {room: ("mem" + prefix.capitalize() if memorized else prefix) + room
-                                         for room in ("Stone", "Wood", "Gold", "Sand")}
+                                         for room in ("Stone", "Wood", "Gold", "Sand", "Molten")}
                    for prefix in ("floor", "wall") for memorized in (False, True)}
 
     def roomOf(self, i, rooms):
         for room in self.ROOM_ORDER:
-            if i in rooms[room]:
+            if i in rooms.get(room, ()):  # (saves from before Molten rooms don't have that key)
                 return room
         return "Sand"
 
@@ -1657,7 +1671,8 @@ class renderer():
                      self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"]) if obj.kind == "bonfire" else None)
         elif kind == 5 and not memorized and obj is not None:
             extra = (obj.name, getattr(obj, "look", None), i in getattr(self, "smokeHere", {}),
-                     sprites.shardFrameFor(getattr(self, "lightTime", 0.0)) if obj.name == "Unsealed" else None)
+                     sprites.shardFrameFor(getattr(self, "lightTime", 0.0)) if obj.name == "Unsealed" else None,
+                     self.giantQuarter(i, obj) if getattr(obj, "size", 1) > 1 else None, self.enemyFacing(obj))
         lighting = None
         if memorized:  # a fading remembered tile: how dark it has got (gameManager.stepForgetting)
             lighting = ("fade", getattr(self, "memoryFade", {}).get(i, 0))
@@ -1723,7 +1738,7 @@ class renderer():
                 if tile is None or tile[1] != 2 or i in keep:
                     continue
                 shade = (d2 / edge) ** half
-                if tile[0] in (4, 6):
+                if tile[0] in (4, 6, 12):
                     shade = min(shade, doorMost)
                 alpha = int(255 * shade)
                 if alpha:
@@ -1846,6 +1861,10 @@ class renderer():
                 if key not in cache:
                     cache[key] = sprites.makeHole(key[0], key[1], floor, ts)
                 self.mapSurface.blit(cache[key], (x * ts, y * ts))
+            case 12:  # The Scorched door (gameManager.SCORCHED_DOOR): a pit glowing with lava
+                glow = sprites.SCORCHED_DOOR_GLOW if not memorized else themes.remembered(list(sprites.SCORCHED_DOOR_GLOW), self.color("fog"))
+                self.fillTile(glow, x, y)  # lava all round the pit, so it stands out from any floor
+                self.mapSurface.blit(self.pitSprite(sprites.pitStyleFor(i), tuple(glow)), (x * ts, y * ts))
             case 6:  # Door back to the previous level
                 self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))
@@ -1857,10 +1876,13 @@ class renderer():
                 elif name == "Unsealed":
                     frame = sprites.shardFrameFor(getattr(self, "lightTime", 0.0))
                     self.mapSurface.blit(self.sprites["unsealed"][frame], (x * ts, y * ts))
+                elif getattr(grid[i][2], "size", 1) > 1 and name in self.sprites["giants"]:  # its quarter of a 2x2 giant
+                    quarters = self.sprites["giants"][name][self.enemyFacing(grid[i][2])]
+                    self.mapSurface.blit(quarters[self.giantQuarter(i, grid[i][2])], (x * ts, y * ts))
                 elif (name, getattr(grid[i][2], "look", None)) in self.sprites["factions"]:  # an Expansion faction's colors
-                    self.mapSurface.blit(self.sprites["factions"][(name, grid[i][2].look)], (x * ts, y * ts))
+                    self.mapSurface.blit(self.sprites["factions"][(name, grid[i][2].look)][self.enemyFacing(grid[i][2])], (x * ts, y * ts))
                 elif name in self.sprites["enemies"]:
-                    self.mapSurface.blit(self.sprites["enemies"][name], (x * ts, y * ts))
+                    self.mapSurface.blit(self.sprites["enemies"][name][self.enemyFacing(grid[i][2])], (x * ts, y * ts))
                 else:  # an enemy with no picture yet: a plain square
                     self.fillTile(self.color("enemy"), x, y)
             case _:  # Floor

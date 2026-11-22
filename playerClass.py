@@ -427,8 +427,24 @@ class PlayerClass():
     def takeDamage(self,damage):
         self.damageTaken += damage - self.damageReduction()
 
+    def scalingBonus(self, item):
+        """What an item gains from your attributes: one attribute ("strength"), several added together
+        (the Molten Blade's ("strength", "intelligence")), or none."""
+        scaling = getattr(item, "attributeScaling", None)
+        if not scaling:
+            return 0
+        if isinstance(scaling, str):
+            return self.attributeBonuses.get(scaling, 0)
+        return sum(self.attributeBonuses.get(a, 0) for a in scaling)
+
+    def fireImmune(self):
+        """The Molten Blade: no fire hurts you or sets you burning."""
+        return self.hasEffect("molten")
+
     def fireResistance(self):
         """Fire Resist from gear. Fire ignores Defense; only this takes damage off it."""
+        if self.fireImmune():
+            return 10 ** 6
         return self.getequipmentBonus("FireRes") + 2 * self.countEffect("fed_fire")
 
     def magicResistance(self):
@@ -456,8 +472,8 @@ class PlayerClass():
         for key in self.equipment.keys():
             if self.equipment[key] != "None":
                 if self.equipment[key].Etype == "Damage" or self.equipment[key].Etype == "DaWa":
-                    minDamage += self.attributeBonuses[self.equipment[key].attributeScaling]
-                    maxDamage += self.equipment[key].bonus + self.attributeBonuses[self.equipment[key].attributeScaling]
+                    minDamage += self.scalingBonus(self.equipment[key])
+                    maxDamage += self.equipment[key].bonus + self.scalingBonus(self.equipment[key])
         fed = 2 * self.countEffect("fed_strength")
         return minDamage + fed, maxDamage + fed
 
@@ -466,9 +482,9 @@ class PlayerClass():
         for key in self.equipment.keys():
             if self.equipment[key] != "None":
                 if self.equipment[key].Etype == "WallDamage":
-                    wallDamage += self.attributeBonuses[self.equipment[key].attributeScaling] + self.equipment[key].bonus
+                    wallDamage += self.scalingBonus(self.equipment[key]) + self.equipment[key].bonus
                 elif self.equipment[key].Etype == "DaWa":
-                    wallDamage += self.attributeBonuses[self.equipment[key].attributeScaling] + self.equipment[key].b2
+                    wallDamage += self.scalingBonus(self.equipment[key]) + self.equipment[key].b2
         return wallDamage + 2 * self.countEffect("fed_dig")
 
     def checkValidMoveLocation(self,targetLocationType):

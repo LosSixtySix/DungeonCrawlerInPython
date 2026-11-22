@@ -120,6 +120,15 @@ BURN_CHANCE = 0.5    # chance fire damage sets the target burning
 BURN_TURNS = 3       # how long burning lasts
 BURN_DAMAGE = 1      # fire damage burning deals each turn (Fire Resist takes off it like any fire)
 FLOOR_BREAK_CHANCE = 0.25  # a Bomb's chance to break the floor in its whole blast circle (see collapseFloor)
+# The Scorched Depths (a side floor): breaking the Seal on an All Gold floor with the Molten Vault theme opens a
+# Scorched door somewhere on that floor (the door down stays too). It leads to a Scorched Depths floor with no way
+# back up; its door down starts a new track at the next floor number, with no way back up from there either.
+SCORCHED = "Scorched Depths"
+SCORCHED_DOOR = 12          # grid tile type for the Scorched door
+SCORCHED_THEME = "Molten Vault"  # the only All Gold theme whose Seal opens a Scorched door
+SCORCHED_WALL_SHARE = 0.18  # share of a Scorched Depths floor that's wall, in blobs so the ground stays open
+MOLTEN_FLOOR_DAMAGE = 1     # fire damage each turn you stand on Molten floor
+MOLTEN_WALL_DAMAGE = 2      # fire damage when you break a Molten wall
 FALL_DAMAGE = 3            # damage you, or anything else, take falling through a hole to the floor below
 DEMISE_DAMAGE = 5    # magic damage Organizer's Demise deals each turn to anything (but an Organizer) standing in it
 GROUND_FIRE_CHANCE = 0.25  # chance each floor tile a Fire Flask splashes catches fire
@@ -331,17 +340,22 @@ class gameManager():
         self.doorPositions = []
         self.motherlodes = set()  # floors that rolled a Motherlode (see wall.MOTHERLODE_CHANCE)
         self.forcedOreFloor = None  # developer console /orefloor: (floor type, motherlode) for the next new floor
+        self.forcedTheme = None  # developer console /moltenvault: the theme the next floor of that type gets
+        if os.environ.get("CRUEL_TEST_MOLTEN_VAULT"):  # testing the Scorched Depths route: floor 1 is a Molten Vault
+            self.forceMoltenVault()
         self.camps = {}  # floor -> its Expansion camp state (expansion.camp)
         self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
         self.fallen = {}  # floor -> [(position, tile)]: what fell into it through a hole, put there when you arrive
         self.memoryFade = {}  # floor -> {tile: turns it has been fading} (see stepForgetting)
+        self.scorchedDoors = {}  # floor -> where its Scorched door is (one per Molten Vault floor at most)
+        self.trackStarts = set()  # floors with no door back up (the Scorched Depths, and the floor below it)
         self.enemyOccupiedItemSpaces = {}
 
         playerposx, playerposy = self.painter.getCenterCartesian()
         self.playerPositionFlat = playerposx + (playerposy * self.rowLength)
 
         self.grid, self.EnemyPositions, self.rooms, self.proportion, self.nodes = self.generateNewLevel(True)
-        self.setTheme(themes.randomTheme(self.proportion))
+        self.setTheme(self.newFloorTheme())
         self.PlaceNextLevelDoor()
 
         self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
@@ -1412,10 +1426,25 @@ class gameManager():
 
     # ------------------------------------------------------------- effects
 
+    def faceToward(self, enemy, fromPosition, toPosition):
+        """Turns an enemy to face from one tile toward another (it keeps its facing if they're the same tile).
+        A big enemy turns from the middle of its body. Facing: 0 left, 1 right, 2 up, 3 down."""
+        if fromPosition == toPosition or enemy is None:
+            return
+        R = self.rowLength
+        middle = (getattr(enemy, "size", 1) - 1) / 2 if fromPosition == getattr(enemy, "anchor", None) else 0
+        dx = toPosition % R - (fromPosition % R + middle)
+        dy = toPosition // R - (fromPosition // R + middle)
+        if abs(dx) >= abs(dy):
+            enemy.facing = 1 if dx > 0 else 0
+        else:
+            enemy.facing = 3 if dy > 0 else 2
+
     def hitPlayer(self, enemy, enemyPosition):
         """An enemy attacks the player."""
         if self.peaceful:  # developer console /peaceful
             return
+        self.faceToward(enemy, enemyPosition, self.playerPositionFlat)  # it turns to swing at you
         player = self.player
         if enemy.name in ("Goblin", "Goblin Chieftan") and player.hasEffect("goblin_fear") and rand.random() < 0.3:
             enemy.lastPlayerPosition = None
@@ -1567,6 +1596,8 @@ class gameManager():
             return
         if self.focus in LIST_WINDOWS:
             self.onWindowEnter(self.focus)
+        elif self.currentLocation[0] == SCORCHED_DOOR:
+            self.enterScorched()
         elif self.playerPositionFlat in self.doorPositions:
             self.onOpenDoor()
 
@@ -1643,6 +1674,8 @@ class gameManager():
                 self.thirst()
             if tile[2].hp <= 0:
                 self.killEnemy(target)
+            elif dealt > 0 and self.player.hasEffect("molten"):  # the Molten Blade
+                self.fireEnemy(target, relics.MOLTEN_FIRE, igniteChance=relics.MOLTEN_IGNITE_CHANCE)
         elif tile[0] in (3, 9):  # a chest or an item pile
             if self.roomItems is not None:
                 self.openWindow("items")
@@ -1667,6 +1700,9 @@ class gameManager():
                 self.messageBools["brokenSealMessage"] = True
                 self.painter.fade = 255
                 self.addUnsealed = True
+                self.openScorchedDoor()
+        if name == "Molten Wall" and not self.player.fireImmune():
+            self.firePlayer(MOLTEN_WALL_DAMAGE)
         broken = tile.pop()
         tile[0] = expansion.HOLE if getattr(broken, "holeBelow", False) else 0  # (the floor under it was broken)
         player = self.player
@@ -1705,6 +1741,11 @@ class gameManager():
         relics, and whatever doesn't fit in a full pouch, are left in a pile. Otherwise you get no loot: some of
         its gold and of what it pocketed spills on the ground, some goes to the enemy that killed it, and the
         rest is lost (see spillPockets)."""
+        if self.isBig(self.grid[position][2]):  # a giant: clear its other tiles, then it dies at its anchor
+            giant = self.grid[position][2]
+            position = giant.anchor
+            for p in self.footprint(position, giant.size)[1:]:
+                self.grid[p] = [0, self.grid[p][1]]
         tile = self.grid[position]
         enemy = tile.pop()
         self.EnemyPositions.discard(position)
@@ -1881,11 +1922,13 @@ class gameManager():
 
     def onOpenDoor(self):
         if self.playerPositionFlat == self.doorPositions[self.level]:
-            if self.level < len(self.doorPositions) - 1:
+            if self.proportion == SCORCHED:
+                self.leaveScorched()
+            elif self.level < len(self.doorPositions) - 1:
                 self.changeLevel(self.level + 1)
             else:
                 self.goToNewLevel()
-        elif self.level > 0 and self.playerPositionFlat == self.doorPositions[self.level - 1]:
+        elif self.level > 0 and self.level not in self.trackStarts and self.playerPositionFlat == self.doorPositions[self.level - 1]:
             self.changeLevel(self.level - 1)
 
     def onQuit(self, event):
@@ -1927,12 +1970,259 @@ class gameManager():
         self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
         self.afterLevelChange()
 
+    # ------------------------------------------------------ the Scorched Depths
+
+    def forceMoltenVault(self):
+        """The next new floor is All Gold with the Molten Vault theme (for testing the Scorched Depths route)."""
+        self.forcedOreFloor = ("All Gold", False)
+        self.forcedTheme = SCORCHED_THEME
+
+    def newFloorTheme(self):
+        """A theme for the floor just made: the forced one if it's waiting for this floor type, else random."""
+        if self.forcedTheme:
+            for data in themes.THEMES.get(self.proportion, []):
+                if data["name"] == self.forcedTheme:
+                    self.forcedTheme = None
+                    return themes.Theme(self.proportion, data)
+        return themes.randomTheme(self.proportion)
+
+    def openScorchedDoor(self):
+        """The Seal broke: on a Molten Vault floor a Scorched door opens on a random open tile (once per floor)."""
+        if self.proportion != "All Gold" or self.theme.name != SCORCHED_THEME or self.level in self.scorchedDoors:
+            return
+        spots = [i for i, tile in self.grid.items() if tile[0] == 0 and i != self.playerPositionFlat]
+        if not spots:
+            return
+        spot = rand.choice(spots)
+        self.grid[spot] = [SCORCHED_DOOR, self.grid[spot][1]]
+        self.scorchedDoors[self.level] = spot
+        self.addPopup("Somewhere, rock melts", self.playerPositionFlat)
+
+    def dropFloorsBelow(self, last):
+        """Every floor deeper than last is gone for good: its saved grid, its doors, and what's kept per floor."""
+        del self.levelGrids[last + 1:]
+        del self.doorPositions[last + 1:]
+        for store in (self.floorEvents, self.camps, self.memoryFade, self.scorchedDoors, self.fallen):
+            for floor in [f for f in store if f > last]:
+                del store[floor]
+        self.motherlodes = {f for f in self.motherlodes if f <= last}
+        self.trackStarts = {f for f in self.trackStarts if f <= last}
+        for station, (floor, _) in list(self.player.stationPlaced.items()):
+            if floor > last:  # set up on a floor that's gone: it's packed again
+                del self.player.stationPlaced[station]
+
+    def enterScorched(self):
+        """Through the Scorched door: a new Scorched Depths floor one deeper, with no door back up. Any floors you
+        had already been to below this one are gone (this starts a new track)."""
+        last = self.level
+        self.saveLevel()
+        self.dropFloorsBelow(last)
+        self.blood = {}
+        self.bloodDry = {}
+        self.grid, self.EnemyPositions, self.rooms, self.proportion, self.nodes = self.generateScorchedLevel(last + 1)
+        self.setTheme(themes.randomTheme(SCORCHED))
+        self.enemyOccupiedItemSpaces = {}
+        self.level = last + 1
+        self.deepest = max(self.deepest, self.level)
+        self.trackStarts.add(self.level)
+        self.PlaceNextLevelDoor()
+        self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
+        self.afterLevelChange()
+
+    def leaveScorched(self, falling=False):
+        """Down from the Scorched Depths (by its door or through a hole): the Scorched Depths floor is gone and a
+        normal floor takes its number, with no door back up. The normal track goes on from there."""
+        floor = self.level
+        landing = self.fallen.pop(floor, [])  # what fell from the Scorched Depths lands on the new floor
+        self.dropFloorsBelow(floor - 1)
+        if landing:
+            self.fallen[floor] = landing
+        self.blood = {}
+        self.bloodDry = {}
+        self.grid, self.EnemyPositions, self.rooms, self.proportion, self.nodes = self.generateNewLevel(depth=floor)
+        self.setTheme(self.newFloorTheme())
+        self.enemyOccupiedItemSpaces = {}
+        if self.newFloorMotherlode:
+            self.motherlodes.add(floor)
+        event = events.roll(floor)
+        if event:
+            self.floorEvents[floor] = event
+        self.trackStarts.add(floor)
+        self.PlaceNextLevelDoor()
+        if falling:
+            self.playerPositionFlat = self.openSpot(self.playerPositionFlat) or self.playerPositionFlat
+        self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
+        self.afterLevelChange()
+
+    def tilesAround(self, center, radius):
+        """The tiles in a square radius tiles out from center, staying on the map (no wrapping round a row)."""
+        R, rows = self.rowLength, self.numberOfSpots // self.rowLength
+        cx, cy = center % R, center // R
+        return [x + y * R for y in range(cy - radius, cy + radius + 1) for x in range(cx - radius, cx + radius + 1)
+                if 0 <= x < R and 0 <= y < rows]
+
+    def generateScorchedLevel(self, depth):
+        """A Scorched Depths floor: half Stone rooms, half Molten. Its walls come in blobs, not scattered single
+        tiles, so there's wide open ground between them. The Molten Blade waits in a chest in the middle."""
+        R, rows = self.rowLength, self.numberOfSpots // self.rowLength
+        grid = {i: [0, 0] for i in range(self.numberOfSpots)}
+        target, walls = int(self.numberOfSpots * SCORCHED_WALL_SHARE), 0
+        while walls < target:
+            cx, cy, radius = rand.randrange(R), rand.randrange(rows), rand.randint(1, 3)
+            for y in range(cy - radius, cy + radius + 1):
+                for x in range(cx - radius, cx + radius + 1):
+                    if 0 <= x < R and 0 <= y < rows and self.inCircle(x - cx, y - cy, radius) and grid[x + y * R][0] == 0:
+                        grid[x + y * R][0] = 2
+                        walls += 1
+        center = (rows // 2) * R + R // 2
+        if center == self.playerPositionFlat:
+            center += 3
+        for p in self.tilesAround(self.playerPositionFlat, 2) + self.tilesAround(center, 3):
+            grid[p][0] = 0
+        rooms, proportion, nodes = self.createRooms(CER.createNodes(grid, R, 5), SCORCHED)
+        for p in self.tilesAround(self.playerPositionFlat, 1):  # you arrive on cool stone
+            rooms["Molten"].discard(p)
+            rooms["Stone"].add(p)
+        self.placeRandomItems(grid, items.createRandomStatItems(3), 10, self.playerPositionFlat - 1)
+        self.createObjects(grid, rooms)
+        grid[center] = [3, 0, [relics.make("molten_blade")]]
+        self.newFloorMotherlode = False
+        giants = self.placeGiants(grid, rand.randint(*enemies.GIANT_COUNT), avoid=self.tilesAround(center, 4))
+        return grid, giants, rooms, proportion, nodes
+
+    # ---------------------------------------------------------------- big enemies
+    # A Fire Giant fills size x size tiles. Its anchor (top-left) is the tile on EnemyPositions; every tile of its
+    # footprint is [5, visibility, giant], the same object, so anything that hits a tile hits the giant.
+
+    def footprint(self, anchor, size=2):
+        """The tiles a size x size enemy anchored here covers, or None if that runs off the map."""
+        R, rows = self.rowLength, self.numberOfSpots // self.rowLength
+        x, y = anchor % R, anchor // R
+        if not (0 <= x <= R - size and 0 <= y <= rows - size):
+            return None
+        return [(x + dx) + (y + dy) * R for dy in range(size) for dx in range(size)]
+
+    def canFit(self, anchor, size=2, own=(), grid=None):
+        """Can a size x size enemy stand anchored here? Every tile open floor (or its own tiles, own)."""
+        grid = self.grid if grid is None else grid
+        tiles = self.footprint(anchor, size)
+        return tiles is not None and all(p in own or (grid[p][0] == 0 and p != self.playerPositionFlat) for p in tiles)
+
+    def putGiant(self, grid, anchor, giant):
+        for p in self.footprint(anchor, giant.size):
+            grid[p] = [5, grid[p][1], giant]
+        giant.anchor = anchor
+
+    def liftGiant(self, grid, giant):
+        for p in self.footprint(giant.anchor, giant.size):
+            grid[p] = [0, grid[p][1]]
+
+    def placeGiants(self, grid, count, avoid=()):
+        """Puts count Fire Giants on open ground, away from where you arrive. Returns their anchors."""
+        R, avoid = self.rowLength, set(avoid)
+        px, py = self.playerPositionFlat % R, self.playerPositionFlat // R
+        anchors = set()
+        spots = [i for i in grid if (i % R - px) ** 2 + (i // R - py) ** 2 > 15 ** 2]
+        rand.shuffle(spots)
+        for a in spots:
+            if len(anchors) >= count:
+                break
+            tiles = self.footprint(a)
+            if tiles and not avoid & set(tiles) and self.canFit(a, grid=grid):
+                self.putGiant(grid, a, enemies.FireGiant())
+                anchors.add(a)
+        return anchors
+
+    def isBig(self, enemy):
+        return getattr(enemy, "size", 1) > 1
+
+    def oncePerEnemy(self, positions):
+        """positions, leaving out every tile after the first that holds the same enemy (a giant's other tiles),
+        so a blast covering a whole giant hits it once."""
+        seen = set()
+        for p in positions:
+            tile = self.grid.get(p)
+            if tile is not None and tile[0] == 5 and len(tile) > 2:
+                if id(tile[2]) in seen:
+                    continue
+                seen.add(id(tile[2]))
+            yield p
+
+    def reachOf(self, giant, anchor, position):
+        """How many tiles position is from the nearest tile of a big enemy's body (diagonals count as 1)."""
+        R, n = self.rowLength, giant.size
+        ax, ay, px, py = anchor % R, anchor // R, position % R, position // R
+        return max(max(0, ax - px, px - (ax + n - 1)), max(0, ay - py, py - (ay + n - 1)))
+
+    def giantTurn(self, anchor, giant):
+        """One action for a giant. You within its reach (giant.reach tiles of its body, and it can see you, or
+        right beside it): it attacks. Otherwise it steps toward you, or where it last saw you, or somewhere it can
+        see, if its whole body fits there. Returns its anchor."""
+        tiles = self.footprint(anchor, giant.size)
+        player = self.playerPositionFlat
+        sight = set()
+        for p in (tiles[0], tiles[-1]):  # it looks from two corners of its body
+            sight |= self.rayCircleVision(p, giant.visionRange, 5)
+        sight -= set(tiles)
+        if self.peaceful or (self.playerHidden() and not giant.tremorSense):
+            sight.discard(player)
+        distance = self.reachOf(giant, anchor, player)
+        if not self.peaceful and (distance <= 1 or (distance <= getattr(giant, "reach", 1) and player in sight)):
+            self.giantHit(giant, anchor)
+            return anchor
+        if player in sight:
+            giant.lastPlayerPosition = player
+        elif giant.lastPlayerPosition is None or giant.lastPlayerPosition in tiles:
+            open_ = [p for p in sight if self.grid[p][0] == 0]
+            giant.lastPlayerPosition = rand.choice(open_) if open_ else None
+        target = giant.lastPlayerPosition
+        if target is None:
+            return anchor
+        R = self.rowLength
+        # aim the middle of its body at the target
+        dx = target % R - (anchor % R + (giant.size - 1) / 2)
+        dy = target // R - (anchor // R + (giant.size - 1) / 2)
+        sx, sy = (dx > 0) - (dx < 0), (dy > 0) - (dy < 0)
+        steps = [(sx, 0), (0, sy)] if abs(dx) >= abs(dy) else [(0, sy), (sx, 0)]
+        for mx, my in steps:
+            if not (mx or my):
+                continue
+            x, y = anchor % R + mx, anchor // R + my
+            if not 0 <= x < R:
+                continue
+            new = x + y * R
+            if self.canFit(new, giant.size, own=set(tiles)):
+                self.liftGiant(self.grid, giant)
+                self.putGiant(self.grid, new, giant)
+                return new
+        giant.lastPlayerPosition = None  # blocked: pick somewhere else next time
+        return anchor
+
+    def giantHit(self, giant, anchor):
+        """A giant's blow: a normal hit (dodges, Ward and thorns all count), then fire if it landed."""
+        before = self.player.damageTaken
+        self.hitPlayer(giant, anchor)
+        if self.player.damageTaken > before and not self.player.fireImmune():
+            dealt = max(0, giant.fireDamage - self.player.fireResistance())
+            self.player.damageTaken += dealt
+            if dealt == 0:
+                self.addPopup("Resisted", self.playerPositionFlat)
+            elif BURN_DAMAGE > self.player.fireResistance() and rand.random() < giant.igniteChance:
+                self.player.burnTurns = BURN_TURNS
+
+    def stepMolten(self):
+        """Standing on Molten floor burns you, unless fire can't hurt you."""
+        if self.currentLocation[0] == 2 or self.player.fireImmune():
+            return  # (burrowed into a wall: not standing on the floor)
+        if plants.floorOf(self.playerPositionFlat, self.rooms) == "Molten":
+            self.firePlayer(MOLTEN_FLOOR_DAMAGE)
+
     def goToNewLevel(self):
         self.saveLevel()
         self.blood = {}
         self.bloodDry = {}
         self.grid, self.EnemyPositions, self.rooms, self.proportion, self.nodes = self.generateNewLevel(depth=self.level + 1)
-        self.setTheme(themes.randomTheme(self.proportion))
+        self.setTheme(self.newFloorTheme())
         self.enemyOccupiedItemSpaces = {}
         self.level += 1
         if self.newFloorMotherlode:
@@ -2000,12 +2290,14 @@ class gameManager():
 
     def updateDoors(self):
         currentDoorPos = self.doorPositions[self.level]
-        previousDoorPos = self.doorPositions[self.level - 1] if self.level > 0 else None
+        previousDoorPos = self.doorPositions[self.level - 1] if self.level > 0 and self.level not in self.trackStarts else None
 
         if self.playerPositionFlat == currentDoorPos:
             self.currentPosition = "Door to Next Level"
         elif self.playerPositionFlat == previousDoorPos:
             self.currentPosition = "Door to previous Level"
+        elif self.currentLocation[0] == SCORCHED_DOOR:
+            self.currentPosition = "Scorched Door"
         elif self.currentLocation[0] == 3:
             self.currentPosition = "Items" if len(self.currentLocation[2]) > 1 else "Item"
         elif self.currentLocation[0] == 9:
@@ -2163,6 +2455,8 @@ class gameManager():
                 return wall.WoodWall()
             case "Gold":
                 return wall.GoldWall()
+            case "Molten":
+                return wall.MoltenWall()
             case _:
                 return wall.SandWall()
 
@@ -2198,7 +2492,7 @@ class gameManager():
 
     def createRooms(self, emptyNodes, proportion=None):
         """proportion picks the floor type; None means a random one."""
-        rooms = {"Stone": set(), "Wood": set(), "Sand": set(), "Gold": set()}
+        rooms = {"Stone": set(), "Wood": set(), "Sand": set(), "Gold": set(), "Molten": set()}
 
         nodes = []
         for node in emptyNodes:
@@ -2218,7 +2512,8 @@ class gameManager():
             randomProportions[proportion] = [numbers[room] for room, weight in wall.ORE_FLOORS[proportion]["rooms"].items()
                                              for _ in range(weight)]
 
-        roomNames = {0: "Stone", 1: "Wood", 2: "Gold", 3: "Sand"}
+        randomProportions[SCORCHED] = [0, 4]  # half Stone rooms, half Molten
+        roomNames = {0: "Stone", 1: "Wood", 2: "Gold", 3: "Sand", 4: "Molten"}
         if proportion in ("Mixed", "Geode"):  # these always have some of every room type
             rand.shuffle(emptyNodes)
             for roomName in ("Stone", "Wood", "Gold", "Sand"):
@@ -2660,7 +2955,7 @@ class gameManager():
         if shot["effect"] == "Fire":
             self.igniteArea(area + [p for p in self.plantsAtEdge(landing, radius) if p not in area])
             hit = 0
-            for position in area:
+            for position in self.oncePerEnemy(area):
                 tile = self.grid[position]
                 if tile[0] == 5 and len(tile) > 2:
                     hit += 1
@@ -2672,7 +2967,7 @@ class gameManager():
                 self.addPopup("Nothing burns", landing)
         elif shot["effect"] == "Magic":  # Demise Flask: magic damage, but Organizers take root instead
             hit = 0
-            for position in area:
+            for position in self.oncePerEnemy(area):
                 tile = self.grid[position]
                 if tile[0] == 5 and len(tile) > 2:
                     hit += 1
@@ -2689,7 +2984,7 @@ class gameManager():
             hit = 0
             self.sound.playExplosion()
             self.igniteArea(area + [p for p in self.plantsAtEdge(landing, radius) if p not in area])
-            for position in area:
+            for position in self.oncePerEnemy(area):
                 tile = self.grid[position]
                 if tile[0] == 5 and len(tile) > 2:
                     hit += 1
@@ -2733,7 +3028,8 @@ class gameManager():
         Enemies, chests, item piles and plants on it fall to the floor below; so do you, if you're on it."""
         R = self.rowLength
         cx, cy = center % R, center // R
-        below = self.fallen.setdefault(self.level + 1, [])
+        # (from the Scorched Depths, what falls lands on the floor that replaces it, at the same number)
+        below = self.fallen.setdefault(self.level if self.proportion == SCORCHED else self.level + 1, [])
         for y in range(cy - radius, cy + radius + 1):
             for x in range(cx - radius, cx + radius + 1):
                 if not 0 <= x < R or not self.inCircle(x - cx, y - cy, radius):
@@ -2746,8 +3042,10 @@ class gameManager():
                 if kind == 2:
                     tile[2].holeBelow = True  # it stands over a hole now
                     continue
-                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE):
+                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR):
                     continue
+                if kind == 5 and len(tile) > 2 and self.isBig(tile[2]):
+                    continue  # a giant is too big to fall: the floor under it holds
                 if p == self.playerPositionFlat:  # what you stand on falls with you (you fall: the main loop)
                     if self.currentLocation[0] in (3, 8, 9) and len(self.currentLocation) > 2:
                         expansion.dropOut(self, self.currentLocation[2])
@@ -2773,7 +3071,9 @@ class gameManager():
         """You fell through a hole: FALL_DAMAGE, and you land on the floor below, where you fell (or on the nearest
         open floor to it there)."""
         self.player.damageTaken += FALL_DAMAGE
-        if self.level < len(self.doorPositions) - 1:
+        if self.proportion == SCORCHED:  # the floor below the Scorched Depths is a new one, like its door
+            self.leaveScorched(falling=True)
+        elif self.level < len(self.doorPositions) - 1:
             self.changeLevel(self.level + 1, falling=True)
         else:
             self.goToNewLevel()
@@ -2839,7 +3139,7 @@ class gameManager():
         dealt = max(0, damage - getattr(enemy, "fireResistance", 0))
         return round(dealt * (1 - getattr(enemy, "fireResistPercent", 0)))
 
-    def fireEnemy(self, position, damage, canIgnite=True):
+    def fireEnemy(self, position, damage, canIgnite=True, igniteChance=BURN_CHANCE):
         enemy = self.grid[position][2]
         dealt = self.enemyFireDamage(enemy, damage)
         if dealt == 0:
@@ -2850,7 +3150,7 @@ class gameManager():
         if enemy.hp <= 0:
             self.killEnemy(position)
             return
-        if canIgnite and self.enemyFireDamage(enemy, BURN_DAMAGE) > 0 and rand.random() < BURN_CHANCE:
+        if canIgnite and self.enemyFireDamage(enemy, BURN_DAMAGE) > 0 and rand.random() < igniteChance:
             enemy.burnTurns = BURN_TURNS  # shown as flames on it (no point setting alight something its burn can't hurt)
 
     # ------------------------------------------------------------------ magic
@@ -2955,7 +3255,7 @@ class gameManager():
     def stepFires(self):
         if not self.fires:
             return
-        for position in list(self.fires):
+        for position in list(self.oncePerEnemy(list(self.fires))):
             if position in self.freshFires:
                 continue
             tile = self.grid[position]
@@ -3089,7 +3389,7 @@ class gameManager():
                 if i in fading:
                     del fading[i]
                 continue
-            if tile[0] in (4, 6) or (i % R - hx) ** 2 + (i // R - hy) ** 2 <= far:
+            if tile[0] in (4, 6, SCORCHED_DOOR) or (i % R - hx) ** 2 + (i // R - hy) ** 2 <= far:
                 continue
             turns = fading.get(i, 0) + 1
             if turns >= FORGET_TURNS:
@@ -3117,7 +3417,7 @@ class gameManager():
         for i, tile in self.grid.items():
             if tile[1] != 2:
                 continue
-            door = tile[0] in (4, 6)
+            door = tile[0] in (4, 6, SCORCHED_DOOR)
             if (i % R - hx) ** 2 + (i // R - hy) ** 2 >= edge:
                 shades[i] = DOOR_SHADE_MOST if door else 1.0
             elif not door and i in fading:
@@ -3186,6 +3486,7 @@ class gameManager():
         expansion.stepCamp(self)
         self.searingLight()
         self.stepBurning()
+        self.stepMolten()
         self.stepDemise()
         self.stepFires()
         self.stepBlood()
@@ -3227,12 +3528,23 @@ class gameManager():
                 continue  # stale position, the enemy is no longer here
             currentEnemy: enemies.Enemy = self.grid[i][2]
             position = i
+            if self.isBig(currentEnemy):  # a giant: its whole body moves at once (giantTurn)
+                for action in range(self.enemyActions(currentEnemy)):
+                    if self.grid[position][0] != 5 or len(self.grid[position]) < 3 or self.grid[position][2] is not currentEnemy:
+                        break
+                    before = position
+                    position = self.giantTurn(position, currentEnemy)
+                    self.faceToward(currentEnemy, before, position)
+                listOfNewPositions.add(position)
+                continue
             for action in range(self.enemyActions(currentEnemy)):  # a fast one sometimes acts twice
                 tile = self.grid[position]
                 if action and (tile[0] != 5 or len(tile) < 3 or tile[2] is not currentEnemy):
                     break  # it died (or something took its place) during its first action
                 tile.pop()
+                before = position
                 position, currentEnemy = self.enemyAct(position, currentEnemy, organizerContext, campContext)
+                self.faceToward(currentEnemy, before, position)
                 self.grid[position].append(currentEnemy)
             listOfNewPositions.add(position)
         # leave out anyone an Organizer killed after it had already moved
@@ -3433,6 +3745,8 @@ class gameManager():
             "camps": self.camps,
             "fallen": self.fallen,
             "memoryFade": self.memoryFade,
+            "scorchedDoors": self.scorchedDoors,
+            "trackStarts": self.trackStarts,
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -3456,7 +3770,10 @@ class gameManager():
             self.camps = data.get("camps", {})
             self.fallen = data.get("fallen", {})
             self.memoryFade = data.get("memoryFade", {})
+            self.scorchedDoors = data.get("scorchedDoors", {})
+            self.trackStarts = data.get("trackStarts", set())
             self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
+            self.forcedTheme = None
             self.enemyOccupiedItemSpaces = {}  # (also only set by newGame)
             self.doorPositions = data["doorPositions"]
             self.playerPositionFlat = data["playerPositionFlat"]
@@ -3548,7 +3865,7 @@ class gameManager():
             return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
             return tile[2].name + (" (burning)" if getattr(tile[2], "burnTurns", 0) > 0 else "")
-        return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
+        return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
 
     def windowSpec(self, windowId):
         """Everything the renderer needs to draw one window."""
@@ -3719,9 +4036,11 @@ class gameManager():
             lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines
         lines.append(("label", (item.slot or "").upper(), getattr(item, "quality", "")))
-        scaling = player.attributeBonuses.get(item.attributeScaling, 0)
+        scaling = player.scalingBonus(item)
+        attrs = item.attributeScaling if isinstance(item.attributeScaling, (tuple, list)) else (item.attributeScaling,)
+        attrNames = "+".join(a[:3].upper() for a in attrs if a)
         for stat, value in self.statLines(item):
-            lines.append(("row", stat, f"+{value}" + (f"  (+{scaling} STR)" if scaling and item.attributeScaling == "strength" else "")))
+            lines.append(("row", stat, f"+{value}" + (f"  (+{scaling} {attrNames})" if scaling and attrNames in ("STR", "STR+INT") else "")))
         tags = ([item.relicPower] if getattr(item, "relicPower", None) else []) + list(getattr(item, "enchants", []))
         for tag in tags:
             name, text = relics.EFFECTS.get(tag, (tag, ""))
@@ -3787,7 +4106,7 @@ class gameManager():
             return
 
         messageKey, messageText = None, None
-        messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"Floor {self.level}\n{self.floorSubtitle()}",
+        messageTexts = {"escapeMessage": "Escape", "floorLevelMessage": f"{SCORCHED}\n{self.theme.name}" if self.proportion == SCORCHED else f"Floor {self.level}\n{self.floorSubtitle()}",
                         "brokenSealMessage": "The Seal is Broken",
                         "eventMessage": events.name(self.activeEvent()) if self.activeEvent() else ""}
         for key, active in self.messageBools.items():

@@ -50,7 +50,7 @@ def itemCatalog():
     return catalog
 
 
-ENEMY_CLASSES = enemies.lowerFloorEnemies + [enemies.Unsealed] + enemies.organizers
+ENEMY_CLASSES = enemies.lowerFloorEnemies + [enemies.Unsealed, enemies.FireGiant] + enemies.organizers
 
 
 def enemyCatalog():
@@ -79,6 +79,8 @@ class DevConsole():
             "events": (self.cmdEvents, "/events", "Lists the floor events and this floor's event, if any"),
             "event": (self.cmdEvent, "/event <id>", "Starts a floor event now (ids: /events)"),
             "orefloor": (self.cmdOreFloor, "/orefloor <type> [mother]", "Makes the next new floor an ore floor (types: /orefloor)"),
+            "moltenvault": (self.cmdMoltenVault, "/moltenvault", "Makes the next new floor All Gold with the Molten Vault theme"),
+            "scorched": (self.cmdScorched, "/scorched", "Goes straight to a new Scorched Depths floor (starts a new track)"),
             "clear": (self.cmdClear, "/clear", "Clears the console"),
         }
         self.aliases = {"additem": "give", "add": "give", "enemies": "enemy", "item": "items", "aggro": "peaceful", "map": "reveal", "seeall": "reveal", "?": "help"}
@@ -365,6 +367,14 @@ class DevConsole():
                 return
         gm.autoPlay = {"ms": ms, "next": 0}
         self.write("good", f"Watching: a turn every {ms} ms. Esc or /play stops")
+
+    def cmdMoltenVault(self, _args):
+        self.gm.forceMoltenVault()
+        self.write("good", "The next new floor will be an All Gold Molten Vault. Take the stairs down, then break 10 gold walls")
+
+    def cmdScorched(self, _args):
+        self.gm.enterScorched()
+        self.write("good", "Into the Scorched Depths. The Molten Blade is in the chest at the center")
 
     def cmdClear(self, _args):
         self.log = []

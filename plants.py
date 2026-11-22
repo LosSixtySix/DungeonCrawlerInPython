@@ -182,8 +182,8 @@ class Plant():
 
 def floorOf(i, rooms):
     """The floor type of a tile (the same rule the renderer uses to color floors)."""
-    for room in ("Stone", "Wood", "Gold"):
-        if i in rooms[room]:
+    for room in ("Stone", "Wood", "Gold", "Molten"):
+        if i in rooms.get(room, ()):
             return room
     return "Sand"
 

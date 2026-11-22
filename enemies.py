@@ -60,6 +60,20 @@ class Unsealed(Enemy):
         self.allSight = True
         self.fireResistPercent = 0.8  # fire barely touches it
 
+
+class FireGiant(Enemy):
+    """Scorched Depths. Fills a 2x2 block of tiles: its anchor (top-left, the one on gameManager.EnemyPositions)
+    and three part tiles that hold this same object. Hits for normal damage plus fire, and fire can't hurt it."""
+    def __init__(self):
+        super().__init__(30, 14, 0.75, 0, 6, "Fire Giant", 60)
+        self.size = 2              # tiles across (and down)
+        self.reach = 3             # hits you up to this many tiles from its body (1 = right beside it, +2 extra)
+        self.anchor = None         # its top-left tile, kept up to date as it moves
+        self.fireDamage = 3        # fire damage added to every hit that lands
+        self.igniteChance = 0.5    # chance that hit sets you burning
+        self.visionRange = 6
+        self.fireResistPercent = 1.0  # fire can't hurt it (Molten floor included)
+
 class GoblinBuilder(Enemy):
     """Builds an Expansion camp: bonfires, huts and spawners (see expansion.py, which runs its turns)."""
     def __init__(self):
@@ -110,6 +124,7 @@ class PlantOrganizer(Organizer):
 
 lowerFloorEnemies = [Goblin,GoblinChief,DireRat,DireMole]
 organizers = [SpiralOrganizer, CircleOrganizer, SquareOrganizer, PlantOrganizer]
+GIANT_COUNT = (2, 3)  # Fire Giants on each Scorched Depths floor
 ORGANIZER_CHANCE = 0.2  # each enemy on a new floor is an Organizer (of a random kind) this often
 
 if __name__ == "__main__":

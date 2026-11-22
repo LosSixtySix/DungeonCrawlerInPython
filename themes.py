@@ -247,6 +247,38 @@ THEMES = {
     ],
     # Ore floors (wall.ORE_FLOORS): rare floors thick with one ore or gem. Their walls are picked to contrast
     # with the ore flecks (and coal's dark ones on metal floors), so a copper floor isn't copper-colored.
+    "Scorched Depths": [
+        {"name": "Cinder Halls",
+         "fog": "#0c0605",
+         "panel": "#140908",
+         "font": "#ff9c4a",
+         "boxLine": "#4a1e12",
+         "select": "#ffe0a0",
+         "player": "#bfe8ff",
+         "marker": "#0c0605",
+         "enemy": "#ffd23a",
+         "chest": "#9a7aff",
+         "doorNext": "#3ad0ff",
+         "doorPrev": "#20607a",
+         "aim": "#7a1a08",
+         "floor": {"Stone": "#2e2624", "Wood": "#3a2418", "Sand": "#4a3a2c", "Gold": "#5a3a14", "Molten": "#6a2410"},
+         "wall": {"Stone": "#5a4c48", "Wood": "#6a4430", "Sand": "#7a6450", "Gold": "#e6a830", "Molten": "#e8601c"}},
+        {"name": "Ashen Caldera",
+         "fog": "#0e0b0b",
+         "panel": "#161212",
+         "font": "#f2b880",
+         "boxLine": "#4a3430",
+         "select": "#fff0d0",
+         "player": "#d0f0ff",
+         "marker": "#0e0b0b",
+         "enemy": "#ffcc40",
+         "chest": "#8a7aff",
+         "doorNext": "#40c8f0",
+         "doorPrev": "#24607a",
+         "aim": "#802010",
+         "floor": {"Stone": "#3c3836", "Wood": "#44302a", "Sand": "#585048", "Gold": "#5e4420", "Molten": "#7a2c12"},
+         "wall": {"Stone": "#6e6662", "Wood": "#7a5a48", "Sand": "#8e8272", "Gold": "#e0b040", "Molten": "#ff7a2a"}},
+    ],
     "Copper Lode": [
         {"name": "Verdigris Seam",
          "fog": "#0a1110",
@@ -585,6 +617,9 @@ THEMES = {
 }
 
 
+MOLTEN_DEFAULT = {"floor": "#5a2410", "wall": "#d2561c"}
+
+
 def hexToRGB(h):
     return [int(h[i:i + 2], 16) for i in (1, 3, 5)]
 
@@ -617,9 +652,10 @@ class Theme():
         self.colors["memChest"] = remembered(self.colors["chest"], fog)
         # Dimmer text for hints and "OFF" values: the text color pulled toward the panel color.
         self.colors["muted"] = mix(self.colors["font"], self.colors["panel"], 0.45)
-        for room in ["Stone", "Wood", "Sand", "Gold"]:
-            floor = hexToRGB(data["floor"][room])
-            wall = hexToRGB(data["wall"][room])
+        for room in ["Stone", "Wood", "Sand", "Gold", "Molten"]:
+            # only the Scorched Depths themes set Molten; every other theme gets the same default lava
+            floor = hexToRGB(data["floor"].get(room, MOLTEN_DEFAULT["floor"]))
+            wall = hexToRGB(data["wall"].get(room, MOLTEN_DEFAULT["wall"]))
             self.colors[f"floor{room}"] = floor
             self.colors[f"wall{room}"] = wall
             self.colors[f"memFloor{room}"] = remembered(floor, fog)

@@ -714,6 +714,77 @@ def makeHole(openSides, variant, floor, tileSize):
     return makeSurface(holeRows(openSides, variant), roles_, tileSize)
 
 
+# The Fire Giant: 20x20, top-down, facing up. It covers 2x2 tiles; each tile draws its own quarter.
+FIRE_GIANT = [
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "........kkkk........",
+    ".kkkkk.kffffk.......",
+    ".kRrrkkfMyyMfkkkkkk.",
+    ".kkRrkkfyMMyfkkRRRk.",
+    ".kkRkkkkfMMfkkkkRkk.",
+    "kRRrrRRRkffkRRRrrRRk",
+    "kMmRRrmRRkkRRmrRRmRk",
+    "kRRmmRRrRRRRrRRmmRMk",
+    "kRRRRmRRrRRrRRmRRRRk",
+    ".kRmRmmRRRRRRmRRmRk.",
+    "..kRRmRmmMMmmRRmmk..",
+    "...kRRRRmMMmRMRRk...",
+    "....kRMRRmmRRRRk....",
+    ".....kkRRmmRRkk.....",
+    ".......kkkkkk.......",
+    "....................",
+]
+FIRE_GIANT_COLORS = {"r": (58, 38, 34), "R": (90, 58, 48), "m": (232, 96, 28), "M": (255, 174, 58), "y": (255, 226, 122), "f": (255, 122, 26)}
+GIANT_SPRITES = {"Fire Giant": (FIRE_GIANT, FIRE_GIANT_COLORS)}
+
+
+# Enemies turn to face the way they last moved (enemy.facing, the same numbers as the player's direction:
+# 0 left, 1 right, 2 up, 3 down). ENEMY_FACING is the way each picture is drawn; anything not listed is drawn
+# facing down. Organizers and the Unsealed are round and never turn.
+FACINGS = (0, 1, 2, 3)
+ENEMY_FACING = {"Fire Giant": 2}
+
+
+def turns(name):
+    return "Organizer" not in name
+
+
+def baseFacing(name):
+    return ENEMY_FACING.get(name, 3)
+
+
+def facingRows(rows, name, facing):
+    """The picture for name turned to face facing."""
+    if not turns(name):
+        return rows
+    return rotateClockwise(rows, (PLAYER_TURNS[facing] - PLAYER_TURNS[baseFacing(name)]) % 4)
+
+
+def makeGiantQuarters(rows, palette, tileSize):
+    """A picture bigger than one tile (n x n pixels for n/10 tiles a side), shadowed like makeShadowed, cut into
+    one picture per tile: [top-left, top-right, ..., bottom-right], reading across."""
+    n = len(rows)
+    surface = pygame.Surface((n, n), pygame.SRCALPHA)
+    for y in range(n - 1):
+        for x in range(n - 1):
+            if rows[y][x] != "." and rows[y + 1][x + 1] == ".":
+                surface.set_at((x + 1, y + 1), (0, 0, 0, 115))
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            if ch != ".":
+                surface.set_at((x, y), palette[ch])
+    tiles = n // 10
+    surface = pygame.transform.scale(surface, (tileSize * tiles, tileSize * tiles))
+    return [surface.subsurface(pygame.Rect(qx * tileSize, qy * tileSize, tileSize, tileSize)).copy()
+            for qy in range(tiles) for qx in range(tiles)]
+
+
+SCORCHED_DOOR_GLOW = (214, 84, 22)  # the lava the Scorched door's pit is drawn over
+
+
 def makeSurface(rows, palette, tileSize):
     surface = pygame.Surface((10, 10), pygame.SRCALPHA)
     for y, row in enumerate(rows):
@@ -733,7 +804,10 @@ def buildSprites(colors, tileSize):
         "piles": [makeSurface(rows, pileRoles(colors, fixed), tileSize) for rows, fixed in PILE_SPRITES],
         "glowrock": makeShadowed(GLOWROCK, enemyRoles(colors, GLOWROCK_COLORS), tileSize),
         "player": {facing: makePlayer(colors, facing, tileSize) for facing in PLAYER_TURNS},
-        "enemies": {name: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for name, (rows, fixed) in ENEMY_SPRITES.items()},
+        "enemies": {name: {f: makeShadowed(facingRows(rows, name, f), enemyRoles(colors, fixed), tileSize) for f in FACINGS}
+                    for name, (rows, fixed) in ENEMY_SPRITES.items()},
+        "giants": {name: {f: makeGiantQuarters(facingRows(rows, name, f), enemyRoles(colors, fixed), tileSize) for f in FACINGS}
+                   for name, (rows, fixed) in GIANT_SPRITES.items()},
         "unsealed": [makeShadowed(unsealedFrame(colors, f), enemyRoles(colors, UNSEALED_COLORS), tileSize) for f in range(SHARD_FRAMES)],
         "doorUp": makeSurface(MOONBEAM, roles(colors, colors["doorPrev"]), tileSize),
         "stations": {sid: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for sid, (rows, fixed) in STATION_SPRITES.items()},
@@ -741,7 +815,7 @@ def buildSprites(colors, tileSize):
         "sprouts": {kind: makeShadowed(SPROUT, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind in PLANT_SPRITES},
         "youngPlants": {kind: makeShadowed(YOUNG_PLANT, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind in PLANT_SPRITES},
         "seedPods": makeSurface(SEED_PODS, SEED_POD_COLORS, tileSize),
-        "factions": {(name, look): makeShadowed(rows, enemyRoles(colors, fixed), tileSize)
+        "factions": {(name, look): {f: makeShadowed(facingRows(rows, name, f), enemyRoles(colors, fixed), tileSize) for f in FACINGS}
                      for look in EXPANSION_LOOKS for name, (rows, fixed) in factionPictures(look).items()},
         "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
         "campChests": {look: makeShadowed(CAMP_CHEST, enemyRoles(colors, campChestColors(look)), tileSize) for look in EXPANSION_LOOKS},
