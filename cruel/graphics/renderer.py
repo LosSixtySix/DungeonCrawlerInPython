@@ -273,7 +273,7 @@ class renderer():
 
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
-             console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None,
+             console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None, wallLamps=None,
              memoryFalloff=None, zoom=1, glowLight=None, ownSight=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
@@ -297,6 +297,7 @@ class renderer():
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
         self.lightStyleNow = lightStyle  # fires sway the same way (see fireLevel)
         self.fireLight = fireLight or {}
+        self.wallLamps = wallLamps or {}  # {tile: metropolis.WallLamp}: drawn on their wall, over whatever stands there
         self.glowLight = glowLight or {}
         self.ownSight = ownSight or set()
         self.memoryFade = memoryFade or {}  # remembered tile -> how far it has faded to black, 0..1
@@ -1858,6 +1859,12 @@ class renderer():
         return self.sprites["glowrock"] if items.onlyGlowrocks(pile) else self.sprites["piles"][pile.look]
 
     def drawTile(self, grid, i, x, y, rooms, playerDirection, memorized):
+        self.drawTileContents(grid, i, x, y, rooms, playerDirection, memorized)
+        lamp = getattr(self, "wallLamps", {}).get(i)
+        if lamp is not None:  # a wall lamp: on the wall side of the tile, over whoever stands under it
+            self.mapSurface.blit(self.sprites["wallLamps"][lamp.side], (x * self.tileSize, y * self.tileSize))
+
+    def drawTileContents(self, grid, i, x, y, rooms, playerDirection, memorized):
         ts = self.tileSize
         match grid[i][0]:
             case 1:  # Player: the Torchbearer facing the way it last moved, on the floor it stands on

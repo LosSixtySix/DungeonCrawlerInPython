@@ -233,7 +233,7 @@ class ShopSignTests(unittest.TestCase):
     def test_a_sign_blocks_the_way_and_says_the_shop_name(self):
         game = self.game
         signSpot, kind = self.signs()[0]
-        support.placePlayer(game, signSpot - game.rowLength if game.grid[signSpot - game.rowLength][0] == FLOOR else signSpot + game.rowLength)
+        support.placePlayer(game, next(spot for spot in game.neighbors(signSpot) if game.grid[spot][0] == FLOOR))
         before = game.playerPositionFlat
         game.movePlayer(signSpot)
         self.assertEqual(game.playerPositionFlat, before)

@@ -260,6 +260,22 @@ STREET_LIGHT = [
 ]
 STREET_LIGHT_COLORS = {"y": (190, 140, 50), "Y": (240, 190, 90), "W": (255, 240, 190)}
 
+# A Metropolis wall lamp, hung on the wall at the top of its tile (turned for the other sides): a small lit lantern
+# on a bracket. It only covers the edge of the tile, so whoever stands under it still shows.
+WALL_LAMP = [
+    "...kkkk...",
+    "...kyyk...",
+    "..kYWWYk..",
+    "...kYYk...",
+    "....kk....",
+    "..........",
+    "..........",
+    "..........",
+    "..........",
+    "..........",
+]
+WALL_LAMP_TURNS = {"up": 0, "right": 1, "down": 2, "left": 3}  # clockwise quarter turns for a wall on that side
+
 PEDDLER_STONE_COLOR = (86, 92, 104)  # the Peddler's room walls: cold blue-gray, the same on every floor
 
 # The Metropolis's Dwellers (metropolis.py), drawn on their design sheet: upright insectoids seen from above, a big
@@ -953,6 +969,8 @@ def buildSprites(colors, tileSize):
         "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
         "signpost": makeShadowed(SIGNPOST, enemyRoles(colors, SIGNPOST_COLORS), tileSize),
         "streetLight": makeShadowed(STREET_LIGHT, enemyRoles(colors, STREET_LIGHT_COLORS), tileSize),
+        "wallLamps": {side: makeShadowed(rotateClockwise(WALL_LAMP, turns), enemyRoles(colors, STREET_LIGHT_COLORS), tileSize)
+                      for side, turns in WALL_LAMP_TURNS.items()},
         "shopSigns": {kind: makeShadowed(SHOP_SIGN, enemyRoles(colors, shopSignColors(kind)), tileSize) for kind in SHOP_SIGN_COLORS},
         "campChests": {look: makeShadowed(CAMP_CHEST, enemyRoles(colors, campChestColors(look)), tileSize) for look in EXPANSION_LOOKS},
         "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],
