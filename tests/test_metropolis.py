@@ -11,8 +11,10 @@ from cruel.core import gamemanager
 from cruel.entities import enemies
 from cruel.inventory import relics
 from cruel.world import dwellers
+from cruel.world import events
 from cruel.world import metropolis
 from cruel.world import peddler
+from cruel.world import plants
 from cruel.world import themes
 from cruel.world import wall
 from tests import support
@@ -242,9 +244,8 @@ class AppearingTests(unittest.TestCase):
         self.assertIn(game.theme.name, [data["name"] for data in themes.THEMES[metropolis.METROPOLIS]])
         self.assertTrue(game.floorSubtitle().startswith("Metropolis  -  "))
 
-    def test_a_city_has_no_floor_event_no_peddler_and_no_other_monsters(self):
+    def test_a_city_has_no_peddler_and_no_other_monsters(self):
         game = cityGame()
-        self.assertNotIn(game.level, game.floorEvents)
         for spot in game.EnemyPositions:
             self.assertTrue(dwellers.isDweller(game.grid[spot][2]))
         self.assertFalse(any(tile[0] == peddler.SIGNPOST for tile in game.grid.values()))
@@ -253,11 +254,71 @@ class AppearingTests(unittest.TestCase):
         game = cityGame()
         self.assertIn(game.doorPositions[game.level], game.rooms[metropolis.STREET])
 
+    def test_a_city_can_get_a_floor_event(self):
+        random.seed(2)
+        game = support.newGame()
+        game.saveGame = lambda *args, **kwargs: None
+        game.metropolisNext = True
+        with mock.patch.object(events, "EVENT_CHANCE", 1.0):
+            game.goToNewLevel()
+        self.assertEqual(game.proportion, metropolis.METROPOLIS)
+        self.assertIn(game.floorEvents[game.level]["id"], events.EVENTS)
+
     def test_no_wild_plants_spring_up_in_a_city(self):
         game = cityGame()
         for _ in range(40):
             game.enemyTurn()
         self.assertFalse(any(tile[0] == 8 for tile in game.grid.values()))
+
+
+class CityEventTests(unittest.TestCase):
+    """Overgrowth and Expansion on a city floor."""
+
+    def plantCount(self, game):
+        return sum(1 for tile in game.grid.values() if tile[0] == 8)
+
+    def startSoon(self, game, eventId):
+        game.floorEvents[game.level] = {"id": eventId, "turnsLeft": 1, "active": False}
+        game.stepFloorEvent()
+
+    def test_overgrowth_on_a_floor_with_no_plants_plants_three_patches(self):
+        game = cityGame()
+        self.assertEqual(self.plantCount(game), 0)
+        realAddPatch = plants.addPatch
+        patches = []
+        with mock.patch.object(plants, "addPatch", lambda *args, **kwargs: patches.append(1) or realAddPatch(*args, **kwargs)):
+            self.startSoon(game, "overgrowth")
+        self.assertEqual(game.activeEvent(), "overgrowth")
+        self.assertEqual(len(patches), events.OVERGROWTH_SEEDS)
+        self.assertGreaterEqual(self.plantCount(game), events.OVERGROWTH_SEEDS)
+
+    def test_the_overgrowth_plants_grow_and_are_kept_going(self):
+        game = cityGame()
+        self.startSoon(game, "overgrowth")
+        for _ in range(30):
+            game.enemyTurn()
+        self.assertGreater(self.plantCount(game), 0)
+
+    def test_overgrowth_on_a_floor_that_has_plants_plants_no_more(self):
+        random.seed(5)
+        game = support.newGame(level=1)
+        before = self.plantCount(game)
+        self.assertGreater(before, 0)
+        self.startSoon(game, "overgrowth")
+        self.assertEqual(self.plantCount(game), before)
+
+    def test_the_console_starts_overgrowth_with_its_seeds_too(self):
+        game = cityGame()
+        game.console.cmdEvent(["overgrowth"])
+        self.assertEqual(game.activeEvent(), "overgrowth")
+        self.assertGreater(self.plantCount(game), 0)
+
+    def test_expansion_brings_a_war_band_into_the_city(self):
+        game = cityGame()
+        self.startSoon(game, "expansion")
+        game.stepFloorEvent()
+        goblins = [spot for spot in game.EnemyPositions if getattr(game.grid[spot][2], "faction", None) is not None]
+        self.assertEqual(len(goblins), len(gamemanager.expansion.WARBAND))
 
 
 class CalmDwellerTests(unittest.TestCase):

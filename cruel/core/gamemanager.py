@@ -2350,7 +2350,7 @@ class gameManager():
         if self.newFloorMotherlode:
             self.motherlodes.add(self.level)
         self.deepest = max(self.deepest, self.level)
-        event = events.roll(self.level) if self.proportion != metropolis.METROPOLIS else None  # (a city stays calm)
+        event = events.roll(self.level)
         if event:
             self.floorEvents[self.level] = event
         if upDoor:
@@ -3709,10 +3709,18 @@ class gameManager():
             return
         event["turnsLeft"] -= 1
         if event["turnsLeft"] <= 0:
-            event["active"] = True
-            self.messageBools["eventMessage"] = True
-            self.painter.fade = 255
-            self.change = True
+            self.startEvent(event)
+
+    def startEvent(self, event):
+        """This floor's event starts: its name shows big on screen. Overgrowth on a floor with no plants (a city,
+        say) plants events.OVERGROWTH_SEEDS wild patches in random places first, so it has something to grow."""
+        event["active"] = True
+        if event["id"] == "overgrowth" and not any(tile[0] == 8 for tile in self.grid.values()):
+            for _ in range(events.OVERGROWTH_SEEDS):
+                plants.addPatch(self.grid, self.rooms, self.rowLength, None, avoid={self.playerPositionFlat})
+        self.messageBools["eventMessage"] = True
+        self.painter.fade = 255
+        self.change = True
 
     def enemyTurn(self):
         self.turnCount += 1
@@ -3741,7 +3749,7 @@ class gameManager():
                 sprouted, self.grid[here] = self.grid[here], playerTile
                 if sprouted[0] == 8:
                     self.overgrowPlayer(sprouted)
-            if self.proportion != metropolis.METROPOLIS:  # (no wild plants spring up in a city)
+            if self.proportion != metropolis.METROPOLIS or self.activeEvent() == "overgrowth":  # (a city only grows them in Overgrowth)
                 changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
             if changed:
                 self.change = True

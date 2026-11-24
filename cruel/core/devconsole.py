@@ -321,10 +321,8 @@ class DevConsole():
             return self.cmdEvents(args)
         eventId = args[0].lower()
         gm = self.gm
-        gm.floorEvents[gm.level] = {"id": eventId, "turnsLeft": 0, "active": True}
-        gm.messageBools["eventMessage"] = True
-        gm.painter.fade = 255
-        gm.change = True
+        event = gm.floorEvents[gm.level] = {"id": eventId, "turnsLeft": 0, "active": False}
+        gm.startEvent(event)
         self.write("good", f"{events.name(eventId)} has started on this floor")
 
     def cmdOreFloor(self, args):
