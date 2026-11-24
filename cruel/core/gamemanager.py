@@ -359,6 +359,7 @@ class gameManager():
         self.fallen = {}  # floor -> [(position, tile)]: what fell into it through a hole, put there when you arrive
         self.memoryFade = {}  # floor -> {tile: turns it has been fading} (see stepForgetting)
         self.scorchedDoors = {}  # floor -> where its Scorched door is (one per Molten Vault floor at most)
+        self.wallLamps = {}  # floor -> {tile: metropolis.WallLamp} (a city's lamps on walls)
         self.trackStarts = set()  # floors with no door back up (the Scorched Depths, and the floor below it)
         self.enemyOccupiedItemSpaces = {}
         self.patienceMs = 0  # how long you've waited, untouched, on the first floor's center tile (stepPatience)
@@ -2480,7 +2481,7 @@ class gameManager():
 
     def generateNewLevel(self, addStartingItem=False, depth=0):
         if depth > 0 and self.cityNext(depth):
-            return self.generateMetropolis()
+            return self.generateMetropolis(depth)
         grid = {}
         ListOfEnemyPositions = set()
         for i in range(self.numberOfSpots):
@@ -2549,9 +2550,16 @@ class gameManager():
             return False
         return forced or (depth >= metropolis.FIRST_FLOOR and rand.random() < metropolis.APPEAR_CHANCE)
 
-    def generateMetropolis(self):
-        """A city floor (metropolis.py), returned the way generateNewLevel returns a floor. Only Dwellers live there."""
-        city = metropolis.buildCity(self.rowLength, self.numberOfSpots // self.rowLength, self.playerPositionFlat)
+    def generateMetropolis(self, depth):
+        """A city floor (metropolis.py), returned the way generateNewLevel returns a floor. Only Dwellers live there.
+        Its theme is picked first (and kept for the floor, through forcedTheme) because each theme builds its own
+        shape of building."""
+        cityThemes = themes.THEMES[metropolis.METROPOLIS]
+        themeName = self.forcedTheme if any(data["name"] == self.forcedTheme for data in cityThemes) else rand.choice(cityThemes)["name"]
+        self.forcedTheme = themeName
+        style = metropolis.STYLES.get(themeName, metropolis.DEFAULT_STYLE)
+        city = metropolis.buildCity(self.rowLength, self.numberOfSpots // self.rowLength, self.playerPositionFlat, style)
+        self.wallLamps[depth] = city.wallLamps
         self.newFloorMotherlode = False
         nodes = connectingEmptyRooms.createNodes(city.grid, self.rowLength, 5)
         return city.grid, set(city.dwellers), city.rooms, metropolis.METROPOLIS, nodes
@@ -2784,14 +2792,15 @@ class gameManager():
         return position in self.smoke
 
     def updateFireLight(self):
-        """Which tiles the fires, bonfires and street lights light, as {tile: (the nearest one lighting it, its light
-        radius)}."""
+        """Which tiles the fires, bonfires, lamp posts and wall lamps light, as {tile: (the nearest one lighting it,
+        its light radius)}. A wall lamp isn't a tile of its own, so it keeps lighting with someone standing under it."""
         R = self.rowLength
         self.fireLight = {}
         best = {}
         sources = [(fire, FIRE_LIGHT_RADIUS) for fire in self.fires] + \
                   [(bonfire, expansion.BONFIRE_LIGHT_RADIUS) for bonfire in expansion.bonfires(self)] + \
-                  [(lamp, metropolis.STREET_LIGHT_RADIUS) for lamp in metropolis.streetLights(self)]
+                  [(lamp, metropolis.STREET_LIGHT_RADIUS) for lamp in metropolis.streetLights(self)] + \
+                  [(spot, lamp.radius) for spot, lamp in metropolis.wallLampsHere(self).items()]
         for fire, radius in sources:
             for p in self.lightAround(fire, radius):
                 d = (p % R - fire % R) ** 2 + (p // R - fire // R) ** 2
@@ -4001,6 +4010,7 @@ class gameManager():
             "fallen": self.fallen,
             "memoryFade": self.memoryFade,
             "scorchedDoors": self.scorchedDoors,
+            "wallLamps": self.wallLamps,
             "trackStarts": self.trackStarts,
         }
         with open(filename,"wb") as f:
@@ -4026,6 +4036,7 @@ class gameManager():
             self.fallen = data.get("fallen", {})
             self.memoryFade = data.get("memoryFade", {})
             self.scorchedDoors = data.get("scorchedDoors", {})
+            self.wallLamps = data.get("wallLamps", {})
             self.trackStarts = data.get("trackStarts", set())
             self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
             self.patienceMs = 0
@@ -4117,7 +4128,7 @@ class gameManager():
             station = tile[2]
             return f"{station.name} ({station.hp}/{station.maxHp})" if station.claimed else f"{station.name} (unclaimed)"
         if tile[0] == metropolis.STREET_LIGHT:
-            return "Street light"
+            return "Lamp post"
         if tile[0] == metropolis.SHOP_SIGN:
             return f"Sign: {cityshops.shopName(tile[2])}"
         if tile[0] == peddler.SIGNPOST:
@@ -4544,6 +4555,7 @@ class gameManager():
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly, overlayOnly=overlayOnly,
             fireLight=getattr(self, "fireLight", {}), glowLight=getattr(self, "glowLight", {}), ownSight=getattr(self, "ownSight", set()),
+            wallLamps=metropolis.wallLampsHere(self),
             memoryFade=self.memoryShades(), memoryFalloff=(FORGET_DISTANCE, FORGET_CURVE, DOOR_SHADE_MOST),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
             smoke=self.smoke, zoom=self.settings.mapZoom,

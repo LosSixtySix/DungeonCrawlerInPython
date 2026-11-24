@@ -1,6 +1,9 @@
 """The Metropolis floor (metropolis.py, dwellers.py): a whole floor that is a city of insectoid Dwellers, its streets,
 buildings, chests and themes, when it turns up, and the Dwellers going about their day."""
+import math
+import os
 import random
+import tempfile
 import unittest
 from unittest import mock
 
@@ -89,7 +92,8 @@ class CityLayoutTests(unittest.TestCase):
                     and spot % ROW_LENGTH not in (0,) and any(abs(spot - insideSpot) in (1, ROW_LENGTH) for insideSpot in inside)]
             self.assertEqual(gaps, [door])
             outside = [spot for spot in metropolis.neighborsOf(self.city, door) if spot not in inside]
-            self.assertTrue(any(spot in self.city.rooms[metropolis.STREET] for spot in outside), "the door opens onto a street")
+            open = self.city.rooms[metropolis.STREET] | self.city.rooms[metropolis.YARD]
+            self.assertTrue(any(spot in open for spot in outside), "the door opens onto a road or a yard")
 
     def test_three_to_five_shops_each_a_different_kind(self):
         for seed in range(15):
@@ -98,8 +102,14 @@ class CityLayoutTests(unittest.TestCase):
             self.assertTrue(3 <= len(kinds) <= 5)
             self.assertEqual(len(set(kinds)), len(kinds))
 
+    def test_roads_are_street_and_the_ground_between_buildings_is_yard(self):
+        self.assertEqual(self.city.rooms[metropolis.STREET] & self.city.rooms[metropolis.YARD], set())
+        for spot in self.city.rooms[metropolis.STREET]:
+            self.assertIn(spot, self.city.roads)
+        self.assertGreater(len(self.city.rooms[metropolis.YARD]), 100)
+
     def test_the_rooms_do_not_overlap(self):
-        rooms = [self.city.rooms[room] for room in (metropolis.STREET, metropolis.HOUSE, metropolis.SHOP, metropolis.NOBLE)]
+        rooms = [self.city.rooms[room] for room in (metropolis.STREET, metropolis.YARD, metropolis.HOUSE, metropolis.SHOP, metropolis.NOBLE)]
         for index, room in enumerate(rooms):
             for other in rooms[index + 1:]:
                 self.assertFalse(room & other)
@@ -117,10 +127,34 @@ class CityLayoutTests(unittest.TestCase):
                     self.assertFalse(any(relics.isRelic(thing) for thing in chest))
         self.assertAlmostEqual(chests / houses, metropolis.CHEST_CHANCE, delta=0.06)
 
-    def test_the_street_grid_always_runs_through_a_given_spot(self):
-        for coordinate in range(2, ROW_COUNT - 3):
-            lines = metropolis.streetLines(ROW_COUNT, coordinate)
-            self.assertTrue(any(line <= coordinate < line + metropolis.STREET_WIDTH for line in lines), coordinate)
+    def test_every_door_can_be_walked_to_from_where_you_arrive(self):
+        for seed in range(8):
+            city = newCity(seed)
+            reached, frontier = {middleSpot()}, [middleSpot()]
+            while frontier:
+                spot = frontier.pop()
+                for near in metropolis.neighborsOf(city, spot):
+                    if near not in reached and city.grid[near][0] in (FLOOR, ENEMY, CHEST):
+                        reached.add(near)
+                        frontier.append(near)
+            for building in city.buildings:
+                self.assertIn(building.door, reached)
+
+    def test_the_roads_are_rounded(self):
+        """The inner ring road goes all the way round the plaza: there's road in every direction from the middle at
+        about the same distance."""
+        city = self.city
+        middleColumn, middleRow = (ROW_LENGTH - 1) / 2, (ROW_COUNT - 1) / 2
+        reachAcross, reachDown = ROW_LENGTH / 2 - 2, ROW_COUNT / 2 - 2
+        share = metropolis.RING_ROADS[0]
+        for eighth in range(8):
+            angle = 6.2832 * eighth / 8
+            found = False
+            for wobble in (0.9, 0.95, 1.0, 1.05, 1.1):
+                column = round(middleColumn + share * wobble * reachAcross * math.cos(angle))
+                row = round(middleRow + share * wobble * reachDown * math.sin(angle))
+                found = found or city.spot(column, row) in city.roads
+            self.assertTrue(found, f"no ring road toward {eighth * 45} degrees")
 
 
 class DwellerPlacementTests(unittest.TestCase):
@@ -138,12 +172,14 @@ class DwellerPlacementTests(unittest.TestCase):
         self.assertTrue(metropolis.GUARD_POSTS[0] <= len(self.ofRole("guard")) <= metropolis.GUARD_POSTS[1])
         self.assertEqual(len(self.ofRole("merchant")), len(self.city.shops))
 
-    def test_guards_stand_at_posts_on_street_corners(self):
-        columns, rows = self.city.streetLines
-        corners = {self.city.spot(column, row) for column in columns for row in rows}
-        for spot, guard in self.ofRole("guard"):
+    def test_guards_stand_at_posts_spread_over_the_roads(self):
+        guards = self.ofRole("guard")
+        for spot, guard in guards:
             self.assertEqual(guard.home, spot)
-            self.assertIn(spot, corners)
+            self.assertIn(spot, self.city.roads)
+        closest = min(math.hypot(spot % ROW_LENGTH - other % ROW_LENGTH, spot // ROW_LENGTH - other // ROW_LENGTH)
+                      for spot, _ in guards for other, _ in guards if other != spot)
+        self.assertGreater(closest, 8, "posts are spread out over the city")
 
     def test_each_merchant_keeps_a_shop_at_its_counter(self):
         counters = {shop["counter"]: shop["kind"] for shop in self.city.shops}
@@ -304,38 +340,124 @@ class LookTests(unittest.TestCase):
         self.assertTrue(all(drop and drop[0][0] == "stone" for drop in drops))
 
 
-class StreetLightTests(unittest.TestCase):
-    """The lamp posts along the streets."""
+class BuildingStyleTests(unittest.TestCase):
+    """Each theme builds its own shape of building."""
+
+    def test_each_style_has_its_own_shape(self):
+        square = metropolis.shapeCells("square", 7, 7)
+        self.assertEqual(len(square), 49, "a square fills its box")
+        for style in ("round", "oblong", "rounded", "hexagon"):
+            self.assertNotIn((0, 0), metropolis.shapeCells(style, 7, 7), f"{style} has no sharp corner")
+        self.assertLess(len(metropolis.shapeCells("round", 7, 7)), len(metropolis.shapeCells("rounded", 7, 7)),
+                        "rounded corners are softer than a circle")
+        hexagon = metropolis.shapeCells("hexagon", 9, 7)
+        self.assertIn((0, 3), hexagon)  # its point, half way down its left side
+        self.assertNotIn((0, 0), hexagon)
+
+    def test_round_buildings_are_as_wide_as_they_are_tall_and_oblong_ones_are_not(self):
+        random.seed(1)
+        for _ in range(20):
+            width, height = metropolis.buildingSize("round", metropolis.HOUSE_SIZE)
+            self.assertEqual(width, height)
+            width, height = metropolis.buildingSize("oblong", metropolis.HOUSE_SIZE)
+            self.assertGreaterEqual(max(width, height) / min(width, height), 1.25)
+
+    def test_every_theme_has_a_style_and_the_city_is_built_in_it(self):
+        self.assertEqual(set(metropolis.STYLES), {data["name"] for data in themes.THEMES[metropolis.METROPOLIS]})
+        for themeName, style in metropolis.STYLES.items():
+            random.seed(3)
+            game = support.newGame()
+            game.saveGame = lambda *args, **kwargs: None
+            game.metropolisNext = True
+            game.forcedTheme = themeName
+            game.goToNewLevel()
+            self.assertEqual(game.theme.name, themeName)
+            for building in buildingsOn(game):
+                columns = [spot % ROW_LENGTH for spot in building]
+                rows = [spot // ROW_LENGTH for spot in building]
+                corner = min(rows) * ROW_LENGTH + min(columns)
+                if style == "square":
+                    self.assertIn(corner, building, f"{themeName}: square corners")
+                else:
+                    self.assertNotIn(corner, building, f"{themeName}: no sharp corners")
+
+
+def buildingsOn(game):
+    """The tiles of each building on a city floor (its walls, its sign, its inside and its door), worked out from
+    the floor's rooms: every connected patch of House, Shop or Noble room is one building."""
+    buildingTiles = set()
+    for room in (metropolis.HOUSE, metropolis.SHOP, metropolis.NOBLE):
+        buildingTiles |= game.rooms[room]
+    buildings, seen = [], set()
+    for start in buildingTiles:
+        if start in seen:
+            continue
+        building, frontier = {start}, [start]
+        seen.add(start)
+        while frontier:
+            spot = frontier.pop()
+            for near in game.neighbors(spot):
+                if near in buildingTiles and near not in seen:
+                    seen.add(near)
+                    building.add(near)
+                    frontier.append(near)
+        buildings.append(building)
+    return buildings
+
+
+class LightTests(unittest.TestCase):
+    """Wall lamps outside along the roads and inside every building, and lamp posts round the plaza."""
 
     def setUp(self):
         self.city = newCity(5)
 
-    def test_there_is_a_light_at_most_street_crossings(self):
-        columns, rows = self.city.streetLines
-        crossings = [self.city.spot(column + 1, row + 1) for column in columns for row in rows]
-        lit = sum(1 for spot in crossings if spot in self.city.streetLights)
-        self.assertGreater(lit, len(crossings) * 0.7)
+    def test_every_lamp_hangs_on_a_wall_on_its_side(self):
+        for spot, lamp in self.city.wallLamps.items():
+            stepColumn, stepRow = metropolis.SIDES[lamp.side]
+            wallSpot = spot + stepColumn + stepRow * ROW_LENGTH
+            self.assertIn(self.city.grid[wallSpot][0], (WALL, metropolis.SHOP_SIGN))
 
-    def test_lights_stand_on_streets_and_never_by_a_door_or_where_you_arrive(self):
-        doors = {door for _, door in self.city.houses + self.city.mansions} | {shop["door"] for shop in self.city.shops}
-        playerSpot = middleSpot()
-        for lamp in self.city.streetLights:
-            self.assertEqual(self.city.grid[lamp][0], metropolis.STREET_LIGHT)
-            self.assertIn(lamp, self.city.rooms[metropolis.STREET])
-            self.assertNotEqual(lamp, playerSpot)
-            for beside in metropolis.neighborsOf(self.city, lamp):
-                self.assertNotIn(beside, doors)
-                for besideDoor in metropolis.neighborsOf(self.city, beside):
-                    if besideDoor in doors:  # the tile in front of a door stays free
-                        self.assertNotIn(lamp, metropolis.neighborsOf(self.city, besideDoor) + [beside])
+    def test_every_building_has_a_lamp_inside(self):
+        for building in self.city.buildings:
+            insideLamps = [spot for spot in building.inside if spot in self.city.wallLamps]
+            self.assertTrue(insideLamps, f"a {building.kind} without a light")
+            for spot in insideLamps:
+                self.assertEqual(self.city.wallLamps[spot].radius, metropolis.ROOM_LAMP_RADIUS)
 
-    def test_they_light_the_street_round_them(self):
+    def test_outside_lamps_line_the_roads_spaced_out_and_never_in_a_doorway(self):
+        doorways = set()
+        for building in self.city.buildings:
+            doorways |= {building.door, *metropolis.neighborsOf(self.city, building.door)}
+        outside = [spot for spot, lamp in self.city.wallLamps.items() if lamp.radius == metropolis.WALL_LAMP_RADIUS]
+        self.assertGreater(len(outside), 10)
+        for spot in outside:
+            self.assertNotIn(spot, doorways)
+            self.assertIn(spot, self.city.rooms[metropolis.STREET] | self.city.rooms[metropolis.YARD])
+            for other in outside:
+                if other != spot:
+                    self.assertGreaterEqual(abs(spot % ROW_LENGTH - other % ROW_LENGTH) + abs(spot // ROW_LENGTH - other // ROW_LENGTH),
+                                            metropolis.WALL_LAMP_SPACING)
+
+    def test_wall_lamps_light_round_them(self):
         game = cityGame()
-        lamp = metropolis.streetLights(game)[0]
+        spot, lamp = next(iter(metropolis.wallLampsHere(game).items()))
         game.updateFireLight()
-        self.assertEqual(game.fireLight[lamp], (lamp, metropolis.STREET_LIGHT_RADIUS))
-        litNearby = [spot for spot, (source, _) in game.fireLight.items() if source == lamp]
-        self.assertGreater(len(litNearby), 10)
+        self.assertEqual(game.fireLight[spot], (spot, lamp.radius))
+
+    def test_standing_under_a_wall_lamp_does_not_put_it_out(self):
+        game = cityGame()
+        spot = next(spot for spot, lamp in metropolis.wallLampsHere(game).items() if game.grid[spot][0] == FLOOR)
+        support.placePlayer(game, spot)
+        game.updateFireLight()
+        self.assertEqual(game.fireLight[spot][0], spot)
+        game.change = True
+        game.setPositionsVisible()
+        game.draw()  # (and it's drawn over you)
+
+    def test_lamp_posts_stand_round_the_plaza(self):
+        for lamp in self.city.grid:
+            if self.city.grid[lamp][0] == metropolis.STREET_LIGHT:
+                self.assertIn(lamp, self.city.plaza)
 
     def test_they_block_the_way_but_not_the_view(self):
         game = cityGame()
@@ -345,14 +467,27 @@ class StreetLightTests(unittest.TestCase):
         game.movePlayer(lamp)
         self.assertEqual(game.playerPositionFlat, besideLamp)
         beyond = lamp + (lamp - besideLamp)
-        self.assertTrue(game.lineOfSight(besideLamp, beyond + (beyond - lamp)))
+        farther = beyond + (beyond - lamp)
+        for spot in (beyond, farther):  # (only the lamp is in the way: nobody standing about)
+            game.grid[spot] = [FLOOR, 1]
+        self.assertTrue(game.lineOfSight(besideLamp, farther))
         game.PlayerLookPosition = lamp
-        self.assertEqual(game.lookingAt(), "Street light")
+        self.assertEqual(game.lookingAt(), "Lamp post")
 
     def test_other_floors_have_none(self):
         random.seed(3)
         game = support.newGame(level=1)
         self.assertEqual(metropolis.streetLights(game), [])
+        self.assertEqual(metropolis.wallLampsHere(game), {})
+
+    def test_wall_lamps_are_saved_with_the_game(self):
+        game = cityGame()
+        lamps = {spot: lamp.side for spot, lamp in metropolis.wallLampsHere(game).items()}
+        saveFile = os.path.join(tempfile.mkdtemp(), "city-save.pkl")
+        gamemanager.gameManager.saveGame(game, saveFile)
+        loaded = support.newGame()
+        self.assertTrue(loaded.loadGame(saveFile))
+        self.assertEqual({spot: lamp.side for spot, lamp in metropolis.wallLampsHere(loaded).items()}, lamps)
 
 
 class SavingTests(unittest.TestCase):
