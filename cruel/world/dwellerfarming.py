@@ -23,18 +23,21 @@ up anything else growing there. It keeps SEEDS_KEPT seeds and takes the rest, an
 has FARMER_HAUL. While the fields have fewer than FIELD_TILES_PER_GRUB tiles a grub (and FIELD_TILES_PER_GROWER a
 grower), the growers build another farmhouse (dwellerbuilding.farmhousePlan), growing the crop the farm has least of.
 
-The grubs. Each keeper looks after its own pens (keeperPens: the farm's pens dealt out among the keepers there are,
+The grubs. The keepers look after KEEPER_HERD grubs each, as many as they can feed in time (caredFor): the grown ones
+first (they make the Dew), then the young nearest grown, then the least hungry. Any more than that nobody feeds, and
+they starve. Each keeper looks after its own pens (keeperPens: the farm's pens dealt out among the keepers there are,
 so a keeper's death hands its pens to the others). It keeps FOOD_KEPT herbs (any herb is food for a grub), fetching
 more from the chests under FOOD_LOW, and does the first of these it can:
-  1. feeds the nearest hungry grub (one that has gone HUNGRY_TURNS without food, isn't waiting with Dew and no other
-     keeper is going to): a starving one (STARVING_TURNS) anywhere first, then one in its own pens, then any. It
+  1. feeds the nearest hungry grub (one it looks after that has gone HUNGRY_TURNS without food, isn't waiting with
+     Dew and no other keeper is going to): a starving one (STARVING_TURNS) anywhere first, then one in its own pens, then any. It
      feeds from up to dewgrubs.REACH tiles away (over the pen's fence: it doesn't have to go in). A grub it can't get to (GIVE_UP_TURNS) it leaves to the
      others for SKIP_TURNS.
   2. collects a grub's Dew, the same way (it takes it in with a load, or when it goes for food).
   3. moves a grub to another pen, or plans a new pen (dewgrubs.herdTurn).
   4. tops up its food from the chests.
   5. waits by its pens.
-A grower with herbs on it feeds a starving grub (one that has gone STARVING_TURNS) before its own work.
+A grower with herbs on it feeds a starving grub the keepers look after (one that has gone STARVING_TURNS) before
+its own work.
 A Dew Grub that goes STARVE_TURNS turns without food (not counting turns its Dew is waiting) starves (starveTurn).
 """
 
@@ -46,6 +49,7 @@ STARVE_TURNS = 100          # a Dew Grub that goes this long without food starve
 HUNGRY_TURNS = STARVE_TURNS // 2  # ...and is fed once it has gone this long...
 STARVING_TURNS = STARVE_TURNS * 3 // 4  # ...and before any other once it has gone this long
 SKIP_TURNS = 20             # a keeper that couldn't get to a grub leaves it for this long
+KEEPER_HERD = 5             # grubs a keeper can feed in time; the keepers let any more than that starve
 FIELD_TILES_PER_GRUB = 3    # the growers build another farmhouse while there's less field than this a grub...
 FIELD_TILES_PER_GROWER = 20  # ...and less than this a grower (what they can tend: a farmhouse's plots each)
 FOODS = {info["herb"] for info in plants.PLANTS.values()}
@@ -210,6 +214,28 @@ def hunger(grub):
     return getattr(grub, "hunger", 0)
 
 
+def isKeeper(dweller):
+    """A farmer that feeds the grubs (a keeper, or a farmer from before the roles)."""
+    return roleOf(dweller) in ("keeper", None) and getattr(dweller, "work", None) == "farm"
+
+
+def keeperCount(game, farmer=None):
+    """The keepers on the floor. farmer: one taking its turn (off the map while it does, so counted here)."""
+    keepers = {id(dweller) for _, dweller in dwellers.cityDwellers(game) if isKeeper(dweller)}
+    if farmer is not None and isKeeper(farmer):
+        keepers.add(id(farmer))
+    return len(keepers)
+
+
+def caredFor(game, grubs, farmer=None):
+    """The ids of the grubs ([(spot, grub)]) the keepers look after: KEEPER_HERD a keeper (one keeper's worth with
+    none left), the grown ones first, then the young nearest grown, then the least hungry. The rest starve."""
+    most = KEEPER_HERD * max(1, keeperCount(game, farmer))
+    ranked = sorted(grubs, key=lambda pair: (not getattr(pair[1], "grown", True), -getattr(pair[1], "growth", 0),
+                                             hunger(pair[1])))
+    return {id(grub) for _, grub in ranked[:most]}
+
+
 def withinReach(game, position, spot):
     return dewgrubs.withinReach(game, position, spot)
 
@@ -239,9 +265,10 @@ def walkToGrub(game, position, farmer, spot):
 
 
 def feedTurn(game, position, farmer, grubs, onlyStarving=False):
-    """Feed the nearest hungry grub (onlyStarving: starving), or fetch food for one. None if there's no feeding to
-    do."""
-    hungry = [(spot, grub) for spot, grub in grubs if not grub.dewReady and hunger(grub) >= HUNGRY_TURNS
+    """Feed the nearest hungry grub the keepers look after (onlyStarving: starving), or fetch food for one. None if
+    there's no feeding to do."""
+    cared = caredFor(game, grubs, farmer)
+    hungry = [(spot, grub) for spot, grub in grubs if id(grub) in cared and not grub.dewReady and hunger(grub) >= HUNGRY_TURNS
               and not skipped(game, farmer, grub) and not takenBy(game, farmer, grub)]
     if not hungry:
         return None
@@ -263,7 +290,7 @@ def feedTurn(game, position, farmer, grubs, onlyStarving=False):
     dwellerwork.feed(grub, farmer)
     farmer.grubTarget = None
     if wasGrown:
-        dewgrubs.maybeGiveBirth(game, spot, grub, dewgrubs.pensOf(farmer), feeder=farmer)
+        dewgrubs.maybeGiveBirth(game, spot, grub, dewgrubs.pensOf(farmer))
     return position
 
 

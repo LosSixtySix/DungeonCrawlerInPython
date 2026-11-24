@@ -67,8 +67,7 @@ class PenTest(WorkTest):
         return farmer
 
     def foodPutBy(self, amount=100):
-        """A storage chest with herbs in it (a grub only gives birth with food put by), and a keeper (and only while
-        the herd is smaller than the keepers can feed)."""
+        """A storage chest with herbs in it (a grub only gives birth with food put by), and a farmer."""
         if not any(getattr(unit, "work", None) == "farm" for _, unit in dwellers.cityDwellers(self.game)):
             self.farmer(70, 70)
         chest = self.storageChest(10, 60)
@@ -163,16 +162,56 @@ class YoungGrubTests(PenTest):
 # ---------------------------------------------------------------- pens
 
 class HerdSizeTests(PenTest):
-    def test_no_young_once_the_herd_is_as_big_as_its_keepers_can_feed(self):
+    def setUp(self):
+        super().setUp()
+        self.keepers = []
+
+    def keeper(self):
+        keeper = self.farmer(50 + 2 * len(self.keepers), 25)
+        self.keepers.append(keeper)
+        keeper.farmRole = "keeper"
+        return keeper
+
+    def test_young_are_born_however_big_the_herd(self):
         pen = self.pen(40, 30)
-        grubs = self.fill(pen, dewgrubs.KEEPER_HERD)
-        self.foodPutBy()  # (one keeper)
+        grubs = self.fill(pen, dwellerfarming.KEEPER_HERD + 1)
+        self.foodPutBy()
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
-            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
-            feeder = enemies.DwellerCitizen()
-            feeder.work = "farm"
-            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens, feeder=feeder),
-                                 "the keeper feeding it counts too")
+            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
+
+    def test_the_keepers_look_after_as_many_as_they_can_feed_grown_and_least_hungry_first(self):
+        pen = self.pen(40, 30)
+        grubs = self.fill(pen, dwellerfarming.KEEPER_HERD + 2)
+        self.keeper()
+        for index, grub in enumerate(grubs):
+            grub.hunger = 60 + index
+        young = grubs[0]
+        young.grown = False
+        cared = dwellerfarming.caredFor(self.game, dwellerwork.grubsHere(self.game))
+        self.assertEqual(len(cared), dwellerfarming.KEEPER_HERD)
+        self.assertNotIn(id(young), cared, "the young one goes first")
+        self.assertNotIn(id(grubs[-1]), cared, "then the hungriest")
+        self.keeper()
+        self.assertEqual(len(dwellerfarming.caredFor(self.game, dwellerwork.grubsHere(self.game))), len(grubs),
+                         "a second keeper can feed them all")
+
+    def test_a_keeper_lets_a_grub_it_cant_look_after_starve(self):
+        pen = self.pen(40, 30)
+        grubs = self.fill(pen, dwellerfarming.KEEPER_HERD + 1)
+        keeper = self.keeper()
+        keeper.materials = {"bloodcap": 10}
+        for grub in grubs:
+            grub.hunger = dwellerfarming.HUNGRY_TURNS
+        letGo = grubs[-1]
+        letGo.hunger = dwellerfarming.STARVING_TURNS
+        cared = dwellerfarming.caredFor(self.game, dwellerwork.grubsHere(self.game))
+        self.assertNotIn(id(letGo), cared)
+        with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 0), mock.patch.object(dwellers, "IDLE_CHANCE", 0):
+            for _ in range(dwellerfarming.STARVE_TURNS):
+                self.game.enemyTurn()
+                dwellerfarming.starveTurn(self.game)
+        self.assertNotIn(letGo, self.grubsIn(pen), "it starved")
+        self.assertEqual(len(self.grubsIn(pen)), dwellerfarming.KEEPER_HERD, "the rest were fed")
 
 
 class GrubMovingTests(PenTest):
