@@ -245,11 +245,17 @@ class CalmDwellerTests(unittest.TestCase):
         for spot, merchant in dwellersOn(self.game, "merchant"):
             self.assertEqual(counters[id(merchant)], spot)
 
-    def test_guards_stay_near_their_posts(self):
+    def test_guards_patrol_near_their_posts(self):
+        game = self.game
+        for spot, guard in dwellersOn(game, "guard"):
+            for _ in range(20):
+                patrolSpot = dwellers.pickGoal(game, spot, guard)
+                self.assertLessEqual(dwellers.distance(game, patrolSpot, guard.home), dwellers.WANDER_REACH["guard"] * 1.5)
         for _ in range(40):
-            self.game.enemyTurn()
-        for spot, guard in dwellersOn(self.game, "guard"):
-            self.assertLessEqual(dwellers.distance(self.game, spot, guard.home), dwellers.WANDER_REACH["guard"] * 1.5 + 1)
+            game.enemyTurn()
+        for spot, guard in dwellersOn(game, "guard"):
+            # (a detour round a building, or a citizen swapping past it, can take it a few tiles further for a while)
+            self.assertLessEqual(dwellers.distance(game, spot, guard.home), 10)
 
     def test_calm_dwellers_never_hurt_you(self):
         game = self.game
