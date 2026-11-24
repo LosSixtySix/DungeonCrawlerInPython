@@ -4,6 +4,7 @@ import random
 
 from cruel.entities import enemies
 from cruel.inventory import items
+from cruel.inventory import resources
 from cruel.world import events
 from cruel.world import metropolis
 from cruel.world import plants
@@ -46,6 +47,9 @@ PENS = (2, 3)
 PEN_WIDTH, PEN_HEIGHT = 7, 6   # a pen's size, fence and all
 PEN_REACH = (9, 16)         # how far from the shaft a pen's middle is
 GRUBS_PER_PEN = (2, 3)
+FARMER_START_FOOD = 3       # herbs of each crop a keeper starts with (so the grubs don't starve before the first harvest)
+FARMER_START_SEEDS = 2      # seeds of its crop a grower starts with
+CHEST_START_FOOD = 8        # herbs of each crop in a farm's storehouse chests to begin with
 FIELDS = 3
 FIELD_RADIUS = 2            # a field is the crops within this of its middle...
 FIELD_REACH = (6, 14)       # ...which is this far from the shaft, on ground you can walk to
@@ -206,6 +210,7 @@ class Works:
         self.fields = {}
         self.lamps = {}
         self.dwellers = {}
+        self.plans = []     # buildings the workers are putting up (dwellerbuilding.py), shared by them
 
     def builtOn(self):
         """Every tile the works use (nothing else goes there)."""
@@ -246,6 +251,10 @@ def layOutWorks(grid, rowLength, shaftSpot, kind, rooms=None):
     if kind == "farm":
         buildPens(grid, rowLength, rowCount, shaftSpot, works)
         sowFields(grid, rowLength, shaftSpot, works, rooms or {})
+        for storehouse in works.storehouses:  # some food put by
+            for materialId, amount in startingStock(works, CHEST_START_FOOD, 0).items():
+                if amount:
+                    grid[storehouse["chests"][0]][2].append(resources.MaterialStack(materialId, amount))
     hangLamps(grid, rowLength, works)
     placeDwellers(grid, rowLength, shaftSpot, kind, works)
     return works
@@ -385,6 +394,7 @@ def buildPens(grid, rowLength, rowCount, shaftSpot, works):
         for spot in path:
             openUp(grid, spot)
         connected |= set(path) | inside | {gate}
+        inside = frozenset(inside)
         pen = {"fence": fence, "inside": inside, "gate": gate}
         works.pens.append(pen)
         spots = sorted(inside - {gate + step * -1})
@@ -460,6 +470,15 @@ def tilesBeside(rowLength, spot):
     return {spot - 1, spot + 1, spot - rowLength, spot + rowLength}
 
 
+def startingStock(works, food, seeds):
+    """{id: amount}: food herbs and seeds of each of the farm's crops (a farmer's pockets, or a chest)."""
+    stock = {}
+    for cropKind in sorted(set(works.fields.values())):
+        stock[plants.PLANTS[cropKind]["herb"]] = food
+        stock[plants.PLANTS[cropKind]["seed"]] = seeds
+    return stock
+
+
 def placeDwellers(grid, rowLength, shaftSpot, kind, works):
     """The workers (citizens, at work on this floor) and the guards, on the clearing. Everyone's home is the
     clearing; a guard's post is a spot on its edge."""
@@ -479,6 +498,16 @@ def placeDwellers(grid, rowLength, shaftSpot, kind, works):
         spot = free.pop()
         worker.home = spot
         worker.work = kind
+        worker.plans = works.plans  # (one list, shared by every worker)
         if kind == "farm":
             worker.fields = works.fields  # (one dict, shared by every farmer)
+            worker.pens = works.pens      # (and the pens, the same way)
+            farmers = sum(1 for dweller in works.dwellers.values() if getattr(dweller, "work", None) == "farm")
+            crops = sorted(set(works.fields.values()))
+            if farmers % 2 == 0 or not crops:  # every other farmer keeps the grubs; the others grow a crop each
+                worker.farmRole = "keeper"
+                worker.materials = startingStock(works, FARMER_START_FOOD, 0)
+            else:  # (seeds of every crop: which it tends depends on how many growers there are, growerCrops)
+                worker.farmRole = "grower"
+                worker.materials = startingStock(works, 0, FARMER_START_SEEDS)
         works.dwellers[spot] = worker

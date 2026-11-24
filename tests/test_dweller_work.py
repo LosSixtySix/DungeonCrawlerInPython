@@ -10,6 +10,8 @@ from cruel.inventory import items
 from cruel.inventory import loot
 from cruel.inventory import resources
 from cruel.world import cityshops
+from cruel.world import dwellerbuilding
+from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import dwellerwork
 from cruel.world import expansion
@@ -212,38 +214,83 @@ class FarmTest(WorkTest):
 
 
 class FarmerTests(FarmTest):
-    def test_a_farmer_picks_a_ripe_crop_and_sows_the_tile_again(self):
+    def test_a_farmer_picks_a_ripe_crop_and_keeps_what_it_gives(self):
         farmer = self.farmer(30, 20)
         self.crop(31, 20)
+        with mock.patch.object(dwellerfarming, "shortOfSeeds", return_value=False):
+            dwellerwork.workTurn(self.game, self.spot(30, 20), farmer)
+        self.assertGreater(dwellerwork.carrying(farmer).get("bloodcap", 0), 0, "its herb")
+        self.assertEqual(self.game.grid[self.spot(31, 20)][0], FLOOR, "picking uses the crop up")
+
+    def test_short_of_seeds_it_leaves_a_crop_ready_to_harvest_to_go_to_seed(self):
+        farmer = self.farmer(30, 20)
+        self.crop(31, 20, stage="harvest")  # (a bloodcap's first ripe stage: its seed stage comes next)
         dwellerwork.workTurn(self.game, self.spot(30, 20), farmer)
-        self.assertEqual(farmer.food, "bloodcap")
-        sprout = self.game.grid[self.spot(31, 20)][2]
-        self.assertEqual(sprout.stage, "planted")
-        self.assertTrue(sprout.cityCrop)
+        self.assertEqual(self.game.grid[self.spot(31, 20)][0], PLANT)
+        self.crop(31, 20, stage="seed")
+        dwellerwork.workTurn(self.game, self.spot(30, 20), farmer)
+        self.assertGreater(dwellerwork.carrying(farmer).get("bloodcap_spores", 0), 0)
 
     def test_it_leaves_a_crop_that_is_not_ripe(self):
         farmer = self.farmer(30, 20)
         self.crop(31, 20, stage="growing")
         dwellerwork.workTurn(self.game, self.spot(30, 20), farmer)
-        self.assertIsNone(getattr(farmer, "food", None))
+        self.assertEqual(dwellerwork.carrying(farmer), {})
 
-    def test_it_sows_a_bare_field_tile(self):
+    def test_it_sows_a_bare_field_tile_with_a_seed(self):
         farmer = self.farmer(30, 20)
-        self.fields[self.spot(31, 20)] = "bloodcap"  # (its crop withered: bare floor)
+        farmer.materials = {"bloodcap_spores": 2}
+        self.fields[self.spot(31, 20)] = "bloodcap"  # (bare floor)
         dwellerwork.workTurn(self.game, self.spot(30, 20), farmer)
-        self.assertEqual(self.game.grid[self.spot(31, 20)][0], PLANT)
+        sprout = self.game.grid[self.spot(31, 20)][2]
+        self.assertEqual((sprout.stage, sprout.cityCrop, sprout.planted), ("planted", True, True))
+        self.assertEqual(farmer.materials, {"bloodcap_spores": 1})
 
-    def test_with_food_it_walks_into_the_pen_and_feeds_a_grub(self):
-        farmer = self.farmer(43, 26)
-        farmer.food = "bloodcap"
+    def test_with_no_seeds_it_fetches_some_from_a_storehouse_chest(self):
+        farmer = self.farmer(30, 20)
+        self.fields[self.spot(31, 20)] = "bloodcap"
+        chest = self.storageChest(29, 20)
+        chest.append(resources.MaterialStack("bloodcap_spores", 10))
+        dwellerwork.workTurn(self.game, self.spot(30, 20), farmer)
+        self.assertEqual(dwellerwork.carrying(farmer), {"bloodcap_spores": dwellerfarming.SEEDS_KEPT})
+        self.assertEqual(chest[0].amount, 10 - dwellerfarming.SEEDS_KEPT)
+
+    def test_it_pulls_up_anything_wild_on_its_fields(self):
+        farmer = self.farmer(30, 20)
+        self.game.grid[self.spot(31, 20)] = [PLANT, 1, plants.Plant.grown("bloodcap")]
+        self.fields[self.spot(31, 20)] = "bloodcap"
+        dwellerwork.workTurn(self.game, self.spot(30, 20), farmer)
+        self.assertEqual(self.game.grid[self.spot(31, 20)][0], FLOOR)
+
+    def test_a_hungry_grub_is_fed_from_over_the_fence(self):
+        farmer = self.farmer(43, 24)
+        farmer.materials = {"bloodcap": 3}
+        self.grub.hunger = dwellerfarming.HUNGRY_TURNS
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0), mock.patch.object(dwellerwork, "GRUB_SHUFFLE", 0):
             self.assertTrue(self.runTurns(30, until=lambda: self.grub.feedings == 1))
-        self.assertIsNone(farmer.food)
+        self.assertEqual(self.grub.hunger, 0)
+        self.assertEqual(farmer.materials, {"bloodcap": 2})
+        self.assertNotIn(self.positionOf(farmer), self.penInside, "it didn't go in")
+
+    def test_a_grub_that_isnt_hungry_yet_is_left_be(self):
+        farmer = self.farmer(43, 30)  # (in the gate: within reach of it)
+        farmer.materials = {"bloodcap": 3}
+        self.grub.hunger = 10  # (fed from 50 turns unfed)
+        dwellerfarming.keeperTurn(self.game, self.spot(43, 30), farmer)
+        self.assertEqual(self.grub.feedings, 0)
+
+    def test_with_no_food_it_fetches_some_for_a_hungry_grub(self):
+        farmer = self.farmer(30, 26)
+        chest = self.storageChest(29, 26)
+        chest.append(resources.MaterialStack("bloodcap", 30))
+        self.grub.hunger = dwellerfarming.HUNGRY_TURNS
+        dwellerwork.workTurn(self.game, self.spot(30, 26), farmer)
+        self.assertEqual(dwellerfarming.foodCarried(farmer), dwellerfarming.FOOD_KEPT)
 
     def test_after_enough_feedings_a_grub_has_dew_and_eats_no_more(self):
         farmer = enemies.DwellerCitizen()
+        farmer.materials = {"bloodcap": 10}
         for _ in range(dwellerwork.FEEDINGS_FOR_DEW):
-            farmer.food = "bloodcap"
             dwellerwork.feed(self.grub, farmer)
         self.assertTrue(self.grub.dewReady)
         self.assertEqual(dwellers.attitudeLabel(self.grub), "livestock, Dew ready")
@@ -257,6 +304,103 @@ class FarmerTests(FarmTest):
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0), mock.patch.object(dwellerwork, "GRUB_SHUFFLE", 0):
             self.assertTrue(self.runTurns(60, until=lambda: any(stack.materialId == "dew" for stack in chest)))
         self.assertFalse(self.grub.dewReady)
+
+
+class StarvingTests(FarmTest):
+    def test_a_grub_gets_hungrier_every_turn_and_starves_unfed(self):
+        game = self.game
+        dwellerfarming.starveTurn(game)
+        self.assertEqual(self.grub.hunger, 1)
+        self.grub.hunger = 98
+        dwellerfarming.starveTurn(game)
+        self.assertIn(self.grub, [grub for _, grub in dwellerwork.grubsHere(game)], "99 turns unfed: still alive")
+        dwellerfarming.starveTurn(game)
+        self.assertNotIn(self.grub, [grub for _, grub in dwellerwork.grubsHere(game)], "100 turns unfed: starved")
+
+    def test_waiting_with_dew_it_does_not_get_hungrier(self):
+        self.grub.dewReady = True
+        self.grub.hunger = dwellerfarming.STARVE_TURNS - 1
+        dwellerfarming.starveTurn(self.game)
+        self.assertEqual(self.grub.hunger, dwellerfarming.STARVE_TURNS - 1)
+
+    def test_feeding_it_takes_its_hunger_away(self):
+        self.grub.hunger = 70
+        farmer = enemies.DwellerCitizen()
+        farmer.materials = {"bloodcap": 1}
+        self.assertTrue(dwellerwork.feed(self.grub, farmer))
+        self.assertEqual(self.grub.hunger, 0)
+        self.assertFalse(dwellerwork.feed(self.grub, farmer), "no food left")
+
+    def test_grubs_only_go_hungry_on_a_works_floor(self):
+        game = self.game
+        game.enemyTurn()
+        self.assertEqual(self.grub.hunger, 0)
+        game.sideFloor = ("farm", 0)
+        game.enemyTurn()
+        self.assertEqual(self.grub.hunger, 1)
+
+
+class FarmRoleTests(FarmTest):
+    def test_keepers_never_build_and_growers_do(self):
+        keeper, grower = self.farmer(30, 20), self.farmer(32, 20)
+        keeper.farmRole, grower.farmRole = "keeper", "grower"
+        keeper.plans = grower.plans = [{"kind": "pen"}]
+        self.assertIsNone(dwellerbuilding.planFor(self.game, keeper))
+        self.assertIsNotNone(dwellerbuilding.planFor(self.game, grower))
+
+    def test_keepers_share_the_pens_out_between_them(self):
+        keepers = [self.farmer(30, 20), self.farmer(32, 20)]
+        pens = [{"inside": frozenset({index}), "fence": set(), "gate": index} for index in range(5)]
+        for keeper in keepers:
+            keeper.farmRole, keeper.pens = "keeper", pens
+        shares = [dwellerfarming.keeperPens(self.game, keeper) for keeper in keepers]
+        self.assertEqual(sorted(len(share) for share in shares), [2, 3])
+        self.assertEqual(sum(shares, []), [pen for pen in pens if pen in shares[0]] + [pen for pen in pens if pen in shares[1]])
+        self.game.killEnemy(self.spot(32, 20), "player")  # one gone: the other has them all
+        self.assertEqual(len(dwellerfarming.keeperPens(self.game, keepers[0])), 5)
+
+    def test_growers_share_the_crops_and_split_a_crop_they_share(self):
+        growers = [self.farmer(30, 20), self.farmer(32, 20), self.farmer(34, 20)]
+        for grower in growers:
+            grower.farmRole = "grower"
+        for column in range(10, 20):
+            self.fields[self.spot(column, 5)] = "bloodcap"
+        self.fields[self.spot(10, 8)] = "glowcap"
+        shares = [dwellerfarming.myFields(self.game, grower) for grower in growers]
+        self.assertEqual(sum(len(share) for share in shares), len(self.fields), "every tile is someone's")
+        self.assertEqual(len(set().union(*shares)), len(self.fields), "and only one grower's")
+
+    def test_a_grower_keeps_its_seeds_and_takes_in_its_herbs_a_keeper_keeps_food(self):
+        grower, keeper = self.farmer(30, 20), self.farmer(32, 20)
+        grower.farmRole, keeper.farmRole = "grower", "keeper"
+        grower.materials = {"bloodcap": 9, "bloodcap_spores": 6}
+        keeper.materials = {"bloodcap": 25, "dew": 1}
+        self.assertEqual(dwellerfarming.toStore(grower), {"bloodcap": 9, "bloodcap_spores": 6 - dwellerfarming.SEEDS_KEPT})
+        self.assertEqual(dwellerfarming.toStore(keeper), {"bloodcap": 25 - dwellerfarming.FOOD_KEPT, "dew": 1})
+
+    def test_nothing_wild_sprouts_on_the_fields(self):
+        game = self.game
+        self.fields[self.spot(31, 20)] = "bloodcap"
+        self.farmer(30, 20)
+        game.sideFloor = ("farm", 0)
+        self.assertIn(self.spot(31, 20), dwellerfarming.fieldTiles(game))
+        for column, row in ((30, 21), (32, 21), (31, 21)):  # seeding bloodcaps all round it
+            crop = plants.Plant.grown("bloodcap")
+            crop.stage = "seed"
+            game.grid[self.spot(column, row)] = [PLANT, 1, crop]
+        with mock.patch.object(plants, "BIRTH_CHANCE", {3: 1, 2: 1, 1: 1}):
+            for _ in range(plants.GROW_TURNS * 3):
+                game.turnCount += 1
+                game.enemyTurn()
+        self.assertNotEqual(game.grid[self.spot(31, 20)][0], PLANT)
+
+    def test_the_fields_grow_while_they_are_small_for_the_herd(self):
+        farmer = self.farmer(30, 20)
+        farmer.farmRole = "grower"
+        self.fields[self.spot(20, 10)] = "bloodcap"
+        self.assertTrue(dwellerfarming.layOutField(self.game, farmer, grubCount=5))
+        self.assertEqual(len(self.fields), 2)
+        self.assertFalse(dwellerfarming.layOutField(self.game, farmer, grubCount=0))
 
 
 class GrubTests(FarmTest):

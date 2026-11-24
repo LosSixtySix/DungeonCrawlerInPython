@@ -14,7 +14,8 @@ The Metropolis's Dwellers at work (metropolis.py builds the city, enemies.Dwelle
   Guard     patrols within PATROL_REACH of its post.
   Merchant  minds its shop: it stands at its counter.
   Worker    a citizen on one of the city's works floors (mineshafts.py): it works (dwellerwork.py).
-  Grub      a Dew Grub, the city's livestock: it stays in its pen and never fights (dwellerwork.py).
+  Grub      a Dew Grub, the city's livestock: it stays in its pen (unless a farmer leads it to another) and
+            never fights (dwellerwork.py, dewgrubs.py).
 
 They walk with path maps (expansion.walkingDistances), so they go round walls and through doors instead of bumping
 into them. A path map is kept for a while per destination (PATH_KEEP_TURNS), since Dwellers keep going to the same
@@ -62,15 +63,20 @@ def distance(game, spot, other):
 
 # ---------------------------------------------------------------- walking
 
-def pathMap(game, goal):
-    """{tile: steps to goal}, kept for PATH_KEEP_TURNS on this floor."""
+def pathMap(game, goal, throughPlants=False):
+    """{tile: steps to goal}, kept for PATH_KEEP_TURNS on this floor. throughPlants (a farmer): through any plant."""
     cache = game.__dict__.setdefault("dwellerPaths", {})
-    key = (game.level, getattr(game, "sideFloor", None), game.turnCount // PATH_KEEP_TURNS, goal)
+    key = (game.level, getattr(game, "sideFloor", None), game.turnCount // PATH_KEEP_TURNS, goal, throughPlants)
     if key not in cache:
         if len(cache) > PATH_CACHE_LIMIT:
             cache.clear()
-        cache[key] = expansion.walkingDistances(game, goal, PATH_REACH)
+        cache[key] = expansion.walkingDistances(game, goal, PATH_REACH, plantsOpen=throughPlants)
     return cache[key]
+
+
+def canStep(tile, throughPlants=False):
+    """Can a Dweller step onto this tile? (passable, or with throughPlants any plant but Organizer's Demise)"""
+    return expansion.canEnter(tile, throughPlants) if throughPlants else organizers.passable(tile)
 
 
 def nudgeAside(game, spot):
@@ -92,17 +98,20 @@ def nudgeAside(game, spot):
     return True
 
 
-def swapPast(game, position, spot):
+def swapPast(game, position, spot, force=False):
     """The Dweller moving from position (lifted off it for its turn) swaps places with the Dweller on spot, which
     has already had its turn (so neither moves twice). Two Dwellers in each other's way, like one in a doorway and
     one outside it, get past each other this way. A Dweller that swapped can't again for SWAP_COOLDOWN turns, so no
-    pair swaps back and forth. True if they swapped (the mover then steps onto spot)."""
+    pair swaps back and forth, unless force (the mover has been stuck a while: a worker in a queue at a door,
+    dwellerwork.walkTo). True if they swapped (the mover then steps onto spot)."""
     tile = game.grid[spot]
     movedThisTurn = getattr(game, "movedEnemies", set())
     if tile[0] != 5 or len(tile) < 3 or not isDweller(tile[2]) or spot not in movedThisTurn:
         return False
     other = tile[2]
-    if game.turnCount - getattr(other, "swappedAt", -SWAP_COOLDOWN) < SWAP_COOLDOWN:
+    if other.role == "grub" and position not in other.pen and position not in (other.headedTo or ()):
+        return False  # (livestock is only swapped into its pen, or the one a farmer is moving it to)
+    if not force and game.turnCount - getattr(other, "swappedAt", -SWAP_COOLDOWN) < SWAP_COOLDOWN:
         return False
     other.swappedAt = game.turnCount
     tile.pop()  # (spot stays an enemy tile: the mover goes there)
@@ -113,10 +122,12 @@ def swapPast(game, position, spot):
     return True
 
 
-def stepToward(game, position, goal, pushPast=False):
+def stepToward(game, position, goal, pushPast=False, forceSwap=False, throughPlants=False):
     """One step along the path to goal, onto a free tile. Returns where it ends up (where it was if it can't move).
-    pushPast (a hunting guard): a citizen, noble or merchant on the next tile of the path is nudged aside."""
-    steps = pathMap(game, goal)
+    pushPast (a hunting guard): a citizen, noble or merchant on the next tile of the path is nudged aside.
+    forceSwap: a Dweller in the way swaps past even if it swapped lately (swapPast). throughPlants (a farmer, like
+    a goblin farmer): it walks through any plant."""
+    steps = pathMap(game, goal, throughPlants)
     here = steps.get(position, math.inf)
     if pushPast:
         ahead = [spot for spot in game.neighbors(position) if steps.get(spot, math.inf) < here]
@@ -125,16 +136,16 @@ def stepToward(game, position, goal, pushPast=False):
             if not organizers.passable(game.grid[nextSpot]) and nudgeAside(game, nextSpot):
                 return organizers.moveTo(game, position, nextSpot)
     nearer = [spot for spot in game.neighbors(position)
-              if organizers.passable(game.grid[spot]) and steps.get(spot, math.inf) < here]
+              if canStep(game.grid[spot], throughPlants) and steps.get(spot, math.inf) < here]
     if not nearer:  # the way is blocked by another Dweller: swap past it
         ahead = [spot for spot in game.neighbors(position) if steps.get(spot, math.inf) < here]
         if ahead:
             nextSpot = min(ahead, key=lambda spot: steps[spot])
-            if swapPast(game, position, nextSpot):
+            if swapPast(game, position, nextSpot, force=forceSwap):
                 return nextSpot
     if not nearer and position not in steps:  # too far for the path map: just head that way
         nearer = [spot for spot in game.neighbors(position)
-                  if organizers.passable(game.grid[spot]) and distance(game, spot, goal) < distance(game, position, goal)]
+                  if canStep(game.grid[spot], throughPlants) and distance(game, spot, goal) < distance(game, position, goal)]
     if not nearer:
         return position
     best = min(nearer, key=lambda spot: steps.get(spot, distance(game, spot, goal)))
@@ -228,6 +239,8 @@ def attitudeLabel(enemy):
     """For a Dweller's name when you look at it: "hostile" once it's turned on you; a Dew Grub: "livestock", and
     whether its Dew is ready. None otherwise."""
     if isDweller(enemy) and enemy.role == "grub":
+        if not getattr(enemy, "grown", True):
+            return "livestock, young"
         return "livestock, Dew ready" if enemy.dewReady else "livestock"
     return "hostile" if isDweller(enemy) and enemy.hostile else None
 

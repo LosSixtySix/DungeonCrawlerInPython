@@ -23,6 +23,8 @@ from cruel.world import expansion
 from cruel.world import peddler
 from cruel.world import metropolis
 from cruel.world import mineshafts
+from cruel.world import dewgrubs
+from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import cityshops
 from cruel.core import devconsole
@@ -1869,6 +1871,7 @@ class gameManager():
             cityshops.leaveStock(self, enemy, position)
         if stacks or gold:
             self.placeItems(position, stacks, gold)
+        dewgrubs.dropHeld(self, position, enemy)  # a farmer carrying a Dew Grub drops it
 
     def carriedShare(self):
         """The share of an enemy's pocketed materials you get back when you kill it."""
@@ -3768,7 +3771,8 @@ class gameManager():
             overgrow = self.activeEvent() == "overgrowth" and self.currentLocation[0] == 0
             if overgrow:
                 playerTile, self.grid[here] = self.grid[here], copy.copy(self.currentLocation)
-            changed = plants.step(self.grid, self.rooms, self.rowLength, noBirth=expansion.allFarmTiles(self), **growth)
+            noBirth = expansion.allFarmTiles(self) | (dwellerfarming.fieldTiles(self) if mineshafts.onSideFloor(self) else set())
+            changed = plants.step(self.grid, self.rooms, self.rowLength, noBirth=noBirth, **growth)
             if overgrow:
                 sprouted, self.grid[here] = self.grid[here], playerTile
                 if sprouted[0] == 8:
@@ -3830,6 +3834,8 @@ class gameManager():
         # leave out anyone an Organizer killed after it had already moved
         self.EnemyPositions = {p for p in listOfNewPositions if self.grid[p][0] == 5 and len(self.grid[p]) > 2}
         self.movedEnemies = set()
+        if mineshafts.onSideFloor(self):  # a farm floor's Dew Grubs go hungry
+            dwellerfarming.starveTurn(self)
 
 
     def enemyActions(self, enemy):
