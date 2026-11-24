@@ -1204,8 +1204,8 @@ class gameManager():
         self.change = True
 
     def centerTile(self):
-        x, y = self.painter.getCenterCartesian()
-        return x + y * self.rowLength
+        centerColumn, centerRow = self.painter.getCenterCartesian()
+        return centerColumn + centerRow * self.rowLength
 
     def stepPatience(self, now):
         """Called every frame. On the first floor, standing on the center tile (where you start) without pressing a
@@ -1225,9 +1225,9 @@ class gameManager():
     def randomOreFloor(self):
         """(ore floor type, motherlode): any ore floor, whatever its depth limit, weighted like normal, and always
         a Motherlode (patience is rewarded)."""
-        names = list(wall.ORE_FLOORS)
-        name = rand.choices(names, weights=[wall.ORE_FLOORS[n]["weight"] for n in names])[0]
-        return name, True
+        oreFloors = list(wall.ORE_FLOORS)
+        oreFloor = rand.choices(oreFloors, weights=[wall.ORE_FLOORS[floorType]["weight"] for floorType in oreFloors])[0]
+        return oreFloor, True
 
     def patienceFall(self):
         """Patience paid off: the floor gives way and you fall onto a new random ore floor. Any floors you had
@@ -2173,23 +2173,27 @@ class gameManager():
     def placeGiants(self, grid, count, home, avoid=()):
         """Puts count Fire Giants on open ground in a ring round home (the Molten Blade's chest), GIANT_SPAWN
         tiles out, to guard it. Spots far from where you arrive go first. Returns their anchors."""
-        R, avoid = self.rowLength, set(avoid)
-        hx, hy = home % R, home // R
-        px, py = self.playerPositionFlat % R, self.playerPositionFlat // R
-        low, high = enemies.GIANT_SPAWN
-        ring = [i for i in grid if low ** 2 <= (i % R - hx) ** 2 + (i // R - hy) ** 2 <= high ** 2]
+        rowLength, avoid = self.rowLength, set(avoid)
+        homeColumn, homeRow = home % rowLength, home // rowLength
+        playerColumn, playerRow = self.playerPositionFlat % rowLength, self.playerPositionFlat // rowLength
+        nearest, farthest = enemies.GIANT_SPAWN
+
+        def distanceSquared(spot, column, row):
+            return (spot % rowLength - column) ** 2 + (spot // rowLength - row) ** 2
+
+        ring = [spot for spot in grid if nearest ** 2 <= distanceSquared(spot, homeColumn, homeRow) <= farthest ** 2]
         rand.shuffle(ring)
-        ring.sort(key=lambda i: (i % R - px) ** 2 + (i // R - py) ** 2 <= 10 ** 2)  # (too close to you: last)
+        ring.sort(key=lambda spot: distanceSquared(spot, playerColumn, playerRow) <= 10 ** 2)  # (too close to you: last)
         anchors = set()
-        for a in ring:
+        for anchor in ring:
             if len(anchors) >= count:
                 break
-            tiles = self.footprint(a)
-            if tiles and not avoid & set(tiles) and self.canFit(a, grid=grid):
+            tiles = self.footprint(anchor)
+            if tiles and not avoid & set(tiles) and self.canFit(anchor, grid=grid):
                 giant = enemies.FireGiant()
                 giant.home = home
-                self.putGiant(grid, a, giant)
-                anchors.add(a)
+                self.putGiant(grid, anchor, giant)
+                anchors.add(anchor)
         return anchors
 
     def guardSpot(self, giant):
@@ -2197,8 +2201,9 @@ class gameManager():
         home = getattr(giant, "home", None)
         if home is None:
             return None
-        spots = [p for p in self.tilesAround(home, enemies.GIANT_GUARD)
-                 if self.grid[p][0] == 0 and self.canFit(p, giant.size, own=set(self.footprint(giant.anchor, giant.size)))]
+        ownTiles = set(self.footprint(giant.anchor, giant.size))
+        spots = [spot for spot in self.tilesAround(home, enemies.GIANT_GUARD)
+                 if self.grid[spot][0] == 0 and self.canFit(spot, giant.size, own=ownTiles)]
         return rand.choice(spots) if spots else None
 
     def isBig(self, enemy):
@@ -3265,7 +3270,8 @@ class gameManager():
             self.currentLocation = plantTile
             self.addPopup(f"{plant.name} grows over you", self.playerPositionFlat)
             return
-        free = [j for j in self.neighbors(self.playerPositionFlat) if self.grid[j][0] == 0 and j not in self.EnemyPositions]
+        free = [besidePlayer for besidePlayer in self.neighbors(self.playerPositionFlat)
+                if self.grid[besidePlayer][0] == 0 and besidePlayer not in self.EnemyPositions]
         if free:
             spot = rand.choice(free)
             self.grid[self.playerPositionFlat] = plantTile

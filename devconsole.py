@@ -378,15 +378,15 @@ class DevConsole():
         self.write("good", "Into the Scorched Depths. The Molten Blade is in the chest at the center")
 
     def cmdPatience(self, _args):
-        gm = self.gm
-        if gm.level != 0:
+        gameManager = self.gm
+        if gameManager.level != 0:
             self.write("error", "Only works on the first floor")
             return
-        if gm.playerPositionFlat != gm.centerTile():
+        if gameManager.playerPositionFlat != gameManager.centerTile():
             self.write("error", "Stand on the center tile (where you started) first")
             return
-        gm.patienceFall()
-        self.write("good", f"You fell onto a {gm.floorTypeName()}")
+        gameManager.patienceFall()
+        self.write("good", f"You fell onto a {gameManager.floorTypeName()}")
 
     def cmdClear(self, _args):
         self.log = []
