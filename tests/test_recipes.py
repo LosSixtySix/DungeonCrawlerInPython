@@ -46,9 +46,9 @@ class RecipeListTests(unittest.TestCase):
             self.assertEqual(recipe.needs, {plants.PLANTS[recipe.makes]["seed"]: 1})
 
     def test_every_craftable_station_has_one_recipe_and_found_stations_have_none(self):
-        for stationId, info in recipes.STATION_INFO.items():
+        for stationId, stationDetails in recipes.STATION_INFO.items():
             stationRecipe = recipes.stationRecipe(stationId)
-            if stationId == "hand" or "found" in info:
+            if stationId == "hand" or "found" in stationDetails:
                 self.assertIsNone(stationRecipe, stationId)
             else:
                 self.assertIsNotNone(stationRecipe, stationId)
@@ -60,7 +60,7 @@ class RecipeListTests(unittest.TestCase):
             for recipe in recipesOfKind("station"):
                 if recipe.station in reachable:
                     reachable.add(recipe.makes)
-        foundStations = {stationId for stationId, info in recipes.STATION_INFO.items() if "found" in info}
+        foundStations = {stationId for stationId, stationDetails in recipes.STATION_INFO.items() if "found" in stationDetails}
         self.assertEqual(reachable | foundStations, set(recipes.STATIONS))
 
     def test_every_enchant_and_meal_buff_is_a_known_effect(self):
