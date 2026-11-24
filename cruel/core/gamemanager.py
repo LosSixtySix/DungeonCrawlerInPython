@@ -1767,9 +1767,9 @@ class gameManager():
             drops += loot.rollWall("Gold Wall", player.attributes["wisdom"])
         if isinstance(broken, wall.OreVein):  # Iron Pick (+1 ore) and Keen Eye (1 in 4 for +1)
             extra = player.countEffect("extra_ore") + sum(1 for _ in range(player.countEffect("keen_eye")) if rand.random() < 0.25)
-            drops = [(m, n + extra if m == broken.ore else n) for m, n in drops]
+            drops = [(materialId, amount + extra if materialId == broken.ore else amount) for materialId, amount in drops]
         if player.hasEffect("gold_double"):
-            drops = [(m, n * 2 if m == "gold" else n) for m, n in drops]
+            drops = [(materialId, amount * 2 if materialId == "gold" else amount) for materialId, amount in drops]
         kind = getattr(broken, "corruptedBy", None)
         if kind:  # a wall a plant had corrupted (Overgrowth): its herb too
             drops = drops + [(plants.PLANTS[kind]["herb"], 1)]
@@ -3037,7 +3037,7 @@ class gameManager():
         area = self.blastArea(landing, radius)
         self.explosions.append([landing, radius, shot["effect"], pygame.time.get_ticks()])
         if shot["effect"] == "Fire":
-            self.igniteArea(area + [p for p in self.plantsAtEdge(landing, radius) if p not in area])
+            self.igniteArea(area + [edgeSpot for edgeSpot in self.plantsAtEdge(landing, radius) if edgeSpot not in area])
             hit = 0
             for position in self.oncePerEnemy(area):
                 tile = self.grid[position]
@@ -3067,7 +3067,7 @@ class gameManager():
         elif shot["effect"] == "Explosive":
             hit = 0
             self.sound.playExplosion()
-            self.igniteArea(area + [p for p in self.plantsAtEdge(landing, radius) if p not in area])
+            self.igniteArea(area + [edgeSpot for edgeSpot in self.plantsAtEdge(landing, radius) if edgeSpot not in area])
             for position in self.oncePerEnemy(area):
                 tile = self.grid[position]
                 if tile[0] == 5 and len(tile) > 2:
@@ -3083,11 +3083,11 @@ class gameManager():
                 self.bleed(self.playerPositionFlat)
             for position in self.blastWalls(landing,radius,area):
                 hit += 1
-                w = self.grid[position][2]
+                blastedWall = self.grid[position][2]
                 self.chip(position,landing)
-                w.brokenPoints |= wall.getRandomPoints((1,self.tileSize -1), (1,self.tileSize -1), self.tileSize ** 2//3)
-                w.hp -= recipes.BOMB_WALL_DAMAGE
-                if w.hp <= 0: 
+                blastedWall.brokenPoints |= wall.getRandomPoints((1,self.tileSize -1), (1,self.tileSize -1), self.tileSize ** 2//3)
+                blastedWall.hp -= recipes.BOMB_WALL_DAMAGE
+                if blastedWall.hp <= 0: 
                     self.breakWall(position)
             if rand.random() < FLOOR_BREAK_CHANCE:
                 hit += 1
@@ -4019,8 +4019,8 @@ class gameManager():
             return tile[2].name + (" (over a hole)" if getattr(tile[2], "holeBelow", False) else "")
         if tile[0] == 8:
             plant = tile[2]
-            notes = [n for n in (("yours" if plant.planted and getattr(plant, "faction", None) is None else
-                                  "goblin crop" if plant.planted else ""), plant.stageLabel()) if n]
+            notes = [note for note in (("yours" if plant.planted and getattr(plant, "faction", None) is None else
+                                  "goblin crop" if plant.planted else ""), plant.stageLabel()) if note]
             return plant.name + (f" ({', '.join(notes)})" if notes else "")
         if tile[0] == 7:
             station = tile[2]

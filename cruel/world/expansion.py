@@ -303,21 +303,21 @@ def dropOut(gm, thing):
             setattr(thing, attr, None)
 
 
-def fallenFaction(gm, origin, look):
+def fallenFaction(gameManager, origin, look):
     """The faction on this floor for goblins and goblin chests that fell from origin (floor, faction id): made the
     first time one of them lands here, in the same colors. It has no camp: a builder of it lights one and it starts
     over; without one it goes to seize the nearest other faction's spawner (seizeStep), or with none to take its
     goblins wander, fighting anything that isn't theirs (wild goblins included)."""
-    state = camp(gm)
+    state = camp(gameManager)
     ids = state.setdefault("fellFrom", {})
-    f = state["factions"].get(ids.get(origin))
-    if f is None or getattr(f, "abandoned", False):
+    goblinFaction = state["factions"].get(ids.get(origin))
+    if goblinFaction is None or getattr(goblinFaction, "abandoned", False):
         floor, factionId = origin
-        originFaction = gm.camps.get(floor, {}).get("factions", {}).get(factionId)
-        f = newFaction(gm, look or NEUTRAL_LOOK, neutral=isNeutral(originFaction))
-        f.fallen = True
-        ids[origin] = f.id
-    return f
+        originFaction = gameManager.camps.get(floor, {}).get("factions", {}).get(factionId)
+        goblinFaction = newFaction(gameManager, look or NEUTRAL_LOOK, neutral=isNeutral(originFaction))
+        goblinFaction.fallen = True
+        ids[origin] = goblinFaction.id
+    return goblinFaction
 
 
 def land(gm, thing, t):
@@ -693,14 +693,14 @@ def attack(gm, i, unit, target, targetPosition):
                 unit.materials["meat"] = unit.materials.get("meat", 0) + meat
 
 
-def adjacentFoe(gm, i, unit):
+def adjacentFoe(gameManager, unitSpot, unit):
     """(target, position) of something hostile right beside unit, or None."""
-    if huntsPlayer(gm, unit) and gm.playerPositionFlat in gm.neighbors(i):
-        return "player", gm.playerPositionFlat
-    for j in gm.neighbors(i):
-        tile = gm.grid[j]
+    if huntsPlayer(gameManager, unit) and gameManager.playerPositionFlat in gameManager.neighbors(unitSpot):
+        return "player", gameManager.playerPositionFlat
+    for besideUnit in gameManager.neighbors(unitSpot):
+        tile = gameManager.grid[besideUnit]
         if tile[0] == 5 and len(tile) > 2 and hostile(unit, tile[2]):
-            return tile[2], j
+            return tile[2], besideUnit
     return None
 
 
@@ -796,66 +796,66 @@ def joinSquad(gm, unit, f):
         squad.marching = True
 
 
-def squadTarget(gm, squad, ctx, current, currentAt):
+def squadTarget(gameManager, squad, turnContext, current, currentAt):
     """(target, position) the whole squad is after this turn, or None. Worked out once a turn per squad.
     current is the unit taking its turn (off the map while it moves), standing at currentAt."""
     key = id(squad)
-    if key in ctx["squadTargets"]:
-        return ctx["squadTargets"][key]
-    ctx["pos"][id(current)] = currentAt
-    where = lambda m: currentAt if m is current else find(gm, ctx, m)
-    squad.members = [m for m in squad.members if m.hp > 0 and where(m) is not None]
+    if key in turnContext["squadTargets"]:
+        return turnContext["squadTargets"][key]
+    turnContext["pos"][id(current)] = currentAt
+    where = lambda member: currentAt if member is current else find(gameManager, turnContext, member)
+    squad.members = [member for member in squad.members if member.hp > 0 and where(member) is not None]
     leader = squadLeader(squad)
     result = None
     leaderAt = where(leader) if leader else None
-    squadFaction = faction(gm, leader) if leader else None
+    squadFaction = faction(gameManager, leader) if leader else None
     guarding = isNeutral(squadFaction)  # a neutral faction only fights what comes near its camp
-    chasesPlayer = leader is not None and huntsPlayer(gm, leader)
+    chasesPlayer = leader is not None and huntsPlayer(gameManager, leader)
 
     def worthFighting(position):
-        return not guarding or nearCamp(gm, squadFaction, position)
+        return not guarding or nearCamp(gameManager, squadFaction, position)
 
     if squad.target is not None and leaderAt is not None:  # keep after the same target while it's close
-        at = gm.playerPositionFlat if squad.target == "player" and chasesPlayer else \
-            (find(gm, ctx, squad.target) if squad.target != "player" else None)
-        if at is not None and dist(gm, at, leaderAt) <= CHASE_LIMIT and worthFighting(at):
-            result = (squad.target, at)
+        memberSpot = gameManager.playerPositionFlat if squad.target == "player" and chasesPlayer else \
+            (find(gameManager, turnContext, squad.target) if squad.target != "player" else None)
+        if memberSpot is not None and dist(gameManager, memberSpot, leaderAt) <= CHASE_LIMIT and worthFighting(memberSpot):
+            result = (squad.target, memberSpot)
     if result is None:
         squad.target = None
         best = None
         lookouts = list(squad.members)
         if not squad.marching and leaderAt is not None:  # guarding the camp: also whatever comes at its builders
-            lookouts += [b for p, b in near(gm, ctx, leaderAt, CHASE_LIMIT)
-                         if b.name in WORKERS and factionOf(b) == factionOf(leader)]
-        for m in lookouts:
-            at = where(m)
-            if at is None:
+            lookouts += [worker for enemySpot, worker in near(gameManager, turnContext, leaderAt, CHASE_LIMIT)
+                         if worker.name in WORKERS and factionOf(worker) == factionOf(leader)]
+        for member in lookouts:
+            memberSpot = where(member)
+            if memberSpot is None:
                 continue
-            if at in gm.smoke:
+            if memberSpot in gameManager.smoke:
                 continue  # can't see out of smoke
-            if chasesPlayer and gm.playerPositionFlat not in gm.smoke and dist(gm, at, gm.playerPositionFlat) <= SIGHT \
-                    and worthFighting(gm.playerPositionFlat) and gm.lineOfSight(at, gm.playerPositionFlat):
-                d = dist(gm, at, gm.playerPositionFlat)
-                if best is None or d < best[0]:
-                    best = (d, "player", gm.playerPositionFlat)
-            for p, e in near(gm, ctx, at, SIGHT):
-                if hostile(m, e) and e.hp > 0 and p not in gm.smoke and worthFighting(p) and gm.lineOfSight(at, p):
-                    d = dist(gm, at, p)
-                    if best is None or d < best[0]:
-                        best = (d, e, p)
+            if chasesPlayer and gameManager.playerPositionFlat not in gameManager.smoke and dist(gameManager, memberSpot, gameManager.playerPositionFlat) <= SIGHT \
+                    and worthFighting(gameManager.playerPositionFlat) and gameManager.lineOfSight(memberSpot, gameManager.playerPositionFlat):
+                distance = dist(gameManager, memberSpot, gameManager.playerPositionFlat)
+                if best is None or distance < best[0]:
+                    best = (distance, "player", gameManager.playerPositionFlat)
+            for enemySpot, enemy in near(gameManager, turnContext, memberSpot, SIGHT):
+                if hostile(member, enemy) and enemy.hp > 0 and enemySpot not in gameManager.smoke and worthFighting(enemySpot) and gameManager.lineOfSight(memberSpot, enemySpot):
+                    distance = dist(gameManager, memberSpot, enemySpot)
+                    if best is None or distance < best[0]:
+                        best = (distance, enemy, enemySpot)
         if best:
             squad.target = best[1]
             result = (best[1], best[2])
-        elif getattr(gm, "torchLight", None) and not guarding:  # nobody to fight, but your torchlight in sight: into the light
-            for m in squad.members:
-                at = where(m)
-                if at is None or at in gm.smoke:
+        elif getattr(gameManager, "torchLight", None) and not guarding:  # nobody to fight, but your torchlight in sight: into the light
+            for member in squad.members:
+                memberSpot = where(member)
+                if memberSpot is None or memberSpot in gameManager.smoke:
                     continue
-                spot = gm.torchSpotSeen({t for t in gm.torchLight if dist(gm, at, t) <= SIGHT and gm.lineOfSight(at, t)})
+                spot = gameManager.torchSpotSeen({torchSpot for torchSpot in gameManager.torchLight if dist(gameManager, memberSpot, torchSpot) <= SIGHT and gameManager.lineOfSight(memberSpot, torchSpot)})
                 if spot is not None:
                     result = ("light", spot)
                     break
-    ctx["squadTargets"][key] = result
+    turnContext["squadTargets"][key] = result
     return result
 
 
@@ -864,76 +864,76 @@ def squadLeader(squad):
     return next((m for m in alive if m.name == "Goblin Chieftan"), alive[0] if alive else None)
 
 
-def soldierTurn(gm, i, unit, ctx):
-    f = faction(gm, unit)
-    if f is None:
-        return i
+def soldierTurn(gameManager, unitSpot, unit, turnContext):
+    goblinFaction = faction(gameManager, unit)
+    if goblinFaction is None:
+        return unitSpot
     squad = getattr(unit, "squad", None)
     if squad is None or unit not in squad.members:
-        joinSquad(gm, unit, f)
+        joinSquad(gameManager, unit, goblinFaction)
         squad = unit.squad
-    protected = f.walls()
-    seizing = getattr(f, "seizing", None) is not None
-    fighting = migrating(f) is None or (seizing and dist(gm, i, f.migrating) <= SEIZE_FIGHT)
-    target = squadTarget(gm, squad, ctx, unit, i) if fighting else None
+    protected = goblinFaction.walls()
+    seizing = getattr(goblinFaction, "seizing", None) is not None
+    fighting = migrating(goblinFaction) is None or (seizing and dist(gameManager, unitSpot, goblinFaction.migrating) <= SEIZE_FIGHT)
+    target = squadTarget(gameManager, squad, turnContext, unit, unitSpot) if fighting else None
     if target:
-        return step(gm, i, unit, target[1], protected, ctx)
-    if migrating(f) is not None:  # leaving after a schism: the leader heads for the new camp, the rest follow it.
+        return step(gameManager, unitSpot, unit, target[1], protected, turnContext)
+    if migrating(goblinFaction) is not None:  # leaving after a schism: the leader heads for the new camp, the rest follow it.
         # They don't stop to hunt anything on the way (they still fight whatever is right beside them, takeTurn).
         # Off to seize a spawner, the leader goes right up to it, into its hut.
         leader = squadLeader(squad)
-        leaderAt = None if leader is unit else find(gm, ctx, leader)
+        leaderAt = None if leader is unit else find(gameManager, turnContext, leader)
         if leaderAt is None:
             close = 1.5 if seizing else 3
-            return migrateTurn(gm, i, unit, f, ctx) if dist(gm, i, f.migrating) > close else organizers.wander(gm, i)
-        return step(gm, i, unit, leaderAt, protected, ctx) if dist(gm, i, leaderAt) > FOLLOW_DISTANCE else i
+            return migrateTurn(gameManager, unitSpot, unit, goblinFaction, turnContext) if dist(gameManager, unitSpot, goblinFaction.migrating) > close else organizers.wander(gameManager, unitSpot)
+        return step(gameManager, unitSpot, unit, leaderAt, protected, turnContext) if dist(gameManager, unitSpot, leaderAt) > FOLLOW_DISTANCE else unitSpot
     if squad.marching:
-        home = homeBonfire(gm, f, i)
+        home = homeBonfire(gameManager, goblinFaction, unitSpot)
         if home is not None:
             if not squad.hauling and squadLoad(squad) >= HAUL_AT:
                 squad.hauling, squad.mission = True, None  # full enough: straight home
             if squad.hauling:
-                return haulTurn(gm, i, unit, squad, f, home, ctx)
-            if squad.raid is None and not isNeutral(f):  # a neutral faction never raids
-                squad.raid = raidTarget(gm, f, home)
+                return haulTurn(gameManager, unitSpot, unit, squad, goblinFaction, home, turnContext)
+            if squad.raid is None and not isNeutral(goblinFaction):  # a neutral faction never raids
+                squad.raid = raidTarget(gameManager, goblinFaction, home)
             if squad.raid is not None:
-                return raidTurn(gm, i, unit, squad, f, ctx)
-            position = scavengeTurn(gm, i, unit, squad, f, home, ctx)
+                return raidTurn(gameManager, unitSpot, unit, squad, goblinFaction, turnContext)
+            position = scavengeTurn(gameManager, unitSpot, unit, squad, goblinFaction, home, turnContext)
             if position is not None:
                 return position
-            position = gatherTurn(gm, i, unit, squad, f, home, ctx)
+            position = gatherTurn(gameManager, unitSpot, unit, squad, goblinFaction, home, turnContext)
             if position is not None:
                 return position
-            position = mineTurn(gm, i, unit, squad, f, home, ctx)
+            position = mineTurn(gameManager, unitSpot, unit, squad, goblinFaction, home, turnContext)
             if position is not None:
                 return position
     if not squad.marching:  # waiting at the bonfire for more goblins: feed hungry spawners and clear walls meanwhile
         task = getattr(unit, "task", None)
         if task is None or task.get("kind") != "feed":
-            task = unit.task = feedTask(gm, i, unit, f)
+            task = unit.task = feedTask(gameManager, unitSpot, unit, goblinFaction)
         if task is not None:
-            return feedTurn(gm, i, unit, f, task, ctx)
-        position = clearTurn(gm, i, unit, f, ctx)
+            return feedTurn(gameManager, unitSpot, unit, goblinFaction, task, turnContext)
+        position = clearTurn(gameManager, unitSpot, unit, goblinFaction, turnContext)
         if position is not None:
             return position
     leader = squadLeader(squad)
-    leaderAt = i if leader is unit else (find(gm, ctx, leader) if leader is not None else None)
+    leaderAt = unitSpot if leader is unit else (find(gameManager, turnContext, leader) if leader is not None else None)
     if leader is unit or leaderAt is None:
-        home = homeBonfire(gm, f, i)
+        home = homeBonfire(gameManager, goblinFaction, unitSpot)
         if home is None:
-            return organizers.wander(gm, i)
+            return organizers.wander(gameManager, unitSpot)
         if not squad.marching:  # gathering: stay near the bonfire
-            return step(gm, i, unit, home, protected, ctx) if dist(gm, i, home) > 3 else organizers.wander(gm, i)
-        position = None if isNeutral(f) else missionTurn(gm, i, unit, squad, f, home, ctx)  # (neutral: stays home)
+            return step(gameManager, unitSpot, unit, home, protected, turnContext) if dist(gameManager, unitSpot, home) > 3 else organizers.wander(gameManager, unitSpot)
+        position = None if isNeutral(goblinFaction) else missionTurn(gameManager, unitSpot, unit, squad, goblinFaction, home, turnContext)  # (neutral: stays home)
         if position is not None:
             return position
         squad.goalTurns += 1  # nowhere to send it: patrol round the bonfire
-        if squad.goal is None or dist(gm, i, squad.goal) <= 1 or squad.goalTurns > 25:
-            squad.goal, squad.goalTurns = patrolSpot(gm, home), 0
-        return step(gm, i, unit, squad.goal, protected, ctx) if squad.goal is not None else i
-    if dist(gm, i, leaderAt) > FOLLOW_DISTANCE:
-        return step(gm, i, unit, leaderAt, protected, ctx)
-    return i
+        if squad.goal is None or dist(gameManager, unitSpot, squad.goal) <= 1 or squad.goalTurns > 25:
+            squad.goal, squad.goalTurns = patrolSpot(gameManager, home), 0
+        return step(gameManager, unitSpot, unit, squad.goal, protected, turnContext) if squad.goal is not None else unitSpot
+    if dist(gameManager, unitSpot, leaderAt) > FOLLOW_DISTANCE:
+        return step(gameManager, unitSpot, unit, leaderAt, protected, turnContext)
+    return unitSpot
 
 
 # ---------------------------------------------------------------- hauling, mining and raiding
@@ -2370,44 +2370,44 @@ def factionUnits(gm, f):
     return out
 
 
-def schism(gm, f, units):
+def schism(gameManager, goblinFaction, units):
     """Half of f breaks away: half its squads (whole squads), half its builders and half its farmers become a new
     faction in new colors. If there's somewhere far enough from every camp (farAway), they march there to set up a
     camp, at peace with f until its first bonfire is lit; huts and chests all stay with f. If the floor is too
     crowded for that, they rise up where they are instead (takeOver): at war with f at once, they take half its huts."""
-    squads = [s for s in f.squads if any(m.hp > 0 for m in s.members)]
+    squads = [leavingSquad for leavingSquad in goblinFaction.squads if any(member.hp > 0 for member in leavingSquad.members)]
     rand.shuffle(squads)
     leaving = squads[:len(squads) // 2]
-    builders = [u for _, u in units if u.name == "Goblin Builder"]
-    farmers = [u for _, u in units if u.name == "Goblin Farmer"]
+    builders = [goblin for _, goblin in units if goblin.name == "Goblin Builder"]
+    farmers = [goblin for _, goblin in units if goblin.name == "Goblin Farmer"]
     rand.shuffle(builders)
     rand.shuffle(farmers)
-    goers = [m for s in leaving for m in s.members if m.hp > 0] + builders[:max(1, len(builders) // 2)] + \
+    goers = [member for leavingSquad in leaving for member in leavingSquad.members if member.hp > 0] + builders[:max(1, len(builders) // 2)] + \
         farmers[:max(1, len(farmers) // 2)]
-    where = {id(u): p for p, u in units}
-    start = next((where[id(u)] for u in goers if id(u) in where), None)
+    where = {id(goblin): farmPlot for farmPlot, goblin in units}
+    start = next((where[id(goblin)] for goblin in goers if id(goblin) in where), None)
     if start is None:
         return False
-    new = newFaction(gm, pickLook(gm))
-    goal = farAway(gm, start, farthest=isNeutral(new))
+    new = newFaction(gameManager, pickLook(gameManager))
+    goal = farAway(gameManager, start, farthest=isNeutral(new))
     if goal is not None:
-        new.peaceWith, new.peaceUntil, new.migrating = f.id, gm.turnCount + SCHISM_PEACE, goal
-    for s in leaving:
-        f.squads.remove(s)
-        new.squads.append(s)
-        s.raid, s.hauling, s.goal, s.target, s.mission = None, False, None, None, None
-    for u in goers:
-        setFaction(u, new)
-        if hasattr(u, "task"):
-            u.task = None
-    for p in farms(f):
-        if p.get("farmer") in goers:
-            p["farmer"] = None
+        new.peaceWith, new.peaceUntil, new.migrating = goblinFaction.id, gameManager.turnCount + SCHISM_PEACE, goal
+    for leavingSquad in leaving:
+        goblinFaction.squads.remove(leavingSquad)
+        new.squads.append(leavingSquad)
+        leavingSquad.raid, leavingSquad.hauling, leavingSquad.goal, leavingSquad.target, leavingSquad.mission = None, False, None, None, None
+    for goblin in goers:
+        setFaction(goblin, new)
+        if hasattr(goblin, "task"):
+            goblin.task = None
+    for farmPlot in farms(goblinFaction):
+        if farmPlot.get("farmer") in goers:
+            farmPlot["farmer"] = None
     if goal is None:
-        takeOver(gm, f, new)
+        takeOver(gameManager, goblinFaction, new)
     else:
-        packUp(gm, f, goers)
-    gm.change = True
+        packUp(gameManager, goblinFaction, goers)
+    gameManager.change = True
     return True
 
 
@@ -2683,34 +2683,34 @@ def othersAround(gm):
     return out + [t for t, tile in gm.grid.items() if tile[0] == 7]
 
 
-def distanceFromCamps(gm, spot, camps):
+def distanceFromCamps(gameManager, spot, camps):
     """How far spot is from the nearest of camps (positions); infinitely far when there are none."""
-    return min((dist(gm, spot, campSpot) for campSpot in camps), default=math.inf)
+    return min((dist(gameManager, spot, campSpot) for campSpot in camps), default=math.inf)
 
 
-def farAway(gm, start, ignore=None, farthest=False):
+def farAway(gameManager, start, ignore=None, farthest=False):
     """Where a schism's leaving half goes to set up camp: an open floor tile anywhere on the floor (goblins dig their
     way there) at least SCHISM_DISTANCE from every faction's bonfires, huts and war chests and every other leaving
     group's destination (campsAround) and SCHISM_CLEAR from you, any other enemy and any station (othersAround).
     It doesn't need room for a hut yet: once the bonfire's lit, builders dig the camp out around it. The roomiest
     of those, or None only if there's no such spot on the whole floor. With farthest (a neutral faction), the one
     of FAR_SPOTS_WEIGHED such spots that's farthest from every other camp instead."""
-    fires, others = campsAround(gm, ignore), othersAround(gm)
-    spots = [t for t, tile in gm.grid.items() if tile[0] == 0]
+    fires, others = campsAround(gameManager, ignore), othersAround(gameManager)
+    spots = [spot for spot, tile in gameManager.grid.items() if tile[0] == 0]
     rand.shuffle(spots)
     found = []
-    for t in spots:
-        if any(dist(gm, t, b) < SCHISM_DISTANCE for b in fires) or any(dist(gm, t, p) < SCHISM_CLEAR for p in others):
+    for spot in spots:
+        if any(dist(gameManager, spot, campSpot) < SCHISM_DISTANCE for campSpot in fires) or any(dist(gameManager, spot, otherSpot) < SCHISM_CLEAR for otherSpot in others):
             continue
-        found.append(t)
+        found.append(spot)
         if len(found) >= (FAR_SPOTS_WEIGHED if farthest else 60):
             break
-    roomy = lambda t: sum(1 for dy in range(-4, 5) for dx in range(-4, 5)
-                          if (n := offsetTile(gm, t, dx, dy)) is not None and gm.grid[n][0] == 0)
+    roomy = lambda spot: sum(1 for rowOffset in range(-4, 5) for columnOffset in range(-4, 5)
+                          if (nearbySpot := offsetTile(gameManager, spot, columnOffset, rowOffset)) is not None and gameManager.grid[nearbySpot][0] == 0)
     if not found:
         return None
     if farthest:
-        return max(found, key=lambda spot: (distanceFromCamps(gm, spot, fires), roomy(spot)))
+        return max(found, key=lambda spot: (distanceFromCamps(gameManager, spot, fires), roomy(spot)))
     return max(found, key=roomy)
 
 
@@ -2721,17 +2721,17 @@ def migrating(f):
 MIGRATE_RECHECK = 25        # a leaving group checks this often that nobody has camped near where it's going
 
 
-def migrateTurn(gm, i, unit, f, ctx):
+def migrateTurn(gameManager, unitSpot, unit, goblinFaction, turnContext):
     """A step toward where its faction is going to set up camp (a floor-wide path map, like a bonfire's). Now and
     then it checks nobody has settled within SCHISM_DISTANCE of it meanwhile, and if so, picks somewhere else."""
-    if getattr(f, "seizing", None) is None and \
-            gm.turnCount - f.__dict__.setdefault("migrateChecked", gm.turnCount) >= MIGRATE_RECHECK:
-        f.migrateChecked = gm.turnCount
-        if any(dist(gm, f.migrating, t) < SCHISM_DISTANCE for t in campsAround(gm, ignore=f)):
-            goal = farAway(gm, i, ignore=f, farthest=isNeutral(f))
+    if getattr(goblinFaction, "seizing", None) is None and \
+            gameManager.turnCount - goblinFaction.__dict__.setdefault("migrateChecked", gameManager.turnCount) >= MIGRATE_RECHECK:
+        goblinFaction.migrateChecked = gameManager.turnCount
+        if any(dist(gameManager, goblinFaction.migrating, campSpot) < SCHISM_DISTANCE for campSpot in campsAround(gameManager, ignore=goblinFaction)):
+            goal = farAway(gameManager, unitSpot, ignore=goblinFaction, farthest=isNeutral(goblinFaction))
             if goal is not None:
-                f.migrating = goal
-    return step(gm, i, unit, f.migrating, f.walls(), ctx, bonfireField(gm, f.migrating))
+                goblinFaction.migrating = goal
+    return step(gameManager, unitSpot, unit, goblinFaction.migrating, goblinFaction.walls(), turnContext, bonfireField(gameManager, goblinFaction.migrating))
 
 
 # ---------------------------------------------------------------- wild goblins and everyone else
@@ -2772,64 +2772,64 @@ def otherTurn(gm, i, enemy, ctx):
 
 # ---------------------------------------------------------------- the camp each turn
 
-def stepCamp(gm):
+def stepCamp(gameManager):
     """Spawners spawn, bonfires draw wild goblins in, wanderers arrive, and big factions split."""
-    state = camp(gm)
+    state = camp(gameManager)
     if not state["factions"]:
         return
-    calmDown(gm)
-    for f in state["factions"].values():  # pieces that fell off the list (saves from before you couldn't stand on them)
-        for t in f.bonfires + [h["center"] for h in f.huts]:
-            tile = gm.grid.get(t)
+    calmDown(gameManager)
+    for goblinFaction in state["factions"].values():  # pieces that fell off the list (saves from before you couldn't stand on them)
+        for spot in goblinFaction.bonfires + [hut["center"] for hut in goblinFaction.huts]:
+            tile = gameManager.grid.get(spot)
             if tile and tile[0] == CAMP:
-                state["structures"].add(t)
-    for t in list(state["structures"]):
-        tile = gm.grid.get(t)
-        if tile and tile[0] == 1 and t == gm.playerPositionFlat and gm.currentLocation[0] == CAMP:
+                state["structures"].add(spot)
+    for spot in list(state["structures"]):
+        tile = gameManager.grid.get(spot)
+        if tile and tile[0] == 1 and spot == gameManager.playerPositionFlat and gameManager.currentLocation[0] == CAMP:
             continue  # you're standing on it (you got put there somehow): it's still there under you
         if not tile or tile[0] != CAMP:
-            state["structures"].discard(t)
+            state["structures"].discard(spot)
             continue
-        s = tile[2]
-        if s.kind == "spawner":
-            stepSpawner(gm, t, s)
-    bonfires = [b for f in state["factions"].values() for b in f.bonfires]
-    if bonfires and gm.turnCount % RALLY_TURNS == 0:
-        for p in list(gm.EnemyPositions):
-            tile = gm.grid.get(p)
+        structure = tile[2]
+        if structure.kind == "spawner":
+            stepSpawner(gameManager, spot, structure)
+    bonfires = [bonfireSpot for goblinFaction in state["factions"].values() for bonfireSpot in goblinFaction.bonfires]
+    if bonfires and gameManager.turnCount % RALLY_TURNS == 0:
+        for enemySpot in list(gameManager.EnemyPositions):
+            tile = gameManager.grid.get(enemySpot)
             if not tile or tile[0] != 5 or len(tile) < 3:
                 continue
-            e = tile[2]
-            if e.name in GOBLIN_NAMES and factionOf(e) is None and getattr(e, "rally", None) is None \
-                    and getattr(e, "foe", None) is None and e.lastPlayerPosition is None:
-                nearest = min(bonfires, key=lambda b: dist(gm, b, p))
-                if dist(gm, nearest, p) <= RALLY_REACH and rand.random() < RALLY_CHANCE:
-                    e.rally = nearest
-    if bonfires and gm.turnCount % WANDERER_TURNS == 0:
-        wanderIn(gm, bonfires)
-    for f in list(state["factions"].values()):
-        if getattr(f, "abandoned", False):
-            claimStep(gm, f)
-        elif dyingOut(gm, f):
-            abandon(gm, f)
-    for f in list(state["factions"].values()):
-        if not f.bonfires and not getattr(f, "abandoned", False):
-            seizeStep(gm, f)
-    for f in list(state["factions"].values()):
-        if migrating(f) is not None or not f.bonfires:
+            goblin = tile[2]
+            if goblin.name in GOBLIN_NAMES and factionOf(goblin) is None and getattr(goblin, "rally", None) is None \
+                    and getattr(goblin, "foe", None) is None and goblin.lastPlayerPosition is None:
+                nearest = min(bonfires, key=lambda bonfireSpot: dist(gameManager, bonfireSpot, enemySpot))
+                if dist(gameManager, nearest, enemySpot) <= RALLY_REACH and rand.random() < RALLY_CHANCE:
+                    goblin.rally = nearest
+    if bonfires and gameManager.turnCount % WANDERER_TURNS == 0:
+        wanderIn(gameManager, bonfires)
+    for goblinFaction in list(state["factions"].values()):
+        if getattr(goblinFaction, "abandoned", False):
+            claimStep(gameManager, goblinFaction)
+        elif dyingOut(gameManager, goblinFaction):
+            abandon(gameManager, goblinFaction)
+    for goblinFaction in list(state["factions"].values()):
+        if not goblinFaction.bonfires and not getattr(goblinFaction, "abandoned", False):
+            seizeStep(gameManager, goblinFaction)
+    for goblinFaction in list(state["factions"].values()):
+        if migrating(goblinFaction) is not None or not goblinFaction.bonfires:
             continue
-        units = factionUnits(gm, f)
-        f.food = foodCount(gm, f)
-        if not f.__dict__.setdefault("canSchism", True):
+        units = factionUnits(gameManager, goblinFaction)
+        goblinFaction.food = foodCount(gameManager, goblinFaction)
+        if not goblinFaction.__dict__.setdefault("canSchism", True):
             continue
-        if len(units) < SPLIT_UNITS or sum(u.name == "Goblin Builder" for _, u in units) < SPLIT_BUILDERS \
-                or sum(u.name == "Goblin Farmer" for _, u in units) < SPLIT_FARMERS:
+        if len(units) < SPLIT_UNITS or sum(unit.name == "Goblin Builder" for _, unit in units) < SPLIT_BUILDERS \
+                or sum(unit.name == "Goblin Farmer" for _, unit in units) < SPLIT_FARMERS:
             continue  # (its chance stays where it is until it meets them again)
-        chance = f.__dict__.setdefault("schismChance", SCHISM_CHANCE)
-        if rand.random() < chance and schism(gm, f, units):
-            f.schismChance = SCHISM_CHANCE
+        chance = goblinFaction.__dict__.setdefault("schismChance", SCHISM_CHANCE)
+        if rand.random() < chance and schism(gameManager, goblinFaction, units):
+            goblinFaction.schismChance = SCHISM_CHANCE
         else:
-            f.schismChance = chance + schismStep(gm, f, units)
+            goblinFaction.schismChance = chance + schismStep(gameManager, goblinFaction, units)
 
 
 def foodCount(gm, f):
@@ -2903,43 +2903,43 @@ def wanderIn(gm, bonfires):
         goblin.rally = min(bonfires, key=lambda b: dist(gm, b, t))
 
 
-def spawnWarband(gm):
+def spawnWarband(gameManager):
     """The event's war band (WARBAND): free tiles together for all of it, at least 10 from you and out of sight.
     True if it arrived. The chief and goblins make a squad that guards the camp (it stays by the bonfire) until a
     third goblin joins it from a spawner and it marches out on patrol."""
     size = len(WARBAND)
     neutral = rand.random() < NEUTRAL_CHANCE
-    spots = outOfSightSpots(gm, 10)
+    spots = outOfSightSpots(gameManager, 10)
     rand.shuffle(spots)
     if neutral:  # it arrives as far from the other factions as it can (with none yet, anywhere)
-        otherCamps = campsAround(gm)
-        spots.sort(key=lambda spot: -distanceFromCamps(gm, spot, otherCamps))
+        otherCamps = campsAround(gameManager)
+        spots.sort(key=lambda spot: -distanceFromCamps(gameManager, spot, otherCamps))
     for start in spots[:200]:
         group, frontier = [start], [start]
         while frontier and len(group) < size:
-            nxt = []
-            for p in frontier:
-                for n in gm.neighbors(p):
-                    if n not in group and gm.grid[n][0] == 0 and gm.grid[n][1] != 1 and len(group) < size:
-                        group.append(n)
-                        nxt.append(n)
-            frontier = nxt
+            nextFrontier = []
+            for frontierSpot in frontier:
+                for neighbor in gameManager.neighbors(frontierSpot):
+                    if neighbor not in group and gameManager.grid[neighbor][0] == 0 and gameManager.grid[neighbor][1] != 1 and len(group) < size:
+                        group.append(neighbor)
+                        nextFrontier.append(neighbor)
+            frontier = nextFrontier
         if len(group) < size:
             continue
-        f = newFaction(gm, rand.choice(FIRST_LOOKS), neutral=neutral)
+        goblinFaction = newFaction(gameManager, rand.choice(FIRST_LOOKS), neutral=neutral)
         squad = Squad(marching=False)
-        f.squads.append(squad)
-        for t, kind in zip(group, WARBAND):
+        goblinFaction.squads.append(squad)
+        for groupSpot, kind in zip(group, WARBAND):
             unit = UNIT_CLASSES[kind]()
-            setFaction(unit, f)
-            gm.grid[t] = [5, gm.grid[t][1], unit]
-            gm.EnemyPositions.add(t)
+            setFaction(unit, goblinFaction)
+            gameManager.grid[groupSpot] = [5, gameManager.grid[groupSpot][1], unit]
+            gameManager.EnemyPositions.add(groupSpot)
             if kind not in WORKERS:
                 squad.members.append(unit)
                 unit.squad = squad
             if kind == "Goblin Farmer":
-                unit.materials[seedOf(startingCrop(gm, start))] = FARMER_START_SEEDS
-        gm.change = True
+                unit.materials[seedOf(startingCrop(gameManager, start))] = FARMER_START_SEEDS
+        gameManager.change = True
         return True
     return False
 
@@ -2960,16 +2960,16 @@ def startingCrop(gm, start):
     return rand.choice(FARM_KINDS)
 
 
-def newFaction(gm, look, neutral=None):
+def newFaction(gameManager, look, neutral=None):
     """A new faction on this floor. neutral: whether it's neutral to you; None rolls NEUTRAL_CHANCE."""
-    state = camp(gm)
-    f = Faction(state["next"], look)
-    f.neutral = rand.random() < NEUTRAL_CHANCE if neutral is None else neutral
-    f.canSchism = rand.random() >= NO_SCHISM_CHANCE  # (a few factions never split)
-    f.schismChance, f.food = SCHISM_CHANCE, 0
+    state = camp(gameManager)
+    goblinFaction = Faction(state["next"], look)
+    goblinFaction.neutral = rand.random() < NEUTRAL_CHANCE if neutral is None else neutral
+    goblinFaction.canSchism = rand.random() >= NO_SCHISM_CHANCE  # (a few factions never split)
+    goblinFaction.schismChance, goblinFaction.food = SCHISM_CHANCE, 0
     state["next"] += 1
-    state["factions"][f.id] = f
-    return f
+    state["factions"][goblinFaction.id] = goblinFaction
+    return goblinFaction
 
 
 # ---------------------------------------------------------------- splits
@@ -3003,26 +3003,26 @@ def crack(gm, piece, damage):
     points |= wall.getRandomPoints((1, ts - 1), (1, ts - 1), share)
 
 
-def hitStructure(gm, t):
+def hitStructure(gameManager, spot):
     """You hit a spawner (it takes your wall damage, and cracks like a wall) or a bonfire (BONFIRE_HITS hits put it
     out)."""
-    s = gm.grid[t][2]
-    damage = gm.player.getWallDamage() if s.kind == "spawner" else 1
-    s.hp -= damage
-    gm.change = True
-    if s.kind == "spawner":
-        crack(gm, s, damage)
-    if s.hp > 0:
+    structure = gameManager.grid[spot][2]
+    damage = gameManager.player.getWallDamage() if structure.kind == "spawner" else 1
+    structure.hp -= damage
+    gameManager.change = True
+    if structure.kind == "spawner":
+        crack(gameManager, structure, damage)
+    if structure.hp > 0:
         return
-    if s.kind == "spawner":
-        provoke(gm, camp(gm)["factions"].get(s.faction), t)
-        breakSpawner(gm, t)
+    if structure.kind == "spawner":
+        provoke(gameManager, camp(gameManager)["factions"].get(structure.faction), spot)
+        breakSpawner(gameManager, spot)
         return
-    gm.grid[t] = [0, gm.grid[t][1]]
-    camp(gm)["structures"].discard(t)
-    f = camp(gm)["factions"].get(s.faction)
-    if f and t in f.bonfires:
-        f.bonfires.remove(t)
+    gameManager.grid[spot] = [0, gameManager.grid[spot][1]]
+    camp(gameManager)["structures"].discard(spot)
+    goblinFaction = camp(gameManager)["factions"].get(structure.faction)
+    if goblinFaction and spot in goblinFaction.bonfires:
+        goblinFaction.bonfires.remove(spot)
 
 
 def breakSpawner(gm, t, unit=None):
@@ -3042,78 +3042,78 @@ def breakSpawner(gm, t, unit=None):
 
 # ---------------------------------------------------------------- neutral factions and you
 
-def isNeutral(f):
+def isNeutral(goblinFaction):
     """Is f a neutral faction (see "Neutral factions")? Factions from saves made before there were any aren't."""
-    return f is not None and getattr(f, "neutral", False)
+    return goblinFaction is not None and getattr(goblinFaction, "neutral", False)
 
 
-def leavesPlayerAlone(gm, unit):
+def leavesPlayerAlone(gameManager, unit):
     """Does this goblin leave you alone? Yes if its faction is neutral and you haven't provoked it lately."""
-    f = faction(gm, unit)
-    return isNeutral(f) and getattr(f, "grudge", 0) <= 0
+    goblinFaction = faction(gameManager, unit)
+    return isNeutral(goblinFaction) and getattr(goblinFaction, "grudge", 0) <= 0
 
 
-def huntsPlayer(gm, unit):
+def huntsPlayer(gameManager, unit):
     """Will this goblin fight you? Not in peaceful mode, and not while its faction leaves you alone."""
-    return not gm.peaceful and not leavesPlayerAlone(gm, unit)
+    return not gameManager.peaceful and not leavesPlayerAlone(gameManager, unit)
 
 
-def nearCamp(gm, f, position):
+def nearCamp(gameManager, goblinFaction, position):
     """Is position within GUARD_REACH of one of f's bonfires or huts (what a neutral faction defends)?"""
-    campSpots = f.bonfires + [hut["center"] for hut in f.huts]
-    return any(dist(gm, position, campSpot) <= GUARD_REACH for campSpot in campSpots)
+    campSpots = goblinFaction.bonfires + [hut["center"] for hut in goblinFaction.huts]
+    return any(dist(gameManager, position, campSpot) <= GUARD_REACH for campSpot in campSpots)
 
 
-def provoke(gm, f, where):
+def provoke(gameManager, goblinFaction, where):
     """You did something to a neutral faction (hurt one of its goblins, broke one of its hut walls or spawners, took
     from one of its chests): it's hostile to you for GRUDGE_TURNS turns from now."""
-    if not isNeutral(f):
+    if not isNeutral(goblinFaction):
         return
-    if getattr(f, "grudge", 0) <= 0:
-        gm.addPopup("The goblins turn on you!", where)
-    f.grudge = GRUDGE_TURNS
+    if getattr(goblinFaction, "grudge", 0) <= 0:
+        gameManager.addPopup("The goblins turn on you!", where)
+    goblinFaction.grudge = GRUDGE_TURNS
 
 
-def calmDown(gm):
+def calmDown(gameManager):
     """A turn passes: each neutral faction's grudge against you wears off a little. Once it's gone, its goblins
     stop chasing you."""
-    for f in camp(gm)["factions"].values():
-        if not isNeutral(f) or getattr(f, "grudge", 0) <= 0:
+    for goblinFaction in camp(gameManager)["factions"].values():
+        if not isNeutral(goblinFaction) or getattr(goblinFaction, "grudge", 0) <= 0:
             continue
-        f.grudge -= 1
-        if f.grudge == 0:
-            for squad in f.squads:
+        goblinFaction.grudge -= 1
+        if goblinFaction.grudge == 0:
+            for squad in goblinFaction.squads:
                 if squad.target == "player":
                     squad.target = None
-            gm.addPopup("The goblins calm down", gm.playerPositionFlat)
+            gameManager.addPopup("The goblins calm down", gameManager.playerPositionFlat)
 
 
-def playerHurt(gm, unit, position):
+def playerHurt(gameManager, unit, position):
     """You damaged unit: if it belongs to a neutral faction, the faction turns on you."""
-    provoke(gm, faction(gm, unit), position)
+    provoke(gameManager, faction(gameManager, unit), position)
 
 
-def playerBrokeWall(gm, position):
+def playerBrokeWall(gameManager, position):
     """You broke the wall at position: if it's one of a neutral faction's hut walls, the faction turns on you."""
-    for f in camp(gm)["factions"].values():
-        if position in f.walls():
-            provoke(gm, f, position)
+    for goblinFaction in camp(gameManager)["factions"].values():
+        if position in goblinFaction.walls():
+            provoke(gameManager, goblinFaction, position)
 
 
-def playerTookFrom(gm, chest, position):
+def playerTookFrom(gameManager, chest, position):
     """You took something out of chest: if it's a neutral faction's (a war chest or a farming hut's), the faction
     turns on you."""
     if isinstance(chest, CampChest):
-        provoke(gm, camp(gm)["factions"].get(chest.faction), position)
+        provoke(gameManager, camp(gameManager)["factions"].get(chest.faction), position)
 
 
-def attitudeLabel(gm, unit):
+def attitudeLabel(gameManager, unit):
     """How a goblin of a neutral faction feels about you, for its name when you look at it: "neutral", or "hostile"
     while its faction holds a grudge. None for every other enemy."""
-    f = faction(gm, unit) if factionOf(unit) is not None else None
-    if not isNeutral(f):
+    goblinFaction = faction(gameManager, unit) if factionOf(unit) is not None else None
+    if not isNeutral(goblinFaction):
         return None
-    return "hostile" if getattr(f, "grudge", 0) > 0 else "neutral"
+    return "hostile" if getattr(goblinFaction, "grudge", 0) > 0 else "neutral"
 
 
 def bonfires(gm):
