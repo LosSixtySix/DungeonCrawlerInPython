@@ -1878,7 +1878,8 @@ class renderer():
                 if standingIn is not None and hasattr(standingIn, "look"):  # on an item pile: it's under your feet
                     self.mapSurface.blit(self.pilePicture(standingIn), (x * ts, y * ts))
                 self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
-                if standingIn is not None and hasattr(standingIn, "kind"):  # in a plant: it's drawn over you, see-through
+                if isinstance(standingIn, plants.Plant):  # in a plant: it's drawn over you, see-through (anything
+                    #                                     else you stand on, like a door or a mineshaft, isn't drawn)
                     picture = self.plantPicture(standingIn)
                     if picture is not None:
                         picture = picture.copy()
