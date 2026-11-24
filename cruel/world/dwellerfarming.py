@@ -430,6 +430,4 @@ def starveTurn(game):
             continue
         grub.hunger = hunger(grub) + 1
         if grub.hunger >= STARVE_TURNS:
-            if game.grid[spot][1] == 1:
-                game.addPopup("A Dew Grub starved", spot)
             game.killEnemy(spot, None)

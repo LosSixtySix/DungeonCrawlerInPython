@@ -42,7 +42,6 @@ MATE_RANGE = 3              # ...if another fed grown grub is this close to it
 FEEDINGS_TO_GROW = 4        # plants a young grub eats to grow up
 PEN_FEWEST = 2              # the farmers want at least this many grubs in a pen...
 PEN_MOST = 6                # ...and no more than this
-BIRTH_NOTICE_RANGE = 8      # you see "A young Dew Grub" when one is born this close to you
 CARRY_GIVE_UP = 12          # turns a farmer moving a grub can be stuck before it gives up
 REACH = 3                   # how far (across or diagonally) a farmer reaches to lift a grub out or set it down
 
@@ -79,8 +78,6 @@ def maybeGiveBirth(game, spot, grub):
     young.pen = grub.pen
     young.home = birthSpot
     placeUnit(game, birthSpot, young)
-    if dwellers.distance(game, birthSpot, game.playerPositionFlat) < BIRTH_NOTICE_RANGE:
-        game.addPopup("A young Dew Grub", birthSpot)
     game.change = True
     return birthSpot
 
