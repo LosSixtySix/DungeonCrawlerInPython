@@ -70,8 +70,8 @@ class MoltenWall(Wall):
 
 
 class PeddlerWall(Wall):
-    """The walls of the Gray Peddler's room (peddler.py): a lot of HP, and no swing takes off more than its hardness,
-    so even a great pick needs about 150 swings. A Bomb still takes its usual damage off (it ignores hardness)."""
+    """The walls of the Gray Peddler's room (peddler.py): a lot of HP, and no hit takes off more than its hardness
+    (a swing or a Bomb), so it takes about 150 of them."""
     NAME = "Peddler's Stone"
 
     def __init__(self):

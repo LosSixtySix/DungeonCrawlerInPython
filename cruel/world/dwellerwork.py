@@ -22,7 +22,7 @@ storehouses by the shaft) and puts it in, adding to a stack of the same thing if
 STACK_LIMIT; what doesn't fit goes up the shaft to the city (it's gone).
 
   Miner   picks the nearest seam it can walk to: an ore vein or a Gold Wall beside a tile it can reach (one no
-          other miner is working). It hits it MINE_SWING a turn (a miner's pick ignores hardness) until it breaks,
+          other miner is working). It hits it for MINE_SWING a turn (no more than the wall's hardness) until it breaks,
           then rolls what the wall gives (loot.rollWall, with MINER_WISDOM) and takes it in. With no seam it can
           reach, it tunnels: it breaks the wall it can reach that's nearest the nearest seam. It never breaks the
           city's own walls (the storehouses) or a wall a lamp hangs on.
@@ -180,7 +180,7 @@ def mine(game, position, miner):
 def swing(game, target, miner):
     """A miner hits the wall at target; once it breaks, what it gives goes in the miner's pockets."""
     seam = game.grid[target][2]
-    seam.hp -= MINE_SWING
+    seam.takeDamage(MINE_SWING, game.tileSize)
     if seam.hp > 0:
         return
     game.grid[target] = [FLOOR, game.grid[target][1]]
