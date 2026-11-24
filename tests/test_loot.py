@@ -44,7 +44,7 @@ class DropTableTests(unittest.TestCase):
                     self.assertEqual(len(loot.dropColor(dropId)), 3)
 
     def test_every_enemy_drop_table_belongs_to_a_real_enemy(self):
-        enemyNames = {enemyClass().name for enemyClass in ENEMY_CLASSES}
+        enemyNames = {enemyClass().name for enemyClass in ENEMY_CLASSES} | {enemies.DewGrub(grown=False).name}
         for enemyName in loot.ENEMY_LOOT:
             self.assertIn(enemyName, enemyNames)
 

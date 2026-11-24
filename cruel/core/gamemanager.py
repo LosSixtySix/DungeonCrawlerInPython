@@ -23,6 +23,7 @@ from cruel.world import expansion
 from cruel.world import peddler
 from cruel.world import metropolis
 from cruel.world import mineshafts
+from cruel.world import dewgrubs
 from cruel.world import dwellers
 from cruel.world import cityshops
 from cruel.core import devconsole
@@ -1869,6 +1870,7 @@ class gameManager():
             cityshops.leaveStock(self, enemy, position)
         if stacks or gold:
             self.placeItems(position, stacks, gold)
+        dewgrubs.dropHeld(self, position, enemy)  # a farmer carrying a Dew Grub drops it
 
     def carriedShare(self):
         """The share of an enemy's pocketed materials you get back when you kill it."""

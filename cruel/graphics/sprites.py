@@ -421,6 +421,19 @@ DEW_GRUB = [
     "...khhk...",
     "..........",
 ]
+# A young Dew Grub, seen from above: a smaller grub, fewer segments
+YOUNG_DEW_GRUB = [
+    "..........",
+    "..........",
+    "..........",
+    "...kkkk...",
+    "..kgGGgk..",
+    "..kssssk..",
+    "..kgGWgk..",
+    "...khhk...",
+    "..........",
+    "..........",
+]
 DEW_GRUB_COLORS = {"g": (126, 186, 176), "G": (170, 222, 210), "W": (236, 250, 255), "s": (92, 140, 132), "h": (70, 96, 92)}
 
 
@@ -442,6 +455,7 @@ ENEMY_SPRITES = {
     "Dweller Guard": (DWELLER_GUARD, DWELLER_GUARD_COLORS),
     "Dweller Merchant": (DWELLER_MERCHANT, DWELLER_MERCHANT_COLORS),
     "Dew Grub": (DEW_GRUB, DEW_GRUB_COLORS),
+    "Young Dew Grub": (YOUNG_DEW_GRUB, DEW_GRUB_COLORS),
     **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
        for pattern, emblem in ORGANIZER_EMBLEMS.items()},
 }

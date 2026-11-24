@@ -112,6 +112,9 @@ class Dweller(Enemy):
         self.work = None          # a citizen on a works floor: "mine" or "farm" (mineshafts.py, dwellerwork.py)
         self.target = None        # a worker: the wall it's mining (or what it's working on)
         self.materials = {}       # a worker: what it's carrying to the storehouse
+        self.job = None           # a worker: "build" while it's putting up a building (dwellerbuilding.py)
+        self.movingGrub = None    # a farmer: the Dew Grub it's moving to another pen (dewgrubs.py)...
+        self.heldGrub = None      # ...once it has picked it up
 
 
 class DwellerCitizen(Dweller):
@@ -152,15 +155,34 @@ class DwellerMerchant(Dweller):
 
 
 class DewGrub(Dweller):
-    """The Dwellers' livestock (dwellerwork.py): a fat grub kept in a pen on a city's farm floor. It never fights and
-    never leaves its pen. Fed plants by the farmers, it makes Dew. It belongs to the city: hurting one is hostile."""
+    """The Dwellers' livestock (dwellerwork.py, dewgrubs.py): a fat grub kept in a pen on a city's farm floor. It
+    never fights and only leaves its pen when a farmer leads it to another. Fed plants by the farmers, a grown one
+    makes Dew and now and then gives birth to a young one, which makes no Dew until it's grown. It belongs to the
+    city: hurting one is hostile."""
     role = "grub"
+    YOUNG_NAME = "Young Dew Grub"
+    GROWN_NAME = "Dew Grub"
+    YOUNG_HP = 6
+    GROWN_HP = 14
 
-    def __init__(self):
-        super().__init__(14, 6, 1, 0, 3, 0, "Dew Grub")
+    def __init__(self, grown=True):
+        super().__init__(self.GROWN_HP, 6, 1, 0, 3, 0, self.GROWN_NAME)
         self.pen = frozenset()    # the tiles inside its pen: it only ever moves among them
         self.feedings = 0         # plants eaten since its last Dew
         self.dewReady = False     # it has made Dew, waiting for a farmer to collect it (it eats no more until then)
+        self.grown = True         # a young one makes no Dew and has no young of its own
+        self.growth = 0           # a young one: plants eaten so far (dewgrubs.FEEDINGS_TO_GROW and it's grown)
+        self.headedTo = None      # the pen (its inside tiles) a farmer is moving it to
+        if not grown:
+            self.grown = False
+            self.name = self.YOUNG_NAME
+            self.hp = self.maxHp = self.YOUNG_HP
+
+    def growUp(self):
+        self.grown = True
+        self.name = self.GROWN_NAME
+        self.hp += self.GROWN_HP - self.maxHp
+        self.maxHp = self.GROWN_HP
 
 
 class GoblinBuilder(Enemy):

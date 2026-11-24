@@ -206,6 +206,7 @@ class Works:
         self.fields = {}
         self.lamps = {}
         self.dwellers = {}
+        self.plans = []     # buildings the workers are putting up (dwellerbuilding.py), shared by them
 
     def builtOn(self):
         """Every tile the works use (nothing else goes there)."""
@@ -385,6 +386,7 @@ def buildPens(grid, rowLength, rowCount, shaftSpot, works):
         for spot in path:
             openUp(grid, spot)
         connected |= set(path) | inside | {gate}
+        inside = frozenset(inside)
         pen = {"fence": fence, "inside": inside, "gate": gate}
         works.pens.append(pen)
         spots = sorted(inside - {gate + step * -1})
@@ -479,6 +481,8 @@ def placeDwellers(grid, rowLength, shaftSpot, kind, works):
         spot = free.pop()
         worker.home = spot
         worker.work = kind
+        worker.plans = works.plans  # (one list, shared by every worker)
         if kind == "farm":
             worker.fields = works.fields  # (one dict, shared by every farmer)
+            worker.pens = works.pens      # (and the pens, the same way)
         works.dwellers[spot] = worker
