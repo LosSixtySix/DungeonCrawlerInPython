@@ -69,6 +69,19 @@ class MoltenWall(Wall):
         self.soft = False
 
 
+class PeddlerWall(Wall):
+    """The walls of the Gray Peddler's room (peddler.py): a lot of HP, and no swing takes off more than its hardness,
+    so even a great pick needs about 150 swings. A Bomb still takes its usual damage off (it ignores hardness)."""
+    NAME = "Peddler's Stone"
+
+    def __init__(self):
+        super().__init__()
+        self.name = self.NAME
+        self.hp = 300
+        self.hardness = 2
+        self.soft = False
+
+
 # ---------------------------------------------------------------- ore veins
 # Veins are walls with ore in them. They're drawn in the room's own wall color with flecks of a fixed ore
 # color. Any pick can mine any vein; harder veins just take more swings (hardness caps damage per hit).

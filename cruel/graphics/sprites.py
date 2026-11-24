@@ -189,6 +189,40 @@ GOBLIN_FARMER = [
 GOBLIN_FARMER_COLORS = {**GOBLIN_COLORS, "y": (186, 152, 80), "Y": (222, 192, 118), "b": (62, 52, 40),
                         "M": (150, 154, 162), "w": (110, 80, 52)}
 
+# The Gray Peddler (peddler.py), drawn from his design sheet: a gray hooded robe with his pack on his back (the top
+# of the grid) and two pale eyes under the hood, facing down.
+GRAY_PEDDLER = [
+    "..kkkkkk..",
+    ".kbBbbBbk.",
+    "kgkbbbbkgk",
+    "kgGkkkkGgk",
+    "kgGhhhhGgk",
+    "kgGhhhhGg.",
+    "kggHeeHgg.",
+    ".kgkHHkgk.",
+    "..kggggk..",
+    "...kkkk...",
+]
+GRAY_PEDDLER_COLORS = {"g": (124, 127, 135), "G": (169, 172, 180), "h": (78, 80, 88), "H": (98, 101, 110),
+                       "e": (233, 227, 200), "b": (106, 80, 56), "B": (140, 107, 72)}
+
+# The signpost beside where you arrive on a floor the Peddler is on: a board with a coin mark on a post, a gray
+# rag tied to it.
+SIGNPOST = [
+    "..........",
+    "..........",
+    ".kkkkkkkk.",
+    ".kwWwywWk.",
+    ".kkkkkkkk.",
+    "....kpk...",
+    "....kpkr..",
+    "....kpkrr.",
+    "....kkk.r.",
+    "..........",
+]
+SIGNPOST_COLORS = {"w": (138, 100, 60), "W": (168, 124, 76), "y": (232, 192, 74), "p": (110, 80, 50), "r": (154, 157, 166)}
+PEDDLER_STONE_COLOR = (86, 92, 104)  # the Peddler's room walls: cold blue-gray, the same on every floor
+
 # Expansion factions: the Goblin, Goblin Chieftain and Goblin Builder pictures in each faction's colors (only cloth
 # and armor change). Ids match expansion.LOOKS.
 EXPANSION_LOOKS = {
@@ -255,6 +289,7 @@ ENEMY_SPRITES = {
     "Goblin Chieftan": (GOBLIN_CHIEFTAIN, GOBLIN_CHIEFTAIN_COLORS),   # spelled as in enemies.py
     "Goblin Builder": (GOBLIN_BUILDER, GOBLIN_BUILDER_COLORS),
     "Goblin Farmer": (GOBLIN_FARMER, GOBLIN_FARMER_COLORS),
+    "The Gray Peddler": (GRAY_PEDDLER, GRAY_PEDDLER_COLORS),
     **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
        for pattern, emblem in ORGANIZER_EMBLEMS.items()},
 }
@@ -818,6 +853,7 @@ def buildSprites(colors, tileSize):
         "factions": {(name, look): {f: makeShadowed(facingRows(rows, name, f), enemyRoles(colors, fixed), tileSize) for f in FACINGS}
                      for look in EXPANSION_LOOKS for name, (rows, fixed) in factionPictures(look).items()},
         "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
+        "signpost": makeShadowed(SIGNPOST, enemyRoles(colors, SIGNPOST_COLORS), tileSize),
         "campChests": {look: makeShadowed(CAMP_CHEST, enemyRoles(colors, campChestColors(look)), tileSize) for look in EXPANSION_LOOKS},
         "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],
     }
