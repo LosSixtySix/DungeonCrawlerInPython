@@ -2,6 +2,7 @@ import math
 import random as rand
 
 from cruel.entities import enemies
+from cruel.world import occupancy
 from cruel.world import plants
 from cruel.world import wall
 
@@ -348,11 +349,11 @@ def wander(gm, i):
 
 def moveTo(gm, i, j):
     """Steps from i onto tile j (the unit itself was already taken off i): open floor, or an item pile or walkable
-    plant (see passable), which stays underneath it until it moves on."""
-    if i in gm.enemyOccupiedItemSpaces:
-        gm.grid[i] = gm.enemyOccupiedItemSpaces.pop(i)
-    else:
-        gm.grid[i][0] = 0
+    plant (see passable), which stays underneath it until it moves on; or, for a small unit, a space it can share
+    (occupancy.canJoin: it becomes its second unit when it's put down)."""
+    occupancy.leave(gm, i)
+    if occupancy.primaryAt(gm, j) is not None:
+        return j
     if gm.grid[j][0] != 0:
         gm.enemyOccupiedItemSpaces[j] = gm.grid[j]
         gm.grid[j] = [0, gm.grid[j][1]]

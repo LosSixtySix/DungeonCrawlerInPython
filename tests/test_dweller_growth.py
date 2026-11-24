@@ -208,7 +208,7 @@ class GrubMovingTests(PenTest):
         pen = self.pen(40, 30)
         grub = self.fill(pen, 1)[0]
         farmer = self.farmer(52, 27)
-        farmer.movingGrub = farmer.heldGrub = dewgrubs.takeUnit(self.game, self.positionOf(grub))
+        farmer.movingGrub = farmer.heldGrub = dewgrubs.takeUnit(self.game, self.positionOf(grub), grub)
         self.assertNotIn(grub, [unit for _, unit in dwellerwork.grubsHere(self.game)])
         self.game.killEnemy(self.spot(52, 27), "player")
         self.assertIn(grub, [unit for _, unit in dwellerwork.grubsHere(self.game)])

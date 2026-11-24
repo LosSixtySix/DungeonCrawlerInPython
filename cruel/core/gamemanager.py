@@ -23,6 +23,7 @@ from cruel.world import expansion
 from cruel.world import peddler
 from cruel.world import metropolis
 from cruel.world import mineshafts
+from cruel.world import occupancy
 from cruel.world import dewgrubs
 from cruel.world import dwellerfarming
 from cruel.world import dwellers
@@ -1841,18 +1842,27 @@ class gameManager():
             return
         self.collectDrops(loot.rollPick(plant, stage), loot.plantSource(plant, stage), position)
 
-    def killEnemy(self, position, killer="player"):
+    def killEnemy(self, position, killer="player", unit=None):
         """An enemy died. killer is "player", the enemy that killed it, or None (the environment, e.g.
         Demise). If you killed it, it pays all its gold (including gold it took from Gold Walls), rolls its loot
         table, and gives back some of the materials it pocketed from walls (more with Wisdom, see carriedShare);
         relics, and whatever doesn't fit in a full pouch, are left in a pile. Otherwise you get no loot: some of
         its gold and of what it pocketed spills on the ground, some goes to the enemy that killed it, and the
-        rest is lost (see spillPockets)."""
+        rest is lost (see spillPockets). unit: which of the two on a shared space dies (the first, if not said)."""
+        if unit is not None and occupancy.sharedTiles(self).get(position) is unit:
+            del occupancy.sharedTiles(self)[position]  # the second unit on the space dies; the first stays
+            stacks, gold = self.killLoot(unit, position) if killer == "player" else self.spillPockets(unit, killer)
+            stacks = list(stacks) + list(getattr(unit, "loot", []))
+            if stacks or gold:
+                self.placeItems(position, stacks, gold)
+            dewgrubs.dropHeld(self, position, unit)
+            return
         if self.isBig(self.grid[position][2]):  # a giant: clear its other tiles, then it dies at its anchor
             giant = self.grid[position][2]
             position = giant.anchor
             for p in self.footprint(position, giant.size)[1:]:
                 self.grid[p] = [0, self.grid[p][1]]
+                occupancy.promote(self, p)  # (a small one under it stays)
         tile = self.grid[position]
         enemy = tile.pop()
         self.EnemyPositions.discard(position)
@@ -1869,6 +1879,7 @@ class gameManager():
             self.grid[position] = [0, tile[1]]
         if cityshops.isMerchant(enemy):  # a city merchant's stock stays in its shop, in a chest where it stood
             cityshops.leaveStock(self, enemy, position)
+        occupancy.promote(self, position)  # a second unit on the space takes its place
         if stacks or gold:
             self.placeItems(position, stacks, gold)
         dewgrubs.dropHeld(self, position, enemy)  # a farmer carrying a Dew Grub drops it
@@ -2057,7 +2068,8 @@ class gameManager():
     def saveLevel(self):
         # Put back whatever the player is standing on so the saved grid has no player tile in it.
         self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
-        data = [self.grid, self.rooms, self.proportion, self.EnemyPositions, self.enemyOccupiedItemSpaces, self.theme,self.blood,self.bloodDry]
+        data = [self.grid, self.rooms, self.proportion, self.EnemyPositions, self.enemyOccupiedItemSpaces, self.theme,self.blood,self.bloodDry,
+                occupancy.sharedTiles(self)]
         if self.level < len(self.levelGrids):
             self.levelGrids[self.level] = data
         else:
@@ -2068,6 +2080,7 @@ class gameManager():
         self.grid, self.rooms, self.proportion, self.EnemyPositions, self.enemyOccupiedItemSpaces, theme = data[:6]
         self.blood =data[6] if len(data) > 6 else {}
         self.bloodDry = data[7] if len(data) >7 else {}
+        occupancy.useShared(self, data[8] if len(data) > 8 else {})  # (the second units on its spaces: none in older saves)
         self.setTheme(theme)
 
     def changeLevel(self, newLevel, falling=False):
@@ -2206,7 +2219,8 @@ class gameManager():
 
     # ---------------------------------------------------------------- big enemies
     # A Fire Giant fills size x size tiles. Its anchor (top-left) is the tile on EnemyPositions; every tile of its
-    # footprint is [5, visibility, giant], the same object, so anything that hits a tile hits the giant.
+    # footprint is [5, visibility, giant], the same object, so anything that hits a tile hits the giant. It's large
+    # (occupancy.py): each tile it covers can also hold one small unit on its side, kept as that space's second unit.
 
     def footprint(self, anchor, size=2):
         """The tiles a size x size enemy anchored here covers, or None if that runs off the map."""
@@ -2216,20 +2230,39 @@ class gameManager():
             return None
         return [(x + dx) + (y + dy) * R for dy in range(size) for dx in range(size)]
 
-    def canFit(self, anchor, size=2, own=(), grid=None):
-        """Can a size x size enemy stand anchored here? Every tile open floor (or its own tiles, own)."""
+    def canFit(self, anchor, size=2, own=(), grid=None, giant=None):
+        """Can a size x size enemy stand anchored here? Every tile open floor (or its own tiles, own), or, for a
+        giant on the floor you're on, a tile with one small unit on its side (it shares the space with it)."""
         grid = self.grid if grid is None else grid
         tiles = self.footprint(anchor, size)
-        return tiles is not None and all(p in own or (grid[p][0] == 0 and p != self.playerPositionFlat) for p in tiles)
+        return tiles is not None and all(p in own or (grid[p][0] == 0 and p != self.playerPositionFlat)
+                                         or (giant is not None and grid is self.grid and self.sharesWithGiant(p, giant)) for p in tiles)
+
+    def sharesWithGiant(self, spot, giant):
+        """Can a giant step onto spot over the small unit there (on its side, and alone on the space)?"""
+        unit = occupancy.primaryAt(self, spot)
+        return unit is not None and occupancy.sizeOf(unit) == occupancy.SMALL and spot not in occupancy.sharedTiles(self) \
+            and occupancy.sameSide(unit, giant)
 
     def putGiant(self, grid, anchor, giant):
+        """Puts a giant on its tiles; a small unit on one stays there, under it (that space's second unit)."""
         for p in self.footprint(anchor, giant.size):
-            grid[p] = [5, grid[p][1], giant]
+            under = occupancy.primaryAt(self, p) if grid is self.grid else None
+            if under is not None and under is not giant:
+                occupancy.sharedTiles(self)[p] = under
+                self.EnemyPositions.discard(p)
+                getattr(self, "movedEnemies", set()).discard(p)
+                grid[p] = [5, grid[p][1], giant]
+            else:
+                grid[p] = [5, grid[p][1], giant]
         giant.anchor = anchor
 
     def liftGiant(self, grid, giant):
+        """Takes a giant off its tiles: what was under each comes back (a small unit under it takes the space)."""
         for p in self.footprint(giant.anchor, giant.size):
-            grid[p] = [0, grid[p][1]]
+            grid[p] = [5, grid[p][1]] if grid is self.grid else [0, grid[p][1]]
+            if grid is self.grid:
+                occupancy.leave(self, p)
 
     def placeGiants(self, grid, count, home, avoid=()):
         """Puts count Fire Giants on open ground in a ring round home (the Molten Blade's chest), GIANT_SPAWN
@@ -2326,7 +2359,7 @@ class gameManager():
             if not 0 <= x < R:
                 continue
             new = x + y * R
-            if self.canFit(new, giant.size, own=set(tiles)):
+            if self.canFit(new, giant.size, own=set(tiles), giant=giant):
                 self.liftGiant(self.grid, giant)
                 self.putGiant(self.grid, new, giant)
                 return new
@@ -3256,6 +3289,10 @@ class gameManager():
                 if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT,
                             metropolis.MINESHAFT):
                     continue
+                second = occupancy.sharedTiles(self).pop(p, None)
+                if second is not None:  # a second unit on the space falls too
+                    expansion.dropOut(self, second)
+                    below.append((p, [5, 0, second]))
                 if kind == 5 and len(tile) > 2 and self.isBig(tile[2]):
                     continue  # a giant is too big to fall: the floor under it holds
                 if p == self.playerPositionFlat:  # what you stand on falls with you (you fall: the main loop)
@@ -3815,6 +3852,7 @@ class gameManager():
         self.movedEnemies = listOfNewPositions  # so an Organizer can find an enemy that already moved this turn
         organizerContext = organizers.gather(self)
         campContext = expansion.beginTurn(self)
+        secondUnits = list(occupancy.sharedTiles(self).items())  # (the second units on spaces: their turns come after)
         for i in list(self.EnemyPositions):  # a copy: an Organizer can kill an enemy partway through
             if self.grid[i][0] != 5 or len(self.grid[i]) < 3:
                 continue  # stale position, the enemy is no longer here
@@ -3832,22 +3870,30 @@ class gameManager():
                     self.faceToward(currentEnemy, before, position)
                 listOfNewPositions.add(position)
                 continue
-            for action in range(self.enemyActions(currentEnemy)):  # a fast one sometimes acts twice
-                tile = self.grid[position]
-                if action and (tile[0] != 5 or len(tile) < 3 or tile[2] is not currentEnemy):
-                    break  # it died (or something took its place) during its first action
-                tile.pop()
-                before = position
-                position, currentEnemy = self.enemyAct(position, currentEnemy, organizerContext, campContext)
-                self.faceToward(currentEnemy, before, position)
-                self.grid[position].append(currentEnemy)
-            listOfNewPositions.add(position)
+            listOfNewPositions.add(self.unitTurn(position, currentEnemy, organizerContext, campContext))
+        for spot, unit in secondUnits:  # the second units on spaces (a small one sharing)
+            if occupancy.sharedTiles(self).get(spot) is not unit:
+                continue  # it's not there now (it took the first one's place, or it's gone)
+            listOfNewPositions.add(self.unitTurn(spot, unit, organizerContext, campContext))
         # leave out anyone an Organizer killed after it had already moved
         self.EnemyPositions = {p for p in listOfNewPositions if self.grid[p][0] == 5 and len(self.grid[p]) > 2}
         self.movedEnemies = set()
         if mineshafts.onSideFloor(self):  # a farm floor's Dew Grubs go hungry
             dwellerfarming.starveTurn(self)
 
+
+    def unitTurn(self, position, currentEnemy, organizerContext, campContext):
+        """A unit's actions this turn (a fast one sometimes acts twice): each time it's lifted off its space, acts,
+        and is put down where it ends up (occupancy.settle: as a second unit, on a space it shares). Returns where
+        it is."""
+        for action in range(self.enemyActions(currentEnemy)):
+            if not occupancy.lift(self, position, currentEnemy):
+                break  # it died (or something took its place) during its first action
+            before = position
+            position, currentEnemy = self.enemyAct(position, currentEnemy, organizerContext, campContext)
+            self.faceToward(currentEnemy, before, position)
+            occupancy.settle(self, position, currentEnemy)
+        return position
 
     def enemyActions(self, enemy):
         """How many actions an enemy takes this turn: its speed goes into a pool, and it acts once for each
@@ -3930,6 +3976,8 @@ class gameManager():
             tileType = self.grid[newPosition][0]
             if tileType == 0:
                 movedToNewPosition = True
+            elif tileType == 5 and occupancy.canJoin(self, newPosition, currentEnemy):
+                movedToNewPosition = True  # a small one shares the space (it's put down as its second unit)
             elif tileType == 1:
                 self.hitPlayer(currentEnemy, i)
             elif tileType == 2:
@@ -3962,11 +4010,7 @@ class gameManager():
                 movedToNewPosition = True
 
             if movedToNewPosition:
-                # put back whatever this enemy was standing on (items / burrowed wall)
-                if i in self.enemyOccupiedItemSpaces:
-                    self.grid[i] = self.enemyOccupiedItemSpaces.pop(i)
-                else:
-                    self.grid[i][0] = 0
+                occupancy.leave(self, i)  # what it stood on comes back (items, a burrowed wall), or whoever shared it stays
                 self.grid[newPosition][0] = 5
                 finalPosition = newPosition
 
@@ -4197,12 +4241,15 @@ class gameManager():
             piece = tile[2]
             return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
-            enemy = tile[2]
-            shop = cityshops.shopName(enemy.shopKind) if cityshops.isMerchant(enemy) else None
-            notes = [note for note in (shop, expansion.attitudeLabel(self, enemy), peddler.attitudeLabel(enemy), dwellers.attitudeLabel(enemy),
-                                       "burning" if getattr(enemy, "burnTurns", 0) > 0 else None) if note]
-            return enemy.name + (f" ({', '.join(notes)})" if notes else "")
+            return " and ".join(self.describeUnit(enemy) for enemy in occupancy.unitsAt(self, self.PlayerLookPosition))
         return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
+
+    def describeUnit(self, enemy):
+        """An enemy's name for Looking At, with what's worth knowing about it."""
+        shop = cityshops.shopName(enemy.shopKind) if cityshops.isMerchant(enemy) else None
+        notes = [note for note in (shop, expansion.attitudeLabel(self, enemy), peddler.attitudeLabel(enemy), dwellers.attitudeLabel(enemy),
+                                   "burning" if getattr(enemy, "burnTurns", 0) > 0 else None) if note]
+        return enemy.name + (f" ({', '.join(notes)})" if notes else "")
 
     def windowSpec(self, windowId):
         """Everything the renderer needs to draw one window."""
@@ -4618,7 +4665,7 @@ class gameManager():
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly, overlayOnly=overlayOnly,
             fireLight=getattr(self, "fireLight", {}), glowLight=getattr(self, "glowLight", {}), ownSight=getattr(self, "ownSight", set()),
-            darkSight=getattr(self, "darkSight", set()),
+            darkSight=getattr(self, "darkSight", set()), sharedTiles=occupancy.sharedTiles(self),
             wallLamps=metropolis.wallLampsHere(self),
             memoryFade=self.memoryShades(), memoryFalloff=(FORGET_DISTANCE, FORGET_CURVE, DOOR_SHADE_MOST),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),

@@ -5,6 +5,7 @@ from cruel.world import dwellerbuilding
 from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import dwellerwork
+from cruel.world import occupancy
 from cruel.world import organizers
 
 """
@@ -87,15 +88,15 @@ def placeUnit(game, spot, unit):
         positions.add(spot)
 
 
-def takeUnit(game, spot):
-    """Takes the unit on spot off the map (what it stood on is left there). Returns it."""
-    unit = game.grid[spot].pop()
-    if spot in game.enemyOccupiedItemSpaces:
-        game.grid[spot] = game.enemyOccupiedItemSpaces.pop(spot)
-    else:
-        game.grid[spot][0] = dwellerwork.FLOOR
-    for positions in (game.EnemyPositions, getattr(game, "movedEnemies", set())):
-        positions.discard(spot)
+def takeUnit(game, spot, unit):
+    """Takes unit off spot and off the map (what it stood on is left there, and anyone sharing the space stays).
+    Returns it."""
+    first = occupancy.primaryAt(game, spot) is unit
+    occupancy.lift(game, spot, unit)
+    if first:
+        for positions in (game.EnemyPositions, getattr(game, "movedEnemies", set())):
+            positions.discard(spot)
+        occupancy.leave(game, spot)
     game.change = True
     return unit
 
@@ -266,7 +267,7 @@ def moveGrub(game, position, farmer):
                 grubSpot, grub = reachable[0]
                 grub.headedTo, farmer.movingGrub = target, grub
         if withinReach(game, position, grubSpot):  # (lifted out over the fence)
-            farmer.heldGrub = takeUnit(game, grubSpot)
+            farmer.heldGrub = takeUnit(game, grubSpot, grub)
             return position
         return stepOrGiveUp(game, position, farmer, grubSpot)
     into = [spot for spot in target if withinReach(game, position, spot) and organizers.passable(game.grid[spot])]

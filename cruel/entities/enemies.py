@@ -6,6 +6,8 @@ FAST = 1.25  # speed of the quick ones: Dire Rats, Goblin Chieftains and the Uns
 
 
 class Enemy():
+    unitSize = "medium"  # how much of a space it takes: "small", "medium" or "large" (occupancy.py)
+
     def __init__(self,hp,ac,speed,wallDamage,damage,name,goldWorth):
         self.hp = hp
         self.ac = ac
@@ -37,6 +39,7 @@ class Enemy():
             return True
         
 class Goblin(Enemy):
+    unitSize = "small"
     def __init__(self):
         super().__init__(5, 10, 1, 1,1,"Goblin",5)
         self.inventory = [items.goblinEquipmentList[rand.randint(0,len(items.goblinEquipmentList)-1)]]
@@ -44,6 +47,7 @@ class GoblinChief(Enemy):
     def __init__(self):
         super().__init__(10,12,FAST,2,3,"Goblin Chieftan",15)
 class DireRat(Enemy):
+    unitSize = "small"
     def __init__(self):
         super().__init__(3,2,FAST,0,2,"Dire Rat",5)
         self.evasion = 0.10  # quick and small: a little hard to hit
@@ -62,6 +66,7 @@ class Unsealed(Enemy):
 
 
 class FireGiant(Enemy):
+    unitSize = "large"
     """Scorched Depths. Fills a 2x2 block of tiles: its anchor (top-left, the one on gameManager.EnemyPositions)
     and three part tiles that hold this same object. Hits for normal damage plus fire, and fire can't hurt it."""
     def __init__(self):
@@ -93,6 +98,7 @@ class GrayPeddler(Enemy):
 
 
 class Dweller(Enemy):
+    unitSize = "small"
     """A Dweller of the Metropolis (metropolis.py): an insectoid city-dweller. dwellers.py runs its turns. It's calm
     until it sees you do something hostile (dwellers.hostileAct); then citizens, nobles and merchants run to a guard
     to tell it, and guards hunt you. None of them dig."""
@@ -179,6 +185,11 @@ class DewGrub(Dweller):
             self.name = self.YOUNG_NAME
             self.hp = self.maxHp = self.YOUNG_HP
 
+    @property
+    def unitSize(self):
+        """A young grub is small; a grown one takes a whole space."""
+        return "medium" if getattr(self, "grown", True) else "small"
+
     def growUp(self):
         self.grown = True
         self.name = self.GROWN_NAME
@@ -187,6 +198,7 @@ class DewGrub(Dweller):
 
 
 class GoblinBuilder(Enemy):
+    unitSize = "small"
     """Builds an Expansion camp: bonfires, huts and spawners (see expansion.py, which runs its turns)."""
     def __init__(self):
         super().__init__(8, 8, 1, 2, 1, "Goblin Builder", 8)
@@ -194,6 +206,7 @@ class GoblinBuilder(Enemy):
         self.rest = 0
 
 class GoblinFarmer(Enemy):
+    unitSize = "small"
     """Grows Game of Life plots of plants for an Expansion camp and keeps them alive (see expansion.py)."""
     def __init__(self):
         super().__init__(7, 8, 1, 1, 1, "Goblin Farmer", 6)
