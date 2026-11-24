@@ -1,4 +1,4 @@
-import items
+from cruel.inventory import items
 import random as rand
 
 CLEAN_DODGE_BASE = 0.05  # (the player's starts the same; see playerClass.CLEAN_DODGE_BASE)

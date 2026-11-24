@@ -1,33 +1,34 @@
 import pygame
 import random as rand
-import connectingEmptyRooms as CER
-import playerClass as pc
-import items
-import enemies
-import wall
+from cruel.world import connectingEmptyRooms as CER
+from cruel.entities import playerClass as pc
+from cruel.inventory import items
+from cruel.entities import enemies
+from cruel.world import wall
 import copy
 import math
 import os
-import paths
-import EventDispatcher as ED
-import themes
-import attempts
-import events
-import loot
-import resources
-import recipes
-import relics
-import plants
-import organizers
-import expansion
-import devconsole
-import updater
-import sound
-import titlefog
-from version import VERSION
-from settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES, VOLUME_STEP, MAP_ZOOMS
-from renderer import renderer as rend, SWAY_FPS, FIRE_LIGHT_RADIUS
+from cruel.core import paths
+from cruel.core import EventDispatcher as ED
+from cruel.world import themes
+from cruel.core import attempts
+from cruel.world import events
+from cruel.inventory import loot
+from cruel.inventory import resources
+from cruel.inventory import recipes
+from cruel.inventory import relics
+from cruel.world import plants
+from cruel.world import organizers
+from cruel.world import expansion
+from cruel.core import devconsole
+from cruel.core import updater
+from cruel.audio import sound
+from cruel.graphics import titlefog
+from cruel.core.version import VERSION
+from cruel.core.settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES, VOLUME_STEP, MAP_ZOOMS
+from cruel.graphics.renderer import renderer as rend, SWAY_FPS, FIRE_LIGHT_RADIUS
 import pickle
+from cruel.core import savefile
 
 """
 The Grid is a 2D grid that has been flattened into a dictionary of unique points. Position i maps to
@@ -182,7 +183,7 @@ class gameManager():
     def __init__(self):
         pygame.init()
 
-        pygame.display.set_icon(pygame.image.load(paths.resourcePath("icon.png")))  # made by makeIcon.py
+        pygame.display.set_icon(pygame.image.load(paths.resourcePath("assets/icon.png")))  # made by tools/makeIcon.py
         pygame.display.set_caption("CRUEL")
         self.clock = pygame.time.Clock()
 
@@ -244,7 +245,7 @@ class gameManager():
             # and open it fresh. That forgets the icon, caption and key repeat, so they're set again.
             pygame.display.quit()
             pygame.display.init()
-            pygame.display.set_icon(pygame.image.load(paths.resourcePath("icon.png")))
+            pygame.display.set_icon(pygame.image.load(paths.resourcePath("assets/icon.png")))
             pygame.display.set_caption("CRUEL")
             pygame.key.set_repeat(KEY_REPEAT_DELAY, KEY_REPEAT_INTERVAL)
             self.keysHeld.clear()
@@ -681,7 +682,7 @@ class gameManager():
         """Why the save didn't load, for the title screen."""
         try:
             with open(SAVE_FILE, "rb") as f:
-                data = pickle.load(f)
+                data = savefile.load(f)
             size = data.get("screenSize")
             if data.get("version") == SAVE_VERSION and size and tuple(size) != self.displaySize():
                 return f"That save was made at {size[0]} x {size[1]}. Switch to it in Settings > Display to continue"
@@ -3894,10 +3895,10 @@ class gameManager():
     def loadGame(self,filename = SAVE_FILE):
         try:
             with open(filename,"rb") as f:
-                data = pickle.load(f)
+                data = savefile.load(f)
         except FileNotFoundError:
             return False
-        except (pickle.UnpicklingError, EOFError,AttributeError):
+        except (pickle.UnpicklingError, EOFError, AttributeError, ImportError):
             return False
         # A save only fits a map of the same size (a different screen resolution gives a different map)
         if SAVE_VERSION == data.get("version") and data.get("mapSize") == (self.rowLength, self.painter.columnLength):

@@ -2,13 +2,13 @@ import math
 import random
 import pygame
 import pygame.ftfont
-import paths
-import themes
-import sprites
-import wall as walls
-import expansion
-import items
-import plants
+from cruel.core import paths
+from cruel.world import themes
+from cruel.graphics import sprites
+from cruel.world import wall as walls
+from cruel.world import expansion
+from cruel.inventory import items
+from cruel.world import plants
 
 
 # Dithered light: tiles in view get a pattern of dark pixels the further they are from the player.
@@ -100,7 +100,7 @@ class renderer():
 
         pygame.font.init()
         pygame.ftfont.init()
-        font = paths.resourcePath('Forgore.otf')
+        font = paths.resourcePath('assets/Forgore.otf')
         self.SplashScreenFont = pygame.ftfont.Font(font, 150)
         self.titleFont = pygame.ftfont.Font(font, int(self.screenHeight * 0.3))
         self.titleOptionFont = pygame.ftfont.Font(font, 40)
@@ -508,7 +508,7 @@ class renderer():
     def zoomedPopupFont(self):
         """The popup font grown with the map's zoom, made the first time each zoom is used."""
         if self.zoom not in self.popupFonts:
-            self.popupFonts[self.zoom] = pygame.ftfont.Font(paths.resourcePath('Forgore.otf'), 18 * self.zoom)
+            self.popupFonts[self.zoom] = pygame.ftfont.Font(paths.resourcePath('assets/Forgore.otf'), 18 * self.zoom)
         return self.popupFonts[self.zoom]
 
     def drawPopups(self, popups):

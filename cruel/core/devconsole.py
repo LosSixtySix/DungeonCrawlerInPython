@@ -2,13 +2,13 @@ import re
 
 import pygame
 
-import enemies
-import events
-import loot
-import recipes
-import relics
-import resources
-import wall
+from cruel.entities import enemies
+from cruel.world import events
+from cruel.inventory import loot
+from cruel.inventory import recipes
+from cruel.inventory import relics
+from cruel.inventory import resources
+from cruel.world import wall
 
 """
 The developer console. ~ (the key left of 1) opens and closes it while playing. Type a command and press Enter;

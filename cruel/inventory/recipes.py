@@ -1,9 +1,9 @@
 import math
 import random
 
-import items
-import plants
-import relics
+from cruel.inventory import items
+from cruel.world import plants
+from cruel.inventory import relics
 
 """
 Every crafting recipe, the crafting stations, and the quality roll for crafted gear.

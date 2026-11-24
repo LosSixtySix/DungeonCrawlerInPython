@@ -1,9 +1,9 @@
 import math
 import random as rand
 
-import enemies
-import plants
-import wall
+from cruel.entities import enemies
+from cruel.world import plants
+from cruel.world import wall
 
 """
 Organizers: enemies that don't hunt you. Each one picks a spot near it, breaks the walls there to make room,
@@ -153,7 +153,7 @@ def passable(tile, demise=True):
 
 def reachable(gm, start):
     """Walking distances (over open floor) from start, and the tile each was reached from."""
-    import expansion  # (here, not at the top: expansion imports this module)
+    from cruel.world import expansion  # (here, not at the top: expansion imports this module)
     table, grid = expansion.neighborTable(gm), gm.grid
     dist, came = {start: 0}, {}
     frontier = [start]

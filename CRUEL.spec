@@ -13,11 +13,11 @@ for path in glob.glob(os.path.join(SPECPATH, 'music', '**', '*.json'), recursive
     MUSIC.append((relative, os.path.dirname(relative)))
 
 a = Analysis(
-    ['lineOfSight.py'],
+    ['lineOfSight.py'],  # the launcher; the game is the cruel/ package it imports
     pathex=[],
     binaries=[],
     # Read-only files the game loads at runtime (found through paths.resourcePath), music included
-    datas=[('Forgore.otf', '.'), ('icon.png', '.')] + MUSIC,
+    datas=[('assets/Forgore.otf', 'assets'), ('assets/icon.png', 'assets')] + MUSIC,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -39,7 +39,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,  # no terminal window behind the game
-    icon='CRUEL.ico',  # made by makeIcon.py
+    icon='assets/CRUEL.ico',  # made by tools/makeIcon.py
 )
 coll = COLLECT(
     exe,

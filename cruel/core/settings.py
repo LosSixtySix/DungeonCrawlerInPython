@@ -1,6 +1,6 @@
 import json
 import pygame
-import paths
+from cruel.core import paths
 
 """
 Player settings that should survive between runs: the hotkeys, where each window was dragged to, the display
