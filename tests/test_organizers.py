@@ -277,6 +277,13 @@ class BrokenWallTests(unittest.TestCase):
         organizers.wallBroken(self.game, wallPosition, squareOrganizer)
         self.assertIsNone(squareOrganizer.aggro)
 
+    def test_an_organizers_hit_takes_off_no_more_than_the_walls_hardness(self):
+        squareOrganizer = addOrganizer(self.game, self.center, enemies.SquareOrganizer)
+        stone = wall.StoneWall()
+        self.game.grid[self.center + 1] = [2, 0, stone]
+        organizers.hitWall(self.game, self.center, squareOrganizer, self.center + 1)
+        self.assertEqual(stone.hp, wall.StoneWall().hp - stone.hardness)
+
     def test_an_angry_organizer_calms_down_when_its_target_is_gone(self):
         squareOrganizer, _ = self.buildersWall(enemies.SquareOrganizer, 2)
         squareOrganizer.aggro = enemies.Goblin()  # not on the map any more

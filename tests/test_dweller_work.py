@@ -67,6 +67,14 @@ class MinerTests(WorkTest):
             self.assertTrue(self.runTurns(20, until=lambda: self.game.grid[self.spot(41, 30)][0] == FLOOR))
         self.assertIn("iron_ore", dwellerwork.carrying(miner))
 
+    def test_a_swing_takes_off_no_more_than_the_walls_hardness(self):
+        miner = self.worker(40, 30)
+        seam = self.wallAt(41, 30, wall.GoldWall)
+        seam.hardness = dwellerwork.MINE_SWING - 2
+        startingHp = seam.hp
+        dwellerwork.swing(self.game, self.spot(41, 30), miner)
+        self.assertEqual(seam.hp, startingHp - seam.hardness)
+
     def test_it_goes_to_the_nearest_seam_it_can_reach(self):
         miner = self.worker(40, 30)
         self.wallAt(50, 30, wall.CopperVein)

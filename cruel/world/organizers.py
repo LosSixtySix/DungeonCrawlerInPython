@@ -31,8 +31,7 @@ like the rest of the room, never built on), and the organizer still builds every
 out from, so it never walls itself in.
 """
 
-BREAK_DAMAGE = 40        # an organizer's hit takes this much HP off a wall (ignoring hardness): one hit for any
-                         # plain wall, two for the toughest ore veins
+BREAK_DAMAGE = 40        # an organizer's hit on a wall (no more than the wall's hardness comes off it)
 BUILD_TURNS = 2          # turns to build one wall
 WOOD_TURNS = 3           # turns to turn one floor tile into Wood
 SOW_TURNS = 2            # turns to sow a glider
@@ -481,8 +480,7 @@ def digToward(gm, i, org, target, context):
 def hitWall(gm, i, org, t):
     w = gm.grid[t][2]
     gm.chip(t, i)
-    w.brokenPoints |= wall.getRandomPoints((1, gm.tileSize - 1), (1, gm.tileSize - 1), gm.tileSize ** 2 // 3)
-    w.hp -= BREAK_DAMAGE
+    w.takeDamage(BREAK_DAMAGE, gm.tileSize)
     if w.hp <= 0:
         gm.enemyBrokeWall(t, org)  # it may pocket the wall's materials
     org.didSomething = True
