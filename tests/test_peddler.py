@@ -326,6 +326,15 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(swings, 150)
         self.assertEqual(-(-wall.PeddlerWall().hp // recipes.BOMB_WALL_DAMAGE), 15)
 
+    def test_a_bomb_ignores_hardness(self):
+        game = support.newGame()
+        landing = support.openTile(game)
+        stone = wall.PeddlerWall()
+        game.grid[landing + 1] = [WALL, 1, stone]
+        with mock.patch.object(gamemanager, "FLOOR_BREAK_CHANCE", 0):
+            game.land({"landing": landing, "effect": "Explosive", "power": 3})
+        self.assertEqual(stone.hp, wall.PeddlerWall().hp - recipes.BOMB_WALL_DAMAGE)
+
 
 class AppearingTests(unittest.TestCase):
     """When he turns up."""

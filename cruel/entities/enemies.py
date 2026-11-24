@@ -109,7 +109,9 @@ class Dweller(Enemy):
         self.lastSawYou = 0       # the turn it last saw you (a hostile one calms down FORGIVE_TURNS after)
         self.sawYouAt = None      # where it last saw you (what it tells a guard)
         self.enemyAt = None       # where it saw an enemy of the city: a guard heads there, anyone else tells a guard
-        self.work = None          # a citizen on a works floor: "mine" or "farm" (mineshafts.py)
+        self.work = None          # a citizen on a works floor: "mine" or "farm" (mineshafts.py, dwellerwork.py)
+        self.target = None        # a worker: the wall it's mining (or what it's working on)
+        self.materials = {}       # a worker: what it's carrying to the storehouse
 
 
 class DwellerCitizen(Dweller):

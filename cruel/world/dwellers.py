@@ -1,6 +1,7 @@
 import math
 import random
 
+from cruel.world import dwellerwork
 from cruel.world import expansion
 from cruel.world import metropolis
 from cruel.world import organizers
@@ -12,6 +13,7 @@ The Metropolis's Dwellers at work (metropolis.py builds the city, enemies.Dwelle
   Noble     walks near its mansion (and the plaza), and goes home now and then.
   Guard     patrols within PATROL_REACH of its post.
   Merchant  minds its shop: it stands at its counter.
+  Worker    a citizen on one of the city's works floors (mineshafts.py): it works (dwellerwork.py).
 
 They walk with path maps (expansion.walkingDistances), so they go round walls and through doors instead of bumping
 into them. A path map is kept for a while per destination (PATH_KEEP_TURNS), since Dwellers keep going to the same
@@ -426,7 +428,12 @@ def guardTurn(game, position, dweller):
 
 
 def calmTurn(game, position, dweller):
-    """Going about its day: merchants stay put; the others stand about or walk somewhere."""
+    """Going about its day: workers work (dwellerwork.py); merchants stay put; the others stand about or walk
+    somewhere."""
+    if dwellerwork.isWorker(dweller):
+        worked = dwellerwork.workTurn(game, position, dweller)
+        if worked is not None:
+            return worked
     if dweller.role == "merchant" or random.random() < IDLE_CHANCE:
         return position
     if dweller.goal is None or dweller.goal == position:
