@@ -130,6 +130,9 @@ SCORCHED_WALL_SHARE = 0.18  # share of a Scorched Depths floor that's wall, in b
 MOLTEN_FLOOR_DAMAGE = 1     # fire damage each turn you stand on Molten floor
 MOLTEN_WALL_DAMAGE = 2      # fire damage when you break a Molten wall
 FALL_DAMAGE = 3            # damage you, or anything else, take falling through a hole to the floor below
+PATIENCE_MS = 5 * 60 * 1000  # stand on the first floor's center tile this long without touching anything: the floor
+                             # opens and drops you onto a random ore floor (stepPatience)
+OVERGROWTH_DAMAGE = 2  # during Overgrowth, a plant that sprouts on your tile hurts you (and may push you out or trap you)
 DEMISE_DAMAGE = 5    # magic damage Organizer's Demise deals each turn to anything (but an Organizer) standing in it
 GROUND_FIRE_CHANCE = 0.25  # chance each floor tile a Fire Flask splashes catches fire
 GROUND_FIRE_TURNS = 3      # how long burning ground lasts
@@ -350,6 +353,7 @@ class gameManager():
         self.scorchedDoors = {}  # floor -> where its Scorched door is (one per Molten Vault floor at most)
         self.trackStarts = set()  # floors with no door back up (the Scorched Depths, and the floor below it)
         self.enemyOccupiedItemSpaces = {}
+        self.patienceMs = 0  # how long you've waited, untouched, on the first floor's center tile (stepPatience)
 
         playerposx, playerposy = self.painter.getCenterCartesian()
         self.playerPositionFlat = playerposx + (playerposy * self.rowLength)
@@ -489,6 +493,7 @@ class gameManager():
             else:
                 self.console.toggle()
             return
+        self.patienceMs = 0  # any key breaks your patience
         if repeat and (self.rebinding is not None or not self.isRepeatable(key)):
             return  # a held key repeating: ignored unless it's one that should repeat
         self.change = True
@@ -538,7 +543,10 @@ class gameManager():
             return self.onEnter()
         if self.isAction(key, "interact"):
             if not self.pickerActive():
-                self.onInteract()
+                if event.mod & pygame.KMOD_CTRL:
+                    self.interactHere()
+                else:
+                    self.onInteract()
             return
         if move is not None:
             self.onDirectionKey(*move)
@@ -1195,6 +1203,46 @@ class gameManager():
         self.enemyTurn()
         self.change = True
 
+    def centerTile(self):
+        x, y = self.painter.getCenterCartesian()
+        return x + y * self.rowLength
+
+    def stepPatience(self, now):
+        """Called every frame. On the first floor, standing on the center tile (where you start) without pressing a
+        key or clicking counts up real time; PATIENCE_MS of it and the floor opens under you (patienceFall).
+        Stepping off, any input, or another floor resets it; the pause menu, console and crafting only stop it."""
+        last, self.patienceLast = getattr(self, "patienceLast", None), now
+        if self.level != 0 or self.playerPositionFlat != self.centerTile():
+            self.patienceMs = 0
+            return
+        if self.pausePage is not None or self.console.open or self.crafting is not None or getattr(self, "autoPlay", None):
+            return
+        if last is not None:
+            self.patienceMs = getattr(self, "patienceMs", 0) + min(now - last, 1000)  # a stalled frame counts 1s at most
+        if self.patienceMs >= PATIENCE_MS:
+            self.patienceFall()
+
+    def randomOreFloor(self):
+        """(ore floor type, motherlode): any ore floor, whatever its depth limit, weighted like normal, and always
+        a Motherlode (patience is rewarded)."""
+        names = list(wall.ORE_FLOORS)
+        name = rand.choices(names, weights=[wall.ORE_FLOORS[n]["weight"] for n in names])[0]
+        return name, True
+
+    def patienceFall(self):
+        """Patience paid off: the floor gives way and you fall onto a new random ore floor. Any floors you had
+        already been to below are gone, and there's no way back up (a new track, like the Scorched Depths)."""
+        self.patienceMs = 0
+        self.player.damageTaken += FALL_DAMAGE
+        self.dropFloorsBelow(self.level)
+        self.forcedOreFloor = self.randomOreFloor()
+        self.goToNewLevel(upDoor=False)
+        self.playerPositionFlat = self.openSpot(self.playerPositionFlat) or self.playerPositionFlat
+        self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
+        self.bleed(self.playerPositionFlat)
+        self.addPopup("The floor gives way", self.playerPositionFlat)
+        self.change = True
+
     def stepCrafting(self, now):
         """Called every frame: while crafting, one turn passes every CRAFT_TURN_MS (enemies move each turn).
         Getting hurt stops the craft. Materials are only spent when an item finishes."""
@@ -1521,6 +1569,7 @@ class gameManager():
     # ----------------------------------------------------------------- mouse
 
     def onMouseDown(self, event):
+        self.patienceMs = 0  # so does any click
         if self.skipTitleFade():
             return
         if self.scene != "playing" or self.pausePage is not None or event.button != 1:
@@ -1625,6 +1674,10 @@ class gameManager():
             self.movePlayer(self.playerPositionFlat + dx + (dy * self.rowLength))
 
     def movePlayer(self, newPosition):
+        stuck = self.stuckIn()
+        if stuck is not None:
+            self.addPopup(f"Stuck in {stuck.name}! Ctrl+{self.interactKeyName()} to break free", self.playerPositionFlat)
+            return
         targetLocation = self.grid[newPosition][0] if newPosition in self.grid else None
         if targetLocation == 8 and self.grid[newPosition][2].walkable:
             hidden = self.playerHidden()
@@ -2087,7 +2140,7 @@ class gameManager():
         self.createObjects(grid, rooms)
         grid[center] = [3, 0, [relics.make("molten_blade")]]
         self.newFloorMotherlode = False
-        giants = self.placeGiants(grid, rand.randint(*enemies.GIANT_COUNT), avoid=self.tilesAround(center, 4))
+        giants = self.placeGiants(grid, rand.randint(*enemies.GIANT_COUNT), center, avoid=self.tilesAround(center, 1))
         return grid, giants, rooms, proportion, nodes
 
     # ---------------------------------------------------------------- big enemies
@@ -2117,21 +2170,36 @@ class gameManager():
         for p in self.footprint(giant.anchor, giant.size):
             grid[p] = [0, grid[p][1]]
 
-    def placeGiants(self, grid, count, avoid=()):
-        """Puts count Fire Giants on open ground, away from where you arrive. Returns their anchors."""
+    def placeGiants(self, grid, count, home, avoid=()):
+        """Puts count Fire Giants on open ground in a ring round home (the Molten Blade's chest), GIANT_SPAWN
+        tiles out, to guard it. Spots far from where you arrive go first. Returns their anchors."""
         R, avoid = self.rowLength, set(avoid)
+        hx, hy = home % R, home // R
         px, py = self.playerPositionFlat % R, self.playerPositionFlat // R
+        low, high = enemies.GIANT_SPAWN
+        ring = [i for i in grid if low ** 2 <= (i % R - hx) ** 2 + (i // R - hy) ** 2 <= high ** 2]
+        rand.shuffle(ring)
+        ring.sort(key=lambda i: (i % R - px) ** 2 + (i // R - py) ** 2 <= 10 ** 2)  # (too close to you: last)
         anchors = set()
-        spots = [i for i in grid if (i % R - px) ** 2 + (i // R - py) ** 2 > 15 ** 2]
-        rand.shuffle(spots)
-        for a in spots:
+        for a in ring:
             if len(anchors) >= count:
                 break
             tiles = self.footprint(a)
             if tiles and not avoid & set(tiles) and self.canFit(a, grid=grid):
-                self.putGiant(grid, a, enemies.FireGiant())
+                giant = enemies.FireGiant()
+                giant.home = home
+                self.putGiant(grid, a, giant)
                 anchors.add(a)
         return anchors
+
+    def guardSpot(self, giant):
+        """Somewhere open near the tile a giant guards, to wander to (None if it has no home)."""
+        home = getattr(giant, "home", None)
+        if home is None:
+            return None
+        spots = [p for p in self.tilesAround(home, enemies.GIANT_GUARD)
+                 if self.grid[p][0] == 0 and self.canFit(p, giant.size, own=set(self.footprint(giant.anchor, giant.size)))]
+        return rand.choice(spots) if spots else None
 
     def isBig(self, enemy):
         return getattr(enemy, "size", 1) > 1
@@ -2173,8 +2241,9 @@ class gameManager():
         if player in sight:
             giant.lastPlayerPosition = player
         elif giant.lastPlayerPosition is None or giant.lastPlayerPosition in tiles:
+            # nothing to chase: wander near the chest it guards (or anywhere it can see, without one)
             open_ = [p for p in sight if self.grid[p][0] == 0]
-            giant.lastPlayerPosition = rand.choice(open_) if open_ else None
+            giant.lastPlayerPosition = self.guardSpot(giant) or (rand.choice(open_) if open_ else None)
         target = giant.lastPlayerPosition
         if target is None:
             return anchor
@@ -2217,7 +2286,8 @@ class gameManager():
         if plants.floorOf(self.playerPositionFlat, self.rooms) == "Molten":
             self.firePlayer(MOLTEN_FLOOR_DAMAGE)
 
-    def goToNewLevel(self):
+    def goToNewLevel(self, upDoor=True):
+        """Down to a brand new floor one deeper. upDoor False: it has no door back up (a new track starts)."""
         self.saveLevel()
         self.blood = {}
         self.bloodDry = {}
@@ -2231,7 +2301,10 @@ class gameManager():
         event = events.roll(self.level)
         if event:
             self.floorEvents[self.level] = event
-        self.PlacePreviousLevelDoor()
+        if upDoor:
+            self.PlacePreviousLevelDoor()
+        else:
+            self.trackStarts.add(self.level)
         self.PlaceNextLevelDoor()
         self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
         self.afterLevelChange()
@@ -2303,7 +2376,7 @@ class gameManager():
         elif self.currentLocation[0] == 9:
             self.currentPosition = "Item pile"
         elif self.currentLocation[0] == 8:
-            self.currentPosition = self.currentLocation[2].name + (" (hidden)" if self.playerHidden() else "")
+            self.currentPosition = self.currentLocation[2].name + (" (stuck)" if self.stuckIn() else " (hidden)" if self.playerHidden() else "")
         else:
             self.currentPosition = "Hidden in smoke" if self.playerPositionFlat in self.smoke else "Floor"
 
@@ -3181,6 +3254,58 @@ class gameManager():
         plant = self.plantAt(position)
         return plant is not None and plant.kind == organizers.DEMISE
 
+    def overgrowPlayer(self, plantTile):
+        """A plant sprouted on your tile (Overgrowth): it hurts you. One you can walk through just grows around
+        you. One that blocks the way pushes you onto an empty tile beside you, or, with nowhere to go, traps you
+        inside it until you break it (Ctrl + interact works on your own tile)."""
+        plant = plantTile[2]
+        self.player.damageTaken += OVERGROWTH_DAMAGE
+        self.bleed(self.playerPositionFlat)
+        if plant.walkable:
+            self.currentLocation = plantTile
+            self.addPopup(f"{plant.name} grows over you", self.playerPositionFlat)
+            return
+        free = [j for j in self.neighbors(self.playerPositionFlat) if self.grid[j][0] == 0 and j not in self.EnemyPositions]
+        if free:
+            spot = rand.choice(free)
+            self.grid[self.playerPositionFlat] = plantTile
+            self.currentLocation = copy.copy(self.grid[spot])
+            self.playerPositionFlat = spot
+            self.grid[spot] = [1, self.grid[spot][1]]
+            self.addPopup(f"Pushed out by {plant.name}", spot)
+        else:
+            self.currentLocation = plantTile
+            self.addPopup(f"Stuck in {plant.name}! Ctrl+{self.interactKeyName()} to break free", self.playerPositionFlat)
+        self.change = True
+
+    def stuckIn(self):
+        """The plant you're trapped inside (one that blocks the way grew over you), or None."""
+        tile = self.currentLocation
+        return tile[2] if tile[0] == 8 and len(tile) > 2 and not tile[2].walkable else None
+
+    def interactKeyName(self):
+        return pygame.key.name(self.settings.hotkeys["interact"]).upper()
+
+    def interactHere(self):
+        """Ctrl + interact: use the tile you're standing on. A plant you're in is picked (breaking you free if it
+        trapped you); a chest or pile opens."""
+        tile = self.currentLocation
+        if tile[0] == 8:
+            plant = tile[2]
+            if plant.kind == organizers.DEMISE and not self.player.hasEffect("demise_ward"):
+                self.magicPlayer(DEMISE_DAMAGE)  # its thorns, as when you pick it beside you
+            else:
+                stage = plant.pick()
+                self.currentLocation = [0, tile[1]]
+                if stage is None:
+                    self.addPopup("Broke free" if not plant.walkable else "Not ripe", self.playerPositionFlat)
+                else:
+                    self.collectDrops(loot.rollPick(plant, stage), loot.plantSource(plant, stage), self.playerPositionFlat)
+            self.enemyMove = True
+            self.change = True
+        elif tile[0] in (3, 9) and self.roomItems is not None:
+            self.openWindow("items")
+
     def stepDemise(self):
         """Organizer's Demise hurts everything standing in it with magic, except Organizers. Its kills are the
         environment's, even Demise you planted: no loot, and only some of the enemy's gold and pocketed
@@ -3496,7 +3621,16 @@ class gameManager():
         self.stepFloorEvent()
         growth = events.plantRules(self.activeEvent())
         if self.turnCount % growth.get("growTurns", plants.GROW_TURNS) == 0:
+            # During Overgrowth plants can sprout on you: your tile takes part in the step as the floor under you
+            here = self.playerPositionFlat
+            overgrow = self.activeEvent() == "overgrowth" and self.currentLocation[0] == 0
+            if overgrow:
+                playerTile, self.grid[here] = self.grid[here], copy.copy(self.currentLocation)
             changed = plants.step(self.grid, self.rooms, self.rowLength, noBirth=expansion.allFarmTiles(self), **growth)
+            if overgrow:
+                sprouted, self.grid[here] = self.grid[here], playerTile
+                if sprouted[0] == 8:
+                    self.overgrowPlayer(sprouted)
             changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
             if changed:
                 self.change = True
@@ -3773,6 +3907,7 @@ class gameManager():
             self.scorchedDoors = data.get("scorchedDoors", {})
             self.trackStarts = data.get("trackStarts", set())
             self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
+            self.patienceMs = 0
             self.forcedTheme = None
             self.enemyOccupiedItemSpaces = {}  # (also only set by newGame)
             self.doorPositions = data["doorPositions"]
@@ -4186,6 +4321,7 @@ class gameManager():
 
             self.stepCrafting(pygame.time.get_ticks())
             self.stepAutoPlay(pygame.time.get_ticks())
+            self.stepPatience(pygame.time.get_ticks())
 
             if self.enemyMove:
                 self.spendActions(1)
