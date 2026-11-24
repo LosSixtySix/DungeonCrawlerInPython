@@ -15,7 +15,8 @@ https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
              One block near the middle is the plaza, NOBLE_BLOCKS are the noble quarter (one or two mansions each),
              SHOP_COUNT blocks are shops (one big room each) and every other block is two rows of houses. Every
              building has exactly one door, onto a street, and a shop's sign sits in its wall beside the door.
-             A house has a CHEST_CHANCE of a chest (a CityChest).
+             A house has a CHEST_CHANCE of a chest (a CityChest). Street lights stand at every crossing and along
+             the streets in between, never in front of or beside a door; they light the street round them.
   Dwellers   citizens walk the streets, nobles stay in their quarter, guards stand at posts on street corners,
              merchants keep a shop each (dwellers.py runs their turns, cityshops.py stocks their shops).
   Rooms      the floor's tiles are in the Street, House, Shop and Noble rooms (themes.CITY_ROOMS), each drawn in
@@ -47,6 +48,9 @@ NOBLES_ON_THE_PLAZA = 2
 
 STREET, HOUSE, SHOP, NOBLE = "Street", "House", "Shop", "Noble"
 SHOP_SIGN = 14              # grid tile type of a shop's sign (its object: the shop kind, cityshops.SHOP_KINDS)
+STREET_LIGHT = 15           # grid tile type of a street light: a lamp post that lights the street round it
+STREET_LIGHT_RADIUS = 5     # how far a street light lights
+STREET_LIGHT_SPACING = 8    # along a street, a light about this often between the ones at the crossings
 FLOOR, WALL, CHEST, ENEMY = 0, 2, 3, 5
 
 
@@ -67,6 +71,7 @@ class City:
         self.posts = []             # guard posts: street corners
         self.dwellers = {}          # tile: Dweller
         self.streetLines = ([], [])  # (columns, rows) where streets start
+        self.streetLights = []      # where the lamp posts stand
 
     def spot(self, column, row):
         return column + row * self.rowLength
@@ -226,8 +231,43 @@ def buildCity(rowLength, rowCount, playerSpot):
                 grid[chestSpot] = [CHEST, 0, houseChest()]
 
     grid[playerSpot] = [FLOOR, 0]
+    placeStreetLights(city, playerSpot)
     placeDwellers(city, playerSpot)
     return city
+
+
+def placeStreetLights(city, playerSpot):
+    """Lamp posts: one at every street crossing (its far corner, so the guard post at the near corner stays free),
+    and one about every STREET_LIGHT_SPACING tiles along each street between them. Never on or beside a doorway (so
+    every door stays open) and never where you arrive."""
+    columns, rows = city.streetLines
+    doors = [door for _, door in city.houses + city.mansions] + [shop["door"] for shop in city.shops]
+    keepClear = {playerSpot, *neighborsOf(city, playerSpot)}
+    for door in doors:
+        keepClear |= {door, *neighborsOf(city, door)}
+    candidates = [city.spot(column + 1, row + 1) for column in columns for row in rows]
+    for column in columns:  # along the streets running down, between the crossings
+        for top, bottom in zip(rows, rows[1:]):
+            candidates += [city.spot(column + 1, row) for row in range(top + STREET_WIDTH + STREET_LIGHT_SPACING // 2, bottom, STREET_LIGHT_SPACING)]
+    for row in rows:  # along the streets running across
+        for left, right in zip(columns, columns[1:]):
+            candidates += [city.spot(column, row + 1) for column in range(left + STREET_WIDTH + STREET_LIGHT_SPACING // 2, right, STREET_LIGHT_SPACING)]
+    for spot in candidates:
+        if spot in city.grid and spot in city.rooms[STREET] and city.grid[spot][0] == FLOOR and spot not in keepClear \
+                and not any(beside in keepClear and beside in doors for beside in neighborsOf(city, spot)):
+            city.grid[spot] = [STREET_LIGHT, 0]
+            city.streetLights.append(spot)
+
+
+def streetLights(game):
+    """Where the street lights stand on this floor (worked out once per floor: they never move)."""
+    cache = game.__dict__.setdefault("streetLightCache", {})
+    key = id(game.grid)
+    if key not in cache:
+        cache.clear()
+        cache[key] = [spot for spot, tile in game.grid.items() if tile[0] == STREET_LIGHT] \
+            if game.proportion == METROPOLIS else []
+    return cache[key]
 
 
 # ---------------------------------------------------------------- the Dwellers
