@@ -80,14 +80,15 @@ POUCH_FULL_MESSAGES = 3  # how many times "pouch full" shows for one material be
 SAVE_VERSION = 2  # 2: the map now fills the whole screen, so saves from the old smaller map can't load
 
 # Windows, in the order Tab cycles through them (after the "map" stop)
-WINDOW_ORDER = ["character", "room", "equipment", "inventory", "materials", "crafting", "levelup", "items", "loot", "shop"]
+WINDOW_ORDER = ["character", "room", "equipment", "inventory", "materials", "crafting", "levelup", "items", "loot", "shop", "attack"]
 WINDOW_TITLES = {"character": "Character", "room": "Room", "equipment": "Equipment", "materials": "Pouch", "loot": "Loot Table",
                  "inventory": "Inventory", "levelup": "Level Up", "items": "Items Here", "crafting": "Crafting",
-                 "shop": "The Gray Peddler"}
+                 "shop": "The Gray Peddler", "attack": "Attack which?"}
 WINDOW_HOTKEY = {"character": "character", "room": "room", "equipment": "equipment", "materials": "materials", "loot": "loot_table",
-                 "inventory": "inventory", "levelup": "level_up", "items": "interact", "crafting": "crafting", "shop": "interact"}
-LIST_WINDOWS = {"equipment", "inventory", "levelup", "items", "loot", "crafting", "shop"}  # windows that take arrows/Enter when focused
-OPENED_BY_INTERACT = ("items", "shop")  # windows the interact key opens on what you face, not with a hotkey of their own
+                 "inventory": "inventory", "levelup": "level_up", "items": "interact", "crafting": "crafting", "shop": "interact",
+                 "attack": "interact"}
+LIST_WINDOWS = {"equipment", "inventory", "levelup", "items", "loot", "crafting", "shop", "attack"}  # windows that take arrows/Enter when focused
+OPENED_BY_INTERACT = ("items", "shop", "attack")  # windows the interact key opens on what you face, not with a hotkey of their own
 SHOP_TABS = ["Buy", "Sell"]
 
 PAUSE_ROWS = [("toggle", "Save on Exit"), ("toggle", "Generate Room"), ("toggle", "Mini HUD"),
@@ -566,6 +567,8 @@ class gameManager():
                 return self.shopEnter(everything=bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT)))
             return self.onEnter()
         if self.isAction(key, "interact"):
+            if self.focus == "attack" and "attack" in self.openWindows:  # interact again hits the one marked
+                return self.onWindowEnter("attack")
             if self.focus == "shop" and "shop" in self.openWindows and not self.pickerActive():
                 # in a shop, interact buys or sells (Ctrl + interact sells every whole lot of a material)
                 return self.shopEnter(everything=bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT)))
@@ -849,7 +852,8 @@ class gameManager():
             self.windowSel["equipment"] = keys.index(slots[max(0, min(len(slots) - 1, at + dy))])
             return
         count = {"equipment": len(self.player.equipment), "levelup": len(self.player.attributes),
-                 "items": len(self.roomItems) if self.roomItems else 0}[windowId]
+                 "items": len(self.roomItems) if self.roomItems else 0,
+                 "attack": len((getattr(self, "attackChoice", None) or {}).get("units", []))}[windowId]
         self.windowSel[windowId] = max(0, min(count - 1, self.windowSel[windowId] + dy))
 
     def onWindowEnter(self, windowId):
@@ -901,6 +905,8 @@ class gameManager():
             self.startCrafting(1)
         elif windowId == "shop":
             self.shopEnter()
+        elif windowId == "attack":
+            self.attackChosen(index)
 
     # ---------------------------------------------------------------- dropping
     # Ctrl+Enter (or Alt+Enter) on an item in the Inventory or Equipment window drops it in a pile at your feet
@@ -1761,17 +1767,12 @@ class gameManager():
         elif tile[0] == 5 and cityshops.isTrader(tile[2]) and not forceAttack:  # the Gray Peddler or a city merchant: its shop
             self.openShop(target)
             return
+        elif tile[0] == 5 and len(occupancy.unitsAt(self, target)) > 1:  # two on the space: you choose which to hit
+            self.attackChoice = {"spot": target, "units": occupancy.unitsAt(self, target)}
+            self.openWindow("attack")
+            return  # (choosing takes no turn)
         elif tile[0] == 5:  # enemy
-            dealt = self.enemyDodge(tile[2], self.player.DealDamage(), target)
-            tile[2].hp -= dealt
-            if dealt > 0:
-                self.bleed(target)
-                self.thirst()
-                self.playerHurtEnemy(tile[2], target)
-            if tile[2].hp <= 0:
-                self.killEnemy(target)
-            elif dealt > 0 and self.player.hasEffect("molten"):  # the Molten Blade
-                self.fireEnemy(target, relics.MOLTEN_FIRE, igniteChance=relics.MOLTEN_IGNITE_CHANCE, byPlayer=True)
+            self.attackUnit(target, tile[2])
         elif tile[0] in (3, 9):  # a chest or an item pile
             if self.roomItems is not None:
                 self.openWindow("items")
@@ -1782,6 +1783,32 @@ class gameManager():
         elif tile[0] == 8:  # a plant: harvest it
             self.harvestPlant(target)
         self.enemyMove = True
+
+    def attackUnit(self, target, enemy):
+        """You hit enemy, on the space target."""
+        dealt = self.enemyDodge(enemy, self.player.DealDamage(), target)
+        enemy.hp -= dealt
+        if dealt > 0:
+            self.bleed(target)
+            self.thirst()
+            self.playerHurtEnemy(enemy, target)
+        if enemy.hp <= 0:
+            self.killEnemy(target, unit=enemy)
+        elif dealt > 0 and self.player.hasEffect("molten"):  # the Molten Blade
+            self.fireEnemy(target, relics.MOLTEN_FIRE, igniteChance=relics.MOLTEN_IGNITE_CHANCE, byPlayer=True, unit=enemy)
+
+    def attackChosen(self, index):
+        """In the Attack which? window, you picked one (index) of the two on the space: you hit it (if it's still
+        there), and the window closes."""
+        choice = getattr(self, "attackChoice", None)
+        self.closeWindow("attack")
+        self.attackChoice = None
+        if not choice or index >= len(choice["units"]):
+            return
+        enemy = choice["units"][index]
+        if enemy in occupancy.unitsAt(self, choice["spot"]):
+            self.attackUnit(choice["spot"], enemy)
+            self.enemyMove = True
 
     # ------------------------------------------------------------------ loot
 
@@ -1851,7 +1878,7 @@ class gameManager():
         rest is lost (see spillPockets). unit: which of the two on a shared space dies (the first, if not said)."""
         if unit is not None and occupancy.sharedTiles(self).get(position) is unit:
             del occupancy.sharedTiles(self)[position]  # the second unit on the space dies; the first stays
-            stacks, gold = self.killLoot(unit, position) if killer == "player" else self.spillPockets(unit, killer)
+            stacks, gold = (self.killLoot(unit, position), 0) if killer == "player" else self.spillPockets(unit, killer)
             stacks = list(stacks) + list(getattr(unit, "loot", []))
             if stacks or gold:
                 self.placeItems(position, stacks, gold)
@@ -3198,11 +3225,9 @@ class gameManager():
         if shot["effect"] == "Fire":
             self.igniteArea(area + [edgeSpot for edgeSpot in self.plantsAtEdge(landing, radius) if edgeSpot not in area])
             hit = 0
-            for position in self.oncePerEnemy(area):
-                tile = self.grid[position]
-                if tile[0] == 5 and len(tile) > 2:
-                    hit += 1
-                    self.fireEnemy(position, shot["power"], byPlayer=True)
+            for position, unit in occupancy.unitsInArea(self, area):  # (every unit, two on a space included)
+                hit += 1
+                self.fireEnemy(position, shot["power"], byPlayer=True, unit=unit)
             if self.playerPositionFlat in area:  # too close: you burn too
                 hit += 1
                 self.firePlayer(shot["power"])
@@ -3210,14 +3235,12 @@ class gameManager():
                 self.addPopup("Nothing burns", landing)
         elif shot["effect"] == "Magic":  # Demise Flask: magic damage, but Organizers take root instead
             hit = 0
-            for position in self.oncePerEnemy(area):
-                tile = self.grid[position]
-                if tile[0] == 5 and len(tile) > 2:
-                    hit += 1
-                    if isinstance(tile[2], enemies.Organizer):
-                        organizers.overgrow(self, position)
-                    else:
-                        self.magicEnemy(position, shot["power"])
+            for position, unit in occupancy.unitsInArea(self, area):
+                hit += 1
+                if isinstance(unit, enemies.Organizer):
+                    organizers.overgrow(self, position)
+                else:
+                    self.magicEnemy(position, shot["power"], unit=unit)
             if self.playerPositionFlat in area:  # too close: it hits you too
                 hit += 1
                 self.magicPlayer(shot["power"])
@@ -3227,15 +3250,13 @@ class gameManager():
             hit = 0
             self.sound.playExplosion()
             self.igniteArea(area + [edgeSpot for edgeSpot in self.plantsAtEdge(landing, radius) if edgeSpot not in area])
-            for position in self.oncePerEnemy(area):
-                tile = self.grid[position]
-                if tile[0] == 5 and len(tile) > 2:
-                    hit += 1
-                    tile[2].hp -= shot["power"]
-                    self.bleed(position)
-                    self.playerHurtEnemy(tile[2], position)
-                    if tile[2].hp <= 0:
-                        self.killEnemy(position)
+            for position, unit in occupancy.unitsInArea(self, area):
+                hit += 1
+                unit.hp -= shot["power"]
+                self.bleed(position)
+                self.playerHurtEnemy(unit, position)
+                if unit.hp <= 0:
+                    self.killEnemy(position, unit=unit)
             if self.playerPositionFlat in area:
                 hit += 1
                 self.player.damageTaken += shot["power"]
@@ -3390,9 +3411,10 @@ class gameManager():
         dealt = max(0, damage - getattr(enemy, "fireResistance", 0))
         return round(dealt * (1 - getattr(enemy, "fireResistPercent", 0)))
 
-    def fireEnemy(self, position, damage, canIgnite=True, igniteChance=BURN_CHANCE, byPlayer=False):
-        """Fire damage to the enemy at position. byPlayer: you did it (a Fire potion, the Molten Blade), not a burn."""
-        enemy = self.grid[position][2]
+    def fireEnemy(self, position, damage, canIgnite=True, igniteChance=BURN_CHANCE, byPlayer=False, unit=None):
+        """Fire damage to the enemy at position (unit: which, with two there; the first if not said). byPlayer: you
+        did it (a Fire potion, the Molten Blade), not a burn."""
+        enemy = unit if unit is not None else self.grid[position][2]
         dealt = self.enemyFireDamage(enemy, damage)
         if dealt == 0:
             self.addPopup("Resisted", position)
@@ -3402,7 +3424,7 @@ class gameManager():
         if byPlayer:
             self.playerHurtEnemy(enemy, position)
         if enemy.hp <= 0:
-            self.killEnemy(position)
+            self.killEnemy(position, unit=enemy)
             return
         if canIgnite and self.enemyFireDamage(enemy, BURN_DAMAGE) > 0 and rand.random() < igniteChance:
             enemy.burnTurns = BURN_TURNS  # shown as flames on it (no point setting alight something its burn can't hurt)
@@ -3419,8 +3441,8 @@ class gameManager():
         self.player.damageTaken += dealt
         self.bleed(self.playerPositionFlat)
 
-    def magicEnemy(self, position, damage, killer="player"):
-        enemy = self.grid[position][2]
+    def magicEnemy(self, position, damage, killer="player", unit=None):
+        enemy = unit if unit is not None else self.grid[position][2]
         dealt = max(0, damage - getattr(enemy, "magicResistance", 0))
         dealt = round(dealt * (1 - getattr(enemy, "magicResistPercent", 0)))
         if dealt == 0:
@@ -3431,7 +3453,7 @@ class gameManager():
         if killer == "player":
             self.playerHurtEnemy(enemy, position)
         if enemy.hp <= 0:
-            self.killEnemy(position, killer)
+            self.killEnemy(position, killer, unit=enemy)
 
     def inDemise(self, position):
         plant = self.plantAt(position)
@@ -3504,12 +3526,11 @@ class gameManager():
 
     def stepBurning(self):
         """Everything on fire takes its burn damage and burns a turn shorter."""
-        for position in list(self.EnemyPositions):
-            tile = self.grid.get(position)
-            if not tile or tile[0] != 5 or len(tile) < 3 or getattr(tile[2], "burnTurns", 0) <= 0:
+        for position, unit in occupancy.allUnits(self):  # (two on a space included)
+            if getattr(unit, "burnTurns", 0) <= 0:
                 continue
-            tile[2].burnTurns -= 1
-            self.fireEnemy(position, BURN_DAMAGE, canIgnite=False)
+            unit.burnTurns -= 1
+            self.fireEnemy(position, BURN_DAMAGE, canIgnite=False, unit=unit)
         player = self.player
         if getattr(player, "burnTurns", 0) > 0:
             player.burnTurns -= 1
@@ -4297,6 +4318,8 @@ class gameManager():
                 spec["preview"] = self.levelUpPreview(names[min(self.windowSel["levelup"], len(names) - 1)])
         elif windowId == "items":
             spec["rows"] = [(f"Slot {i + 1}", item.name) for i, item in enumerate(self.roomItems or [])]
+        elif windowId == "attack":
+            spec["rows"] = [(unit.name, "") for unit in (getattr(self, "attackChoice", None) or {}).get("units", [])]
         elif windowId == "materials":
             spec["kind"] = "sections"
             sections = [{"title": None, "rows": [("Gold", player.gold, (226, 181, 68))], "note": "Gold also pays for leveling up"}]

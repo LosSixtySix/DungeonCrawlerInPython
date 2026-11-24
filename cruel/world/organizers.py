@@ -312,12 +312,12 @@ def attack(gm, i, org, target):
     if org.aggro == "player":
         gm.hitPlayer(org, i)
         return
-    enemy = gm.grid[target][2]
+    enemy = occupancy.victimAt(gm, target, gm.grid[target][2])  # (two on the space: the weaker one is hit)
     enemy.hp -= gm.enemyDodge(enemy, org.damage, target)
     gm.bleed(target)
     gm.change = True
     if enemy.hp <= 0:
-        gm.killEnemy(target, killer=org)  # it takes the killer's share of what the enemy carried
+        gm.killEnemy(target, killer=org, unit=enemy)  # it takes the killer's share of what the enemy carried
         calmDown(org)
 
 

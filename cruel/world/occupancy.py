@@ -16,7 +16,13 @@ unit yet, and the two are on the same side (sameSide: not fighting each other).
 Moving and placing go through leave and settle: a unit leaving a space that still holds another unit leaves it as
 it is, and when the first unit leaves, the second takes its place on the grid (promote). settle puts a unit down on
 a space, as the second unit if one is already there. allUnits lists every unit on the floor, second ones too.
+
+Fighting: an enemy hitting a space with two units on it hits the one with the lowest HP (victimAt; a tie goes either
+way, at random). Area damage (fire, magic, a bomb) reaches every unit in the area (unitsInArea). You choose which to
+hit (gameManager's "attack" window).
 """
+
+import random
 
 SMALL, MEDIUM, LARGE = "small", "medium", "large"
 ENEMY, FLOOR = 5, 0
@@ -68,6 +74,27 @@ def allUnits(game):
         if id(unit) not in seen:
             seen.add(id(unit))
             found.append((spot, unit))
+    return found
+
+
+def victimAt(game, spot, target):
+    """Who a hit aimed at target on spot lands on: with two units there, the one with the lowest HP (a tie: either,
+    at random)."""
+    units = unitsAt(game, spot)
+    if len(units) < 2 or target not in units:
+        return target
+    lowest = min(unit.hp for unit in units)
+    return random.choice([unit for unit in units if unit.hp == lowest])
+
+
+def unitsInArea(game, area):
+    """(space, unit) for every unit on the spaces of area, each once (a giant covering several of them included)."""
+    found, seen = [], set()
+    for spot in area:
+        for unit in unitsAt(game, spot):
+            if id(unit) not in seen:
+                seen.add(id(unit))
+                found.append((spot, unit))
     return found
 
 
