@@ -20,10 +20,12 @@ https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
              "rounded" (it curves smoothly as it goes) or "square" (straight runs with right-angle corners), picked
              at random. Buildings are built along the paths, each in the shape its theme builds (STYLES: hexagons,
              round towers, oblong domes, soft rounded cells or sharp squares), every one with its door facing a road:
-             the noble quarter's mansions nearest the plaza first, then SHOP_COUNT shops (each a different kind),
-             then houses. Every building has exactly one door, with a doorstep carved from it to the road, and you
+             the noble quarter's mansions nearest the plaza first, then the city's works (a mine and a farm, WORKS),
+             then SHOP_COUNT shops (each a different kind), then houses. Every building has exactly one door, with a doorstep carved from it to the road, and you
              can walk to every door from where you arrive. A shop's sign sits in
              its wall beside the door. A house has a CHEST_CHANCE of a chest (a CityChest).
+  Works      a mine and a farm: buildings with a mineshaft (MINESHAFT) in the middle and a sign by the door. The
+             shaft goes down to the floor the city works (mineshafts.py): stand on it and press Enter.
   Lights     wall lamps hang on the walls along the roads (the rock's or a building's) and on the walls inside every building (WallLamp:
              they light round them, and anyone can stand under one without putting it out). Lamp posts stand
              round the plaza.
@@ -83,8 +85,10 @@ STREET_LIGHT_RADIUS = 5     # how far a lamp post lights
 
 STREET, YARD, HOUSE, SHOP, NOBLE = "Street", "Yard", "House", "Shop", "Noble"  # Street: the roads, the plaza and
 # the doorsteps. Yard: the rock between the roads and the buildings (and the ground left where it's dug out).
-SHOP_SIGN = 14              # grid tile type of a shop's sign (its object: the shop kind, cityshops.SHOP_KINDS)
+SHOP_SIGN = 14              # grid tile type of a shop's sign (its object: the shop kind, cityshops.SHOP_KINDS, or a works kind)
 STREET_LIGHT = 15           # grid tile type of a lamp post: it lights round it and blocks the way
+MINESHAFT = 16              # grid tile type of a mineshaft (its object: a Mineshaft): you can stand on it and climb it
+WORKS = {"mine": "Dweller Mine", "farm": "Dew Farm"}  # the works every city has: kind -> its sign's name
 FLOOR, WALL, CHEST, ENEMY = 0, 2, 3, 5
 SIDES = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 
@@ -92,8 +96,27 @@ SIDES = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 CityChest = items.CityChest  # a chest that belongs to the city: taking from it is stealing
 
 
+class Mineshaft:
+    """A mineshaft: kind is "mine" or "farm" (the floor it goes to). down: the city's end, going down to it; the
+    other end (on that floor) goes back up."""
+
+    def __init__(self, kind, down=True):
+        self.kind = kind
+        self.down = down
+
+    @property
+    def name(self):
+        return f"Mineshaft {'down to the' if self.down else 'up from the'} {WORKS[self.kind]}"
+
+
+def signName(kind):
+    """What a sign by a door says: a works' name, or a shop's."""
+    return WORKS[kind] if kind in WORKS else cityshops.shopName(kind)
+
+
 class Building:
-    """A building of the city: its kind ("house", "shop" or "mansion"), the tiles of its walls and inside, and its door."""
+    """A building of the city: its kind ("house", "shop", "mansion", or a works kind: "mine" or "farm"), the tiles
+    of its walls and inside, and its door."""
 
     def __init__(self, kind, walls, inside, door):
         self.kind = kind
@@ -107,7 +130,8 @@ class Building:
         return self.walls | self.inside | {self.door}
         self.center = None      # the inside tile nearest its middle (a shop's counter)
         self.shopKind = None    # a shop: cityshops.SHOP_KINDS
-        self.sign = None        # a shop: where its sign is (in its wall beside the door)
+        self.sign = None        # a shop or works: where its sign is (in its wall beside the door)
+        self.shaft = None       # a works: where its mineshaft is (in its middle)
 
 
 class City:
@@ -142,6 +166,11 @@ class City:
     @property
     def mansions(self):
         return [(building.inside, building.door) for building in self.buildings if building.kind == "mansion"]
+
+    @property
+    def works(self):
+        """{kind: Building} for the city's mine and farm."""
+        return {building.kind: building for building in self.buildings if building.kind in WORKS}
 
     @property
     def shops(self):
@@ -382,7 +411,8 @@ def placeBuilding(city, kind, sizeRange, candidates, taken, nearRoad=True):
 
 def raiseBuilding(city, building):
     """Puts a placed building on the grid: its walls, its inside floor, its door, its room."""
-    room, wallKind = {"house": (HOUSE, wall.HouseWall), "shop": (SHOP, wall.ShopWall), "mansion": (NOBLE, wall.NobleWall)}[building.kind]
+    room, wallKind = {"house": (HOUSE, wall.HouseWall), "shop": (SHOP, wall.ShopWall), "mansion": (NOBLE, wall.NobleWall),
+                      "mine": (SHOP, wall.ShopWall), "farm": (SHOP, wall.ShopWall)}[building.kind]
     for spot in building.walls:
         city.grid[spot] = [WALL, 0, wallKind()]
     for spot in building.inside | {building.door}:
@@ -457,9 +487,11 @@ def placeBuildings(city, playerSpot):
     nearestThePlaza = sorted(lattice, key=lambda corner: math.hypot(corner[0] - middleColumn, corner[1] - middleRow))
     for _ in range(random.randint(*MANSIONS)):
         placeBuilding(city, "mansion", MANSION_SIZE, nearestThePlaza, taken)
-    shopKinds = random.sample(list(cityshops.SHOP_KINDS), random.randint(*SHOP_COUNT))
     shuffled = lattice[:]
     random.shuffle(shuffled)
+    for kind in WORKS:  # the works: as big as a shop
+        placeBuilding(city, kind, SHOP_SIZE, shuffled, taken)
+    shopKinds = random.sample(list(cityshops.SHOP_KINDS), random.randint(*SHOP_COUNT))
     for kind in shopKinds:
         shop = placeBuilding(city, "shop", SHOP_SIZE, shuffled, taken)
         if shop is not None:
@@ -477,12 +509,15 @@ def placeBuildings(city, playerSpot):
         carveDoorstep(city, building, builtOn)
     fillWithRock(city)
     removeUnreachable(city, playerSpot)
-    for building in city.buildings:  # a shop's sign: in its wall beside the door
-        if building.kind == "shop":
+    for building in city.buildings:  # a shop's or works' sign: in its wall beside the door
+        if building.kind == "shop" or building.kind in WORKS:
             besideDoor = [near for near in neighborsOf(city, building.door) if near in building.walls]
             if besideDoor:
                 building.sign = besideDoor[0]
-                city.grid[building.sign] = [SHOP_SIGN, 0, building.shopKind]
+                city.grid[building.sign] = [SHOP_SIGN, 0, building.shopKind if building.kind == "shop" else building.kind]
+        if building.kind in WORKS:  # a works' mineshaft: in its middle
+            building.shaft = building.center
+            city.grid[building.shaft] = [MINESHAFT, 0, Mineshaft(building.kind)]
 
 
 # ---------------------------------------------------------------- chests
@@ -584,8 +619,8 @@ def streetLights(game):
 
 
 def wallLampsHere(game):
-    """{tile: WallLamp} for this floor's wall lamps (only a city has them)."""
-    if game.proportion != METROPOLIS:
+    """{tile: WallLamp} for this floor's wall lamps (only a city and its works floors have them)."""
+    if game.proportion != METROPOLIS and getattr(game, "sideFloor", None) is None:
         return {}
     return getattr(game, "wallLamps", {}).get(game.level, {})
 
