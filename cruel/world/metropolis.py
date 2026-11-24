@@ -296,11 +296,11 @@ def placeBuilding(city, kind, sizeRange, candidates, taken, nearRoad=True):
         if doorCell is None:
             continue
         door = city.spot(left + doorCell[0], top + doorCell[1])
-        outsideDoor = [near for near in neighborsOf(city, door) if near not in {city.spot(left + c, top + r) for c, r in cells}]
+        outsideDoor = [near for near in neighborsOf(city, door) if near not in {city.spot(left + column, top + row) for column, row in cells}]
         if nearRoad and not any(near in city.roads or any(far in city.roads for far in neighborsOf(city, near)) for near in outsideDoor):
             continue
-        building = Building(kind, {city.spot(left + c, top + r) for c, r in walls - {doorCell}},
-                            {city.spot(left + c, top + r) for c, r in cells - walls}, door)
+        building = Building(kind, {city.spot(left + column, top + row) for column, row in walls - {doorCell}},
+                            {city.spot(left + column, top + row) for column, row in cells - walls}, door)
         for column, row in cells:  # (the next building's own margin keeps a one-tile alley between them)
             taken.add(city.spot(left + column, top + row))
         middle = (left + width / 2, top + height / 2)
