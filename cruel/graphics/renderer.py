@@ -10,6 +10,7 @@ from cruel.world import expansion
 from cruel.inventory import items
 from cruel.world import plants
 from cruel.world import peddler
+from cruel.world import metropolis
 
 
 # Dithered light: tiles in view get a pattern of dark pixels the further they are from the player.
@@ -1579,7 +1580,7 @@ class renderer():
     # The map surface is kept from frame to frame. Each tile remembers a signature of everything that decides how
     # it looks (tileSignature); a frame only redraws the tiles whose signature changed. A new floor, theme or tile
     # size starts over (resetMap). Anything drawn on the map outside this (the aim line) clears its tiles' signatures.
-    LIGHT_EXEMPT = (1, 3, 5, 6, 7, 8, 9, expansion.CAMP, peddler.SIGNPOST)  # never dithered by the light, so they stand out
+    LIGHT_EXEMPT = (1, 3, 5, 6, 7, 8, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.SHOP_SIGN)  # never dithered by the light, so they stand out
 
     def resetMap(self):
         self.tileSigs = {}
@@ -1924,6 +1925,9 @@ class renderer():
                 glow = sprites.SCORCHED_DOOR_GLOW if not memorized else themes.remembered(list(sprites.SCORCHED_DOOR_GLOW), self.color("fog"))
                 self.fillTile(glow, x, y)  # lava all round the pit, so it stands out from any floor
                 self.mapSurface.blit(self.pitSprite(sprites.pitStyleFor(i), tuple(glow)), (x * ts, y * ts))
+            case metropolis.SHOP_SIGN:  # a city shop's sign, in the wall beside its door
+                self.fillTile(self.wallColor("Shop Wall", memorized), x, y)
+                self.mapSurface.blit(self.sprites["shopSigns"][grid[i][2]], (x * ts, y * ts))
             case peddler.SIGNPOST:  # the signpost that says the Gray Peddler is on this floor
                 self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["signpost"], (x * ts, y * ts))

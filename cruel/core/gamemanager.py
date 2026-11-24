@@ -23,6 +23,7 @@ from cruel.world import expansion
 from cruel.world import peddler
 from cruel.world import metropolis
 from cruel.world import dwellers
+from cruel.world import cityshops
 from cruel.core import devconsole
 from cruel.core import updater
 from cruel.audio import sound
@@ -1710,7 +1711,7 @@ class gameManager():
             if self.playerHidden() and not hidden:
                 self.addPopup("Hidden", newPosition)
             return
-        if targetLocation not in (7, 8, expansion.CAMP, peddler.SIGNPOST) and self.player.checkValidMoveLocation(targetLocation):  # stations, other plants and camp pieces block
+        if targetLocation not in (7, 8, expansion.CAMP, peddler.SIGNPOST, metropolis.SHOP_SIGN) and self.player.checkValidMoveLocation(targetLocation):  # stations, other plants and camp pieces block
             self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
             self.currentLocation = copy.copy(self.grid[newPosition])
             self.playerPositionFlat = newPosition
@@ -1743,7 +1744,7 @@ class gameManager():
                     self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
                     self.currentLocation = currentWall
                     self.playerPositionFlat = target
-        elif tile[0] == 5 and peddler.isCalm(tile[2]) and not forceAttack:  # the Gray Peddler: his shop
+        elif tile[0] == 5 and cityshops.isTrader(tile[2]) and not forceAttack:  # the Gray Peddler or a city merchant: its shop
             self.openShop(target)
             return
         elif tile[0] == 5:  # enemy
@@ -1850,6 +1851,8 @@ class gameManager():
             self.grid[position] = underneath
         else:  # (a burrower inside a wall that left something: the wall crumbles so it can be picked up)
             self.grid[position] = [0, tile[1]]
+        if cityshops.isMerchant(enemy):  # a city merchant's stock stays in its shop, in a chest where it stood
+            cityshops.leaveStock(self, enemy, position)
         if stacks or gold:
             self.placeItems(position, stacks, gold)
 
@@ -3199,7 +3202,7 @@ class gameManager():
                 if kind == 2:
                     tile[2].holeBelow = True  # it stands over a hole now
                     continue
-                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST):
+                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST, metropolis.SHOP_SIGN):
                     continue
                 if kind == 5 and len(tile) > 2 and self.isBig(tile[2]):
                     continue  # a giant is too big to fall: the floor under it holds
@@ -4106,6 +4109,8 @@ class gameManager():
         if tile[0] == 7:
             station = tile[2]
             return f"{station.name} ({station.hp}/{station.maxHp})" if station.claimed else f"{station.name} (unclaimed)"
+        if tile[0] == metropolis.SHOP_SIGN:
+            return f"Sign: {cityshops.shopName(tile[2])}"
         if tile[0] == peddler.SIGNPOST:
             return "Signpost (a gray rag is tied to it: someone is trading on this floor)"
         if tile[0] == expansion.CAMP:
@@ -4113,7 +4118,8 @@ class gameManager():
             return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
             enemy = tile[2]
-            notes = [note for note in (expansion.attitudeLabel(self, enemy), peddler.attitudeLabel(enemy), dwellers.attitudeLabel(enemy),
+            shop = cityshops.shopName(enemy.shopKind) if cityshops.isMerchant(enemy) else None
+            notes = [note for note in (shop, expansion.attitudeLabel(self, enemy), peddler.attitudeLabel(enemy), dwellers.attitudeLabel(enemy),
                                        "burning" if getattr(enemy, "burnTurns", 0) > 0 else None) if note]
             return enemy.name + (f" ({', '.join(notes)})" if notes else "")
         return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
@@ -4239,13 +4245,14 @@ class gameManager():
     # details panel) with a Buy and a Sell tab: Tab switches, Enter buys or sells, Ctrl+Enter sells every whole
     # lot of a material. Walking away (or hurting him) closes it.
 
-    def shopPeddler(self):
-        """The Peddler whose shop is open, while he's beside you and still willing to trade; otherwise None."""
+    def shopTrader(self):
+        """Who you're trading with (the Gray Peddler or a city merchant), while they're beside you and still willing
+        to trade; otherwise None."""
         spot = getattr(self, "shopSpot", None)
         if spot is None or spot not in self.neighbors(self.playerPositionFlat):
             return None
         tile = self.grid.get(spot)
-        if not tile or tile[0] != 5 or len(tile) < 3 or not peddler.isCalm(tile[2]):
+        if not tile or tile[0] != 5 or len(tile) < 3 or not cityshops.isTrader(tile[2]):
             return None
         return tile[2]
 
@@ -4257,18 +4264,21 @@ class gameManager():
         self.openWindow("shop")
 
     def checkShop(self):
-        """Closes the shop once you've walked away from him, or he's turned on you."""
-        if "shop" in self.openWindows and self.shopPeddler() is None:
+        """Closes the shop once you've walked away, or the trader has turned on you."""
+        if "shop" in self.openWindows and self.shopTrader() is None:
             self.closeWindow("shop")
 
     def shopEntries(self):
         """What the open tab lists. Buy: ("ware", index in his stock). Sell: ("item", pack slot) for your pack,
         then ("material", material id) for your pouch."""
+        trader = self.shopTrader()
+        if trader is None:
+            return []
         if self.shopTab == 0:
-            trader = self.shopPeddler()
-            return [("ware", index) for index in range(len(trader.wares))] if trader else []
-        return [("item", index) for index in range(len(self.player.inventory))] + \
-            [("material", materialId) for materialId in peddler.sellableMaterials(self.player)]
+            return [("ware", index) for index in range(len(trader.wares))]
+        player = self.player
+        return [("item", index) for index, item in enumerate(player.inventory) if cityshops.buysItem(trader, item)] + \
+            [("material", materialId) for materialId in peddler.sellableMaterials(player) if cityshops.buysMaterial(trader, materialId)]
 
     def toggleShopTab(self):
         self.shopTab = 1 - self.shopTab
@@ -4291,7 +4301,7 @@ class gameManager():
     def shopEnter(self, everything=False):
         """Enter in the shop: buy the selected ware, or sell the selected item (one potion off a stack) or one lot
         of the selected material (with everything, every whole lot)."""
-        trader = self.shopPeddler()
+        trader = self.shopTrader()
         entries = self.shopEntries()
         index = self.windowSel["shop"]
         if trader is None or index >= len(entries):
@@ -4302,7 +4312,7 @@ class gameManager():
         elif kind == "item":
             self.shopMessage = peddler.sellItem(self.player, which)
         else:
-            _, self.shopMessage = peddler.sellMaterial(self.player, which, everything)
+            _, self.shopMessage = peddler.sellMaterial(self.player, which, everything, cityshops.materialsPerGold(trader))
         self.windowSel["shop"] = max(0, min(index, len(self.shopEntries()) - 1))
         self.scrollShop()
         self.fitSelections()
@@ -4319,7 +4329,7 @@ class gameManager():
             count = playerClass.countOf(item)
             return item.name + (f" x{count}" if count > 1 else ""), str(peddler.offerFor(item)), False
         have = player.materials.get(which, 0)
-        gold, _ = peddler.offerForMaterial(have)
+        gold, _ = peddler.offerForMaterial(have, cityshops.materialsPerGold(trader))
         return f"{resources.materialName(which)} x{have}", str(gold) if gold else "-", not gold
 
     def shopDetail(self, entry, trader):
@@ -4331,6 +4341,9 @@ class gameManager():
             ware = trader.wares[which]
             if ware.item is not None:
                 lines = [line for line in self.itemDetail(ware.item) if line[0] != "hint"]
+            elif ware.kind == "material":
+                lines = [("title", resources.materialName(ware.materialId), ""), ("label", "AMOUNT", str(ware.amount)),
+                         ("label", "IN YOUR POUCH", str(player.materials.get(ware.materialId, 0)))]  # (as text: 0 must show)
             else:
                 lines = [("title", ware.name, ""), ("muted", ware.recipe.description, ""), ("label", "MAKES", ware.recipe.result)]
             lines += [("price", "PRICE", f"{ware.price} gold"), ("label", "YOU HAVE", f"{player.gold} gold")]
@@ -4342,29 +4355,32 @@ class gameManager():
             hint = "Enter  sell      Tab  buy"
         else:
             have = player.materials.get(which, 0)
-            gold, taken = peddler.offerForMaterial(have)
-            lines = [("title", resources.materialName(which), ""), ("label", "IN YOUR POUCH", have),
-                     ("price", "HE PAYS", f"1 gold for {peddler.MATERIALS_PER_GOLD}")]
+            perGold = cityshops.materialsPerGold(trader)
+            gold, taken = peddler.offerForMaterial(have, perGold)
+            lines = [("title", resources.materialName(which), ""), ("label", "IN YOUR POUCH", str(have)),
+                     ("price", "HE PAYS", f"1 gold for {perGold}")]
             if gold:
                 lines.append(("label", "SELL ALL", f"{gold} gold, keeps {have - taken}"))
-                hint = "Enter  sell 11   Ctrl+Enter  all"
+                hint = f"Enter  sell {perGold}   Ctrl+Enter  all"
             else:
-                lines.append(("muted", f"You need {peddler.MATERIALS_PER_GOLD} to sell any", ""))
+                lines.append(("muted", f"You need {perGold} to sell any", ""))
                 hint = "Tab  buy"
         if self.shopMessage:
             lines.append(("warn", self.shopMessage, ""))
         return lines + [("hint", hint, "")]
 
     def shopSpec(self, spec):
-        trader = self.shopPeddler()
+        trader = self.shopTrader()
         entries = self.shopEntries()
         spec["kind"] = "shop"
+        if trader is not None:
+            spec["title"] = cityshops.traderName(trader)
         spec["tabs"] = SHOP_TABS
         spec["tab"] = self.shopTab
         spec["gold"] = self.player.gold
         spec["scroll"] = self.shopScroll
         spec["slots"] = [self.shopSlot(kind, which, trader) for kind, which in entries]
-        spec["emptyText"] = "He has nothing left to sell" if self.shopTab == 0 else "You have nothing to sell"
+        spec["emptyText"] = "Nothing left to sell" if self.shopTab == 0 else "You have nothing they buy"
         index = self.windowSel["shop"]
         spec["detail"] = self.shopDetail(entries[index], trader) if index < len(entries) else \
             [("muted", spec["emptyText"], "")] + ([("warn", self.shopMessage, "")] if self.shopMessage else [])
