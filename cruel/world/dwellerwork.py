@@ -1,4 +1,5 @@
 import math
+import random
 
 from cruel.inventory import items
 from cruel.inventory import loot
@@ -6,6 +7,8 @@ from cruel.inventory import resources
 from cruel.world import dwellers
 from cruel.world import expansion
 from cruel.world import metropolis
+from cruel.world import organizers
+from cruel.world import plants
 from cruel.world import wall
 
 """
@@ -23,14 +26,28 @@ STACK_LIMIT; what doesn't fit goes up the shaft to the city (it's gone).
           then rolls what the wall gives (loot.rollWall, with MINER_WISDOM) and takes it in. With no seam it can
           reach, it tunnels: it breaks the wall it can reach that's nearest the nearest seam. It never breaks the
           city's own walls (the storehouses) or a wall a lamp hangs on.
+  Farmer  tends the farm's fields (its fields: {tile: crop kind}, shared by the farm's farmers) and its Dew Grubs,
+          doing the first of these it can:
+            - carrying Dew: takes it in.
+            - holding food (a crop it picked): feeds it to the nearest Dew Grub that's hungry (one whose Dew isn't
+              waiting to be collected).
+            - a Dew Grub has Dew ready: collects it (DEW_PER_GRUB) into its pockets.
+            - a crop is ripe: picks it (that's its food) and sows the field tile again with a sprout.
+            - a field tile is bare (its crop withered or was taken): sows it.
+
+The Dew Grub (enemies.DewGrub) stays in its pen, shuffling about it now and then (GRUB_SHUFFLE). Each time it's fed
+it counts a feeding; after FEEDINGS_FOR_DEW it has made Dew, and eats no more until a farmer collects it.
 """
 
 MINE_SWING = 4              # damage a miner does to the wall it's working each turn
 MINER_WISDOM = 4            # how lucky a miner is with what a wall gives (loot.wallOdds)
 SEAM_REACH = 40             # how far a miner looks for a seam (in steps)
 GIVE_UP_TURNS = 6           # a worker that can't get any closer for this long gives up on where it's going
+FEEDINGS_FOR_DEW = 3        # plants a Dew Grub eats to make its Dew
+DEW_PER_GRUB = (1, 2)       # Dew a farmer collects from a grub
+GRUB_SHUFFLE = 0.3          # a Dew Grub moves about its pen this often
 STACK_LIMIT = 30            # a storage chest's stack of one thing holds this much; the rest goes up to the city
-FLOOR, WALL, CHEST = 0, 2, 3
+FLOOR, WALL, CHEST, ENEMY, PLANT = 0, 2, 3, 5, 8
 
 
 # ---------------------------------------------------------------- working
@@ -53,6 +70,8 @@ def workTurn(game, position, worker):
         return haul(game, position, worker)
     if worker.work == "mine":
         return mine(game, position, worker)
+    if worker.work == "farm":
+        return farm(game, position, worker)
     return None
 
 
@@ -169,3 +188,90 @@ def swing(game, target, miner):
         miner.materials[materialId] = carrying(miner).get(materialId, 0) + amount
     miner.target = None
     game.change = True
+
+
+# ---------------------------------------------------------------- farming
+
+def grubsHere(game):
+    """(position, Dew Grub) for every Dew Grub on the floor (the ones that have moved this turn too)."""
+    return [(spot, dweller) for spot, dweller in dwellers.cityDwellers(game) if dweller.role == "grub"]
+
+
+def nearest(game, position, spots):
+    return min(spots, key=lambda spot: dwellers.distance(game, position, spot)) if spots else None
+
+
+def farm(game, position, farmer):
+    """A farmer's turn: feed, collect Dew, pick or sow, whichever comes first (see the top of this file)."""
+    grubs = grubsHere(game)
+    if getattr(farmer, "food", None):
+        hungry = nearest(game, position, [spot for spot, grub in grubs if not grub.dewReady])
+        if hungry is not None:
+            if hungry in game.neighbors(position):
+                feed(game.grid[hungry][2], farmer)
+                return position
+            return walkTo(game, position, farmer, hungry)
+    ready = nearest(game, position, [spot for spot, grub in grubs if grub.dewReady])
+    if ready is not None:
+        if ready in game.neighbors(position):
+            collectDew(game.grid[ready][2], farmer)
+            return position
+        return walkTo(game, position, farmer, ready)
+    fields = getattr(farmer, "fields", {})
+    if not getattr(farmer, "food", None):
+        ripe = nearest(game, position, [spot for spot in fields if isRipeCrop(game.grid[spot])])
+        if ripe is not None:
+            if ripe in game.neighbors(position):
+                pickCrop(game, ripe, farmer)
+                return position
+            return walkTo(game, position, farmer, ripe)
+    bare = nearest(game, position, [spot for spot, kind in fields.items() if plants.canGrow(kind, spot, game.grid, game.rooms)])
+    if bare is not None:
+        if bare in game.neighbors(position):
+            sow(game, bare, fields[bare])
+            return position
+        return walkTo(game, position, farmer, bare)
+    return None
+
+
+def isRipeCrop(tile):
+    """A city crop in one of its ripe stages."""
+    return tile[0] == PLANT and len(tile) > 2 and getattr(tile[2], "cityCrop", False) and tile[2].stage in ("harvest", "seed")
+
+
+def sow(game, spot, kind):
+    """A new sprout of the city's crop on spot."""
+    crop = plants.Plant(kind, planted=True)
+    crop.cityCrop = True
+    game.grid[spot] = [PLANT, game.grid[spot][1], crop]
+    game.change = True
+
+
+def pickCrop(game, spot, farmer):
+    """The farmer picks the ripe crop on spot (its food for the grubs) and sows the tile again."""
+    crop = game.grid[spot][2]
+    farmer.food = plants.PLANTS[crop.kind]["herb"]
+    sow(game, spot, crop.kind)
+
+
+def feed(grub, farmer):
+    """The farmer feeds its food to a Dew Grub: after FEEDINGS_FOR_DEW feedings, the grub has made Dew."""
+    farmer.food = None
+    grub.feedings += 1
+    if grub.feedings >= FEEDINGS_FOR_DEW:
+        grub.feedings = 0
+        grub.dewReady = True
+
+
+def collectDew(grub, farmer):
+    """The farmer takes a Dew Grub's Dew into its pockets (it takes it in next)."""
+    grub.dewReady = False
+    farmer.materials["dew"] = carrying(farmer).get("dew", 0) + random.randint(*DEW_PER_GRUB)
+
+
+def grubTurn(game, position, grub):
+    """A Dew Grub's turn: now and then it shuffles to a free tile beside it, never out of its pen."""
+    if random.random() >= GRUB_SHUFFLE:
+        return position
+    free = [spot for spot in game.neighbors(position) if spot in grub.pen and organizers.passable(game.grid[spot])]
+    return organizers.moveTo(game, position, random.choice(free)) if free else position

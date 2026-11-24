@@ -1829,6 +1829,8 @@ class gameManager():
         if plant.kind == organizers.DEMISE and not self.player.hasEffect("demise_ward"):
             self.magicPlayer(DEMISE_DAMAGE)  # its thorns: bare-handed, it hurts you and stays where it is
             return
+        if getattr(plant, "cityCrop", False):  # a Dweller farm's crop: taking it is stealing
+            dwellers.hostileAct(self, position)
         stage = plant.pick()  # picking uses it up; what it gives depends on its stage (plants.Plant)
         self.grid[position] = [0, self.grid[position][1]]
         self.change = True
@@ -4155,7 +4157,8 @@ class gameManager():
             return tile[2].name + (" (over a hole)" if getattr(tile[2], "holeBelow", False) else "")
         if tile[0] == 8:
             plant = tile[2]
-            notes = [note for note in (("yours" if plant.planted and getattr(plant, "faction", None) is None else
+            notes = [note for note in (("Dweller crop" if getattr(plant, "cityCrop", False) else
+                                  "yours" if plant.planted and getattr(plant, "faction", None) is None else
                                   "goblin crop" if plant.planted else ""), plant.stageLabel()) if note]
             return plant.name + (f" ({', '.join(notes)})" if notes else "")
         if tile[0] == 7:

@@ -6,6 +6,7 @@ from cruel.entities import enemies
 from cruel.inventory import items
 from cruel.world import events
 from cruel.world import metropolis
+from cruel.world import plants
 from cruel.world import wall
 
 """
@@ -14,7 +15,8 @@ the middle (a metropolis.MINESHAFT tile). Stand on it and press Enter to climb d
 shaft you arrive on to go back up.
 
   Mine   a Motherlode ore floor (a random ore floor for this depth, wall.ORE_FLOORS, with most of its walls ore).
-  Farm   a Mixed cave floor.
+  Farm   a Mixed cave floor with PENS pens of Dew Grubs (fenced, a gate toward the shaft) and FIELDS fields of
+         the city's crops (plants.Plant with cityCrop: picking one is stealing), which its farmers tend.
 
 Both have, round the shaft: a clearing (CLEARING_RADIUS), tunnels out of it to the caves, and STOREHOUSES
 storehouses, each with STOREHOUSE_CHESTS chests (items.StorageChest, empty at first) where the workers put what
@@ -40,7 +42,14 @@ STOREHOUSE_CHESTS = 2
 WORKERS = {"mine": (6, 9), "farm": (5, 8)}
 GUARDS = (2, 4)
 LAMP_RADIUS = 5
-FLOOR, WALL, CHEST, ENEMY = 0, 2, 3, 5
+PENS = (2, 3)
+PEN_WIDTH, PEN_HEIGHT = 7, 6   # a pen's size, fence and all
+PEN_REACH = (9, 16)         # how far from the shaft a pen's middle is
+GRUBS_PER_PEN = (2, 3)
+FIELDS = 3
+FIELD_RADIUS = 2            # a field is the crops within this of its middle...
+FIELD_REACH = (6, 14)       # ...which is this far from the shaft, on ground you can walk to
+FLOOR, WALL, CHEST, ENEMY, PLANT = 0, 2, 3, 5, 8
 
 # What's kept per floor number besides the saved grid (gameManager attributes): dicts of floor -> value, and sets of
 # floors. putAside takes a floor's entries out of all of them; putBack puts them back.
@@ -148,7 +157,7 @@ def newWorksFloor(game, kind):
     """Makes the works floor of this kind at game.level (with you on its shaft) and puts it in place."""
     level, shaftSpot = game.level, game.playerPositionFlat
     if kind == "mine":
-        oreFloors = [name for name, info in wall.ORE_FLOORS.items() if info["first"] <= level]
+        oreFloors = [name for name, oreFloor in wall.ORE_FLOORS.items() if oreFloor["first"] <= level]
         game.forcedOreFloor = (random.choice(oreFloors), True)
     else:
         game.forcedOreFloor = ("Mixed", False)
@@ -161,7 +170,7 @@ def newWorksFloor(game, kind):
     for spot in list(game.EnemyPositions):  # nothing lives here but the city's own
         game.grid[spot] = [FLOOR, game.grid[spot][1]]
     game.EnemyPositions = set()
-    works = layOutWorks(game.grid, game.rowLength, shaftSpot, kind)
+    works = layOutWorks(game.grid, game.rowLength, shaftSpot, kind, game.rooms)
     game.wallLamps[level] = works.lamps
     for spot, dweller in works.dwellers.items():
         game.grid[spot] = [ENEMY, 0, dweller]
@@ -173,14 +182,27 @@ def newWorksFloor(game, kind):
 
 
 class Works:
-    """What layOutWorks built: the clearing, the storehouses (each {"walls", "inside", "door", "chests"}), the wall
-    lamps ({tile: metropolis.WallLamp}) and the Dwellers ({tile: Dweller})."""
+    """What layOutWorks built: the clearing, its tunnels, the storehouses (each {"walls", "inside", "door",
+    "chests"}), a farm's pens (each {"fence", "inside", "gate"}) and fields ({tile: plant kind}, shared by its
+    farmers), the wall lamps ({tile: metropolis.WallLamp}) and the Dwellers ({tile: Dweller})."""
 
     def __init__(self):
         self.clearing = set()
+        self.tunnels = set()
         self.storehouses = []
+        self.pens = []
+        self.fields = {}
         self.lamps = {}
         self.dwellers = {}
+
+    def builtOn(self):
+        """Every tile the works use (nothing else goes there)."""
+        tiles = self.clearing | self.tunnels
+        for storehouse in self.storehouses:
+            tiles |= storehouse["walls"] | storehouse["inside"]
+        for pen in self.pens:
+            tiles |= pen["fence"] | pen["inside"]
+        return tiles
 
 
 def inBounds(rowLength, rowCount, column, row, margin=1):
@@ -192,9 +214,10 @@ def openUp(grid, spot):
     grid[spot] = [FLOOR, grid[spot][1] if spot in grid else 0]
 
 
-def layOutWorks(grid, rowLength, shaftSpot, kind):
-    """Builds the works round the shaft on a new floor: the shaft up, the clearing, its tunnels, the storehouses,
-    the lamps and the Dwellers. Returns a Works."""
+def layOutWorks(grid, rowLength, shaftSpot, kind, rooms=None):
+    """Builds the works round the shaft on a new floor: the shaft up, the clearing, its tunnels, the storehouses, a
+    farm's pens and fields, the lamps and the Dwellers. rooms: the floor's rooms (what grows where). Returns a
+    Works."""
     rowCount = len(grid) // rowLength
     works = Works()
     shaftColumn, shaftRow = shaftSpot % rowLength, shaftSpot // rowLength
@@ -205,9 +228,12 @@ def layOutWorks(grid, rowLength, shaftSpot, kind):
                 spot = column + row * rowLength
                 openUp(grid, spot)
                 works.clearing.add(spot)
-    digTunnels(grid, rowLength, rowCount, shaftColumn, shaftRow)
+    works.tunnels = digTunnels(grid, rowLength, rowCount, shaftColumn, shaftRow)
     buildStorehouses(grid, rowLength, rowCount, shaftColumn, shaftRow, works)
     grid[shaftSpot] = [metropolis.MINESHAFT, 1, metropolis.Mineshaft(kind, down=False)]
+    if kind == "farm":
+        buildPens(grid, rowLength, rowCount, shaftSpot, works)
+        sowFields(grid, rowLength, shaftSpot, works, rooms or {})
     hangLamps(grid, rowLength, works)
     placeDwellers(grid, rowLength, shaftSpot, kind, works)
     return works
@@ -215,7 +241,8 @@ def layOutWorks(grid, rowLength, shaftSpot, kind):
 
 def digTunnels(grid, rowLength, rowCount, shaftColumn, shaftRow):
     """Tunnels straight out of the clearing (up, down, left and right), three tiles wide, until each reaches open
-    cave (or TUNNEL_REACH, or the edge of the map)."""
+    cave (or TUNNEL_REACH, or the edge of the map). Returns their tiles."""
+    tunnels = set()
     for stepColumn, stepRow in ((0, -1), (0, 1), (-1, 0), (1, 0))[:TUNNELS]:
         for distance in range(CLEARING_RADIUS + 1, CLEARING_RADIUS + 1 + TUNNEL_REACH):
             column, row = shaftColumn + stepColumn * distance, shaftRow + stepRow * distance
@@ -225,10 +252,13 @@ def digTunnels(grid, rowLength, rowCount, shaftColumn, shaftRow):
             reachedCave = grid[spot][0] == FLOOR and distance > CLEARING_RADIUS + 2
             for width in (-1, 0, 1):
                 sideColumn, sideRow = column + stepRow * width, row + stepColumn * width
-                if inBounds(rowLength, rowCount, sideColumn, sideRow) and grid[sideColumn + sideRow * rowLength][0] != FLOOR:
-                    openUp(grid, sideColumn + sideRow * rowLength)
+                if inBounds(rowLength, rowCount, sideColumn, sideRow):
+                    tunnels.add(sideColumn + sideRow * rowLength)
+                    if grid[sideColumn + sideRow * rowLength][0] != FLOOR:
+                        openUp(grid, sideColumn + sideRow * rowLength)
             if reachedCave:
                 break
+    return tunnels
 
 
 def buildStorehouses(grid, rowLength, rowCount, shaftColumn, shaftRow, works):
@@ -266,6 +296,123 @@ def buildStorehouses(grid, rowLength, rowCount, shaftColumn, shaftRow, works):
             grid[spot] = [CHEST, 0, items.StorageChest()]
         works.storehouses.append({"walls": walls, "inside": inside, "door": door, "chests": chests})
         works.clearing -= walls | inside
+
+
+def walkable(grid, rowLength, start):
+    """Every open floor tile you can walk to from start (over open floor)."""
+    reached, frontier = {start}, [start]
+    while frontier:
+        spot = frontier.pop()
+        for near in tilesBeside(rowLength, spot):
+            if near in grid and near not in reached and grid[near][0] == FLOOR and \
+                    (near // rowLength == spot // rowLength or near % rowLength == spot % rowLength):
+                reached.add(near)
+                frontier.append(near)
+    return reached
+
+
+def pathOut(grid, rowLength, start, connected, keepOff):
+    """The shortest way (through rock or not, but round keepOff) from start to ground in connected: the tiles to
+    open up. Empty if start is already there."""
+    cameFrom, frontier = {start: None}, [start]
+    while frontier:
+        nextFrontier = []
+        for spot in frontier:
+            if spot in connected:
+                path, step = [], cameFrom[spot]
+                while step is not None:
+                    path.append(step)
+                    step = cameFrom[step]
+                return path
+            for near in tilesBeside(rowLength, spot):
+                if near in grid and near not in cameFrom and (near not in keepOff or near in connected) and \
+                        (near // rowLength == spot // rowLength or near % rowLength == spot % rowLength):
+                    cameFrom[near] = spot
+                    nextFrontier.append(near)
+        frontier = nextFrontier
+    return []
+
+
+def buildPens(grid, rowLength, rowCount, shaftSpot, works):
+    """PENS fenced pens round the clearing, clear of everything else, each with a gate in the side toward the
+    shaft and a path from it to ground you can walk to from the shaft, and GRUBS_PER_PEN Dew Grubs inside."""
+    shaftColumn, shaftRow = shaftSpot % rowLength, shaftSpot // rowLength
+    connected = walkable(grid, rowLength, shaftSpot) | {shaftSpot}
+    wanted = random.randint(*PENS)
+    angles = [math.tau * index / 12 for index in range(12)]
+    random.shuffle(angles)
+    for angle in angles:
+        if len(works.pens) >= wanted:
+            break
+        reach = random.randint(*PEN_REACH)
+        left = round(shaftColumn + reach * math.cos(angle)) - PEN_WIDTH // 2
+        top = round(shaftRow + reach * math.sin(angle)) - PEN_HEIGHT // 2
+        if not (inBounds(rowLength, rowCount, left - 1, top - 1, margin=1) and
+                inBounds(rowLength, rowCount, left + PEN_WIDTH, top + PEN_HEIGHT, margin=1)):
+            continue
+        box = {column + row * rowLength for row in range(top, top + PEN_HEIGHT) for column in range(left, left + PEN_WIDTH)}
+        withMargin = {column + row * rowLength for row in range(top - 1, top + PEN_HEIGHT + 1)
+                      for column in range(left - 1, left + PEN_WIDTH + 1)}
+        if withMargin & works.builtOn():
+            continue
+        fence = {spot for spot in box if spot % rowLength in (left, left + PEN_WIDTH - 1) or spot // rowLength in (top, top + PEN_HEIGHT - 1)}
+        inside = box - fence
+        middleColumn, middleRow = left + PEN_WIDTH // 2, top + PEN_HEIGHT // 2
+        # the gate: the middle of the side that faces the shaft most
+        if abs(shaftColumn - middleColumn) > abs(shaftRow - middleRow):
+            gateColumn = left if shaftColumn < middleColumn else left + PEN_WIDTH - 1
+            gate, step = gateColumn + middleRow * rowLength, (-1 if shaftColumn < middleColumn else 1)
+        else:
+            gateRow = top if shaftRow < middleRow else top + PEN_HEIGHT - 1
+            gate, step = middleColumn + gateRow * rowLength, (-rowLength if shaftRow < middleRow else rowLength)
+        for spot in fence - {gate}:
+            grid[spot] = [WALL, 0, wall.PenFence()]
+        for spot in inside | {gate}:
+            openUp(grid, spot)
+        path = pathOut(grid, rowLength, gate + step, connected, works.builtOn() | box)
+        for spot in path:
+            openUp(grid, spot)
+        connected |= set(path) | inside | {gate}
+        pen = {"fence": fence, "inside": inside, "gate": gate}
+        works.pens.append(pen)
+        spots = sorted(inside - {gate + step * -1})
+        random.shuffle(spots)
+        for spot in spots[:random.randint(*GRUBS_PER_PEN)]:
+            grub = enemies.DewGrub()
+            grub.pen = frozenset(inside)
+            grub.home = spot
+            works.dwellers[spot] = grub
+
+
+def sowFields(grid, rowLength, shaftSpot, works, rooms):
+    """FIELDS fields of the city's crops on open ground you can walk to from the shaft: each one kind (one that
+    grows on its floor), already growing (wild patches' stages), within FIELD_RADIUS of its middle."""
+    connected = walkable(grid, rowLength, shaftSpot)
+    keepOff = works.builtOn() | {gate for pen in works.pens for gate in tilesBeside(rowLength, pen["gate"])}
+    choices = [spot for spot in connected if spot not in keepOff and
+               FIELD_REACH[0] <= math.hypot(spot % rowLength - shaftSpot % rowLength, spot // rowLength - shaftSpot // rowLength) <= FIELD_REACH[1]]
+    random.shuffle(choices)
+    middles = []
+    for middle in choices:
+        if len(middles) >= FIELDS:
+            break
+        if any(math.hypot(middle % rowLength - other % rowLength, middle // rowLength - other // rowLength) < 2 * FIELD_RADIUS + 2
+               for other in middles):
+            continue
+        kinds = plants.wildKinds(plants.floorOf(middle, rooms))
+        if not kinds:
+            continue
+        kind = random.choice(kinds)
+        middles.append(middle)
+        for spot in connected:
+            if spot not in keepOff and spot != shaftSpot and \
+                    math.hypot(middle % rowLength - spot % rowLength, middle // rowLength - spot // rowLength) <= FIELD_RADIUS \
+                    and plants.canGrow(kind, spot, grid, rooms):
+                crop = plants.Plant.grown(kind)
+                crop.planted = True
+                crop.cityCrop = True
+                grid[spot] = [PLANT, 0, crop]
+                works.fields[spot] = kind
 
 
 def sideOfWall(grid, rowLength, spot):
@@ -320,4 +467,6 @@ def placeDwellers(grid, rowLength, shaftSpot, kind, works):
         spot = free.pop()
         worker.home = spot
         worker.work = kind
+        if kind == "farm":
+            worker.fields = works.fields  # (one dict, shared by every farmer)
         works.dwellers[spot] = worker

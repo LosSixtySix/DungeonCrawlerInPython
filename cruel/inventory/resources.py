@@ -39,6 +39,7 @@ MATERIALS = {
     "mole_claw": ("Mole Claw", "Drops", (184, 171, 152)),
     "void_shard": ("Void Shard", "Drops", (106, 74, 138)),
     "meat": ("Raw Meat", "Drops", (178, 78, 70)),  # what Expansion goblins take from their kills, as food
+    "dew": ("Dew", "Drops", (190, 232, 240)),  # what the Dwellers' Dew Grubs make (dwellerwork.py)
     "bloodcap": ("Bloodcap", "Plants", (200, 56, 60)),
     "hearthmoss": ("Hearthmoss", "Plants", (104, 170, 76)),
     "glowcap": ("Glowcap", "Plants", (232, 220, 130)),

@@ -151,6 +151,18 @@ class DwellerMerchant(Dweller):
         return []
 
 
+class DewGrub(Dweller):
+    """The Dwellers' livestock (dwellerwork.py): a fat grub kept in a pen on a city's farm floor. It never fights and
+    never leaves its pen. Fed plants by the farmers, it makes Dew. It belongs to the city: hurting one is hostile."""
+    role = "grub"
+
+    def __init__(self):
+        super().__init__(14, 6, 1, 0, 3, 0, "Dew Grub")
+        self.pen = frozenset()    # the tiles inside its pen: it only ever moves among them
+        self.feedings = 0         # plants eaten since its last Dew
+        self.dewReady = False     # it has made Dew, waiting for a farmer to collect it (it eats no more until then)
+
+
 class GoblinBuilder(Enemy):
     """Builds an Expansion camp: bonfires, huts and spawners (see expansion.py, which runs its turns)."""
     def __init__(self):
