@@ -43,6 +43,7 @@ RELIC_CHEST_CHANCE = 0.25  # chance that a floor has one relic chest (if any rel
 
 # What each effect does, in a few words (shown in the Character window and on item descriptions)
 LIGHTNING_SPEED = 2  # Lightning Vambraces: added to your speed (actions each turn)
+DARKVISION_RANGE = 12  # Potion Of Darkvision: how far you see without light
 MOLTEN_FIRE = 2              # Molten Blade: fire damage added to every hit...
 MOLTEN_IGNITE_CHANCE = 0.25  # ...and the chance that hit sets the enemy burning
 
@@ -68,6 +69,8 @@ EFFECTS = {
     "keen_eye": ("Keen Eye", "1 in 4 veins give an extra ore"),
     "extra_hand": ("Third Hand", "Grows another hand slot from your back"),
     "lightning": ("Lightning", f"+{LIGHTNING_SPEED} speed: more actions every turn"),
+    # Potions you drink that last a number of turns (PlayerClass.potionEffects)
+    "darkvision": ("Darkvision", f"See {DARKVISION_RANGE} tiles in the dark, by no light: enemies aren't drawn to it, and walls still block it"),
     # Meals from the Cooking Pot (they last a number of turns; see recipes.MEALS and PlayerClass.buffs)
     "fed_mend": ("Mending", "Heals 1 HP every 5 turns"),
     "fed_guard": ("Sturdy", "+1 Defense"),
