@@ -407,6 +407,23 @@ CAMP_CHEST = [
 CAMP_CHEST_COLORS = {"p": (150, 118, 78), "P": (112, 84, 52), "b": (88, 90, 98)}
 
 
+# The Dwellers' Dew Grub, seen from above: a fat, pale, segmented grub glistening with dew, its head at the front
+# (facing down, like the Dwellers)
+DEW_GRUB = [
+    "..........",
+    "...kkkk...",
+    "..kgGGgk..",
+    ".kgGWGGgk.",
+    ".kssssssk.",
+    ".kgGGWGgk.",
+    ".kssssssk.",
+    "..kgGGgk..",
+    "...khhk...",
+    "..........",
+]
+DEW_GRUB_COLORS = {"g": (126, 186, 176), "G": (170, 222, 210), "W": (236, 250, 255), "s": (92, 140, 132), "h": (70, 96, 92)}
+
+
 def campChestColors(look):
     cloth = EXPANSION_LOOKS[look]["goblin"]
     return {**CAMP_CHEST_COLORS, "c": cloth["c"], "C": cloth["C"]}
@@ -424,6 +441,7 @@ ENEMY_SPRITES = {
     "Dweller Noble": (DWELLER_NOBLE, DWELLER_NOBLE_COLORS),
     "Dweller Guard": (DWELLER_GUARD, DWELLER_GUARD_COLORS),
     "Dweller Merchant": (DWELLER_MERCHANT, DWELLER_MERCHANT_COLORS),
+    "Dew Grub": (DEW_GRUB, DEW_GRUB_COLORS),
     **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
        for pattern, emblem in ORGANIZER_EMBLEMS.items()},
 }

@@ -7,7 +7,7 @@ from cruel.inventory import loot, relics, resources
 from cruel.world import plants
 
 ENEMY_CLASSES = [enemies.Goblin, enemies.GoblinChief, enemies.DireRat, enemies.DireMole, enemies.Unsealed,
-                 enemies.FireGiant, enemies.GoblinBuilder, enemies.GoblinFarmer, *enemies.organizers]
+                 enemies.FireGiant, enemies.GoblinBuilder, enemies.GoblinFarmer, enemies.DewGrub, *enemies.organizers]
 
 
 class FixedRandom:

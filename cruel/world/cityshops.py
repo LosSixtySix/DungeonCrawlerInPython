@@ -33,7 +33,7 @@ SHOP_KINDS = {
                            "cut_jade": 1, "cut_peridot": 1, "cut_rose_quartz": 1, "cut_ruby": 1, "cut_amethyst": 1},
              "alsoBuys": []},
     "food": {"name": "Grocer", "recipes": [meal[0] for meal in recipes.MEALS],
-             "materials": {"bloodcap": 3, "hearthmoss": 3, "glowcap": 3, "emberroot": 3, "shadowfern": 3, "meat": 3,
+             "materials": {"bloodcap": 3, "hearthmoss": 3, "glowcap": 3, "emberroot": 3, "shadowfern": 3, "meat": 3, "dew": 2,
                            "bloodcap_spores": 2, "hearthmoss_spores": 2, "glowcap_spores": 2, "emberroot_seed": 2, "shadowfern_spores": 2},
              "alsoBuys": []},
     "weapons": {"name": "Weaponsmith", "recipes": ["club", "iron_sword", "war_pick", "gilded_sword"], "materials": {}, "alsoBuys": []},

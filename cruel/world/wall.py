@@ -108,6 +108,19 @@ class NobleWall(CityBuildingWall):
     ROOM = "Noble"
 
 
+class PenFence(CityBuildingWall):
+    """A fence round a pen of Dew Grubs on a city's farm floor (drawn in wood colors). Easier to break than a
+    building's wall, but it's still the city's."""
+    ROOM = "Pen"
+
+    def __init__(self):
+        super().__init__()
+        self.name = "Pen Fence"
+        self.hp = 15
+        self.hardness = 15
+        self.soft = True
+
+
 class CityWall(CityBuildingWall):
     """The wall round the whole city: twice as thick as a building's."""
     ROOM = "City"

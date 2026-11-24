@@ -14,6 +14,7 @@ The Metropolis's Dwellers at work (metropolis.py builds the city, enemies.Dwelle
   Guard     patrols within PATROL_REACH of its post.
   Merchant  minds its shop: it stands at its counter.
   Worker    a citizen on one of the city's works floors (mineshafts.py): it works (dwellerwork.py).
+  Grub      a Dew Grub, the city's livestock: it stays in its pen and never fights (dwellerwork.py).
 
 They walk with path maps (expansion.walkingDistances), so they go round walls and through doors instead of bumping
 into them. A path map is kept for a while per destination (PATH_KEEP_TURNS), since Dwellers keep going to the same
@@ -224,7 +225,10 @@ def noticeYou(game, position, dweller):
 
 
 def attitudeLabel(enemy):
-    """For a Dweller's name when you look at it: "hostile" once it's turned on you. None otherwise."""
+    """For a Dweller's name when you look at it: "hostile" once it's turned on you; a Dew Grub: "livestock", and
+    whether its Dew is ready. None otherwise."""
+    if isDweller(enemy) and enemy.role == "grub":
+        return "livestock, Dew ready" if enemy.dewReady else "livestock"
     return "hostile" if isDweller(enemy) and enemy.hostile else None
 
 
@@ -324,6 +328,8 @@ def dealWithEnemies(game, position, dweller):
 
 def takeTurn(game, position, dweller):
     """One action for the Dweller at position (already lifted off its tile). Returns where it ends up."""
+    if dweller.role == "grub":  # livestock: it just shuffles about its pen (dwellerwork.py)
+        return dwellerwork.grubTurn(game, position, dweller)
     dealtWith = dealWithEnemies(game, position, dweller)
     if dealtWith is not None:
         return dealtWith
