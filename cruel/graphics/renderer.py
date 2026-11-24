@@ -9,6 +9,7 @@ from cruel.world import wall as walls
 from cruel.world import expansion
 from cruel.inventory import items
 from cruel.world import plants
+from cruel.world import peddler
 
 
 # Dithered light: tiles in view get a pattern of dark pixels the further they are from the player.
@@ -73,6 +74,8 @@ class renderer():
     INV_DETAIL_W = 250      # the inventory's details panel, right of the slots
     INV_SCROLL_W = 18       # the inventory's scroll bar, between the slots and the details panel
     INV_ROWS = 2            # rows of slots the inventory shows (more scroll; see gameManager.INVENTORY_ROWS)
+    SHOP_ROWS = 3           # rows of slots the Peddler's shop shows (more scroll)
+    COIN = (232, 192, 74)   # prices in the shop
 
     def __init__(self, win):
         self.win = win
@@ -563,6 +566,8 @@ class renderer():
                     count += 1
                     widest = max(widest, 22 + self.windowFont.size(str(label))[0] + self.windowFont.size(str(value))[0] + 40)
             return max(300, widest + self.PAD * 2), self.WINDOW_HEAD + max(1, count) * self.ROW + 14
+        if spec["kind"] == "shop":
+            return self.PAD * 2 + 5 * self.BOX_W + self.INV_SCROLL_W + self.INV_DETAIL_W,                 self.WINDOW_HEAD + self.ROW + self.SHOP_ROWS * self.BOX_H + 22
         if spec["kind"] == "grid":
             rows = min(math.ceil(spec["capacity"] / 5), spec.get("visibleRows", self.INV_ROWS))
             return self.PAD * 2 + 5 * self.BOX_W + self.INV_SCROLL_W + self.INV_DETAIL_W, self.WINDOW_HEAD + rows * self.BOX_H + 18
@@ -702,6 +707,9 @@ class renderer():
         if spec["kind"] == "craft":
             self.drawCraft(spec, rect, focused, body)
             return
+        if spec["kind"] == "shop":
+            self.drawShop(spec, rect, focused, body)
+            return
         if spec["kind"] == "grid":
             gx, gy = rect.x + self.PAD, rect.y + self.WINDOW_HEAD + 4
             rows = math.ceil(spec["capacity"] / 5)
@@ -742,6 +750,51 @@ class renderer():
             self.drawPreview(spec["preview"], rect)
 
     BETTER = (130, 210, 120)
+
+    def drawShop(self, spec, rect, focused, body):
+        """The Gray Peddler's shop: Buy and Sell tabs with your gold beside them, then the Inventory's slot grid with
+        a price in each slot's top corner, its scroll bar, and the Inventory's details panel on the right.
+        spec: tabs, tab (index), gold, slots [(name, price text, dim)], selected, scroll, detail."""
+        win = self.win
+        muted, select, boxLine, panel = self.color("muted"), self.color("select"), self.color("boxLine"), self.color("panel")
+        highlight = themes.mix(panel, select, 0.14)
+        tabY = rect.y + self.WINDOW_HEAD + self.ROW // 2 + 2
+        tabX = rect.x + self.PAD + 2
+        for index, name in enumerate(spec["tabs"]):  # the Crafting window's tab look
+            chosen = index == spec["tab"]
+            width = self.windowSmallFont.size(name)[0] + 16
+            box = pygame.Rect(tabX, tabY - 11, width, 22)
+            pygame.draw.rect(win, select if chosen else boxLine, box, width=1)
+            self.blitText(win, name, self.windowSmallFont, select if chosen else muted, tabX + 8, tabY)
+            tabX += width + 6
+        self.blitText(win, f"Gold {spec['gold']}", self.windowFont, self.COIN, rect.x + self.PAD + 5 * self.BOX_W, tabY, align="right")
+
+        gridX, gridY = rect.x + self.PAD, rect.y + self.WINDOW_HEAD + self.ROW + 6
+        slots = spec["slots"]
+        rowCount = max(self.SHOP_ROWS, math.ceil(len(slots) / 5))
+        top = spec.get("scroll", 0)
+        for slotIndex in range(top * 5, (top + self.SHOP_ROWS) * 5):
+            box = pygame.Rect(gridX + (slotIndex % 5) * self.BOX_W + 3, gridY + (slotIndex // 5 - top) * self.BOX_H + 3,
+                              self.BOX_W - 6, self.BOX_H - 6)
+            selected = focused and slotIndex == spec["selected"]
+            if selected:
+                pygame.draw.rect(win, highlight, box)
+            pygame.draw.rect(win, select if selected else boxLine, box, width=2 if selected else 1)
+            if slotIndex >= len(slots):
+                continue
+            name, priceText, dim = slots[slotIndex]
+            nameColor = muted if dim else (select if selected else body)
+            self.blitText(win, priceText, self.windowSmallFont, muted if dim else self.COIN, box.right - 6, box.y + 12, align="right")
+            lines = self.wrapText(name, self.windowSmallFont, box.w - 14)[-2:]
+            for lineIndex, line in enumerate(reversed(lines)):
+                self.blitText(win, line, self.windowSmallFont, nameColor, box.x + 8, box.bottom - 16 - lineIndex * 18)
+        if not slots:
+            self.blitText(win, spec.get("emptyText", "Nothing here"), self.windowSmallFont, muted, gridX + 12, gridY + self.BOX_H // 2)
+        self.drawScrollBar(win, pygame.Rect(gridX + 5 * self.BOX_W + 3, gridY + 3, self.INV_SCROLL_W - 6, self.SHOP_ROWS * self.BOX_H - 6),
+                           top, self.SHOP_ROWS, rowCount, focused)
+        if spec.get("detail"):
+            self.drawItemDetail(win, spec["detail"], pygame.Rect(gridX + 5 * self.BOX_W + self.INV_SCROLL_W + 8, gridY,
+                                                                 self.INV_DETAIL_W - 16, rect.bottom - gridY - 10))
 
     def drawScrollBar(self, win, area, top, shown, rows, focused):
         """The inventory's scroll bar: a track with a thumb showing which rows are in view, and an arrow at each
@@ -806,7 +859,8 @@ class renderer():
         styles = {"title": (self.windowFont, select), "label": (self.windowSmallFont, muted), "row": (self.windowSmallFont, body),
                   "muted": (self.windowSmallFont, muted), "body": (self.windowSmallFont, body), "hint": (self.windowSmallFont, muted),
                   "ench": (self.windowSmallFont, (200, 168, 255)), "better": (self.windowSmallFont, (130, 210, 120)),
-                  "worse": (self.windowSmallFont, self.color("enemy"))}
+                  "worse": (self.windowSmallFont, self.color("enemy")), "price": (self.windowSmallFont, muted),
+                  "warn": (self.windowSmallFont, select)}
         for style, text, value in lines:
             font, color = styles.get(style, styles["body"])
             for part in self.wrapText(text, font, area.w - (90 if value else 4)):
@@ -814,7 +868,8 @@ class renderer():
                     return
                 self.blitText(win, part, font, color, area.x, y)
                 if value:
-                    self.blitText(win, str(value), self.windowSmallFont, select if style == "row" else muted, area.right, y, align="right")
+                    valueColor = self.COIN if style == "price" else select if style == "row" else muted
+                    self.blitText(win, str(value), self.windowSmallFont, valueColor, area.right, y, align="right")
                     value = ""
                 y += 22 if style == "title" else 18
 
@@ -1511,6 +1566,9 @@ class renderer():
 
     def wallColor(self, name, memorized):
         # wall names are "Stone Wall", "Wood Wall", "Sand Wall", "Gold Wall"
+        if name == walls.PeddlerWall.NAME:  # the Peddler's room: the same cold gray on every floor
+            color = list(sprites.PEDDLER_STONE_COLOR)
+            return themes.remembered(color, self.color("fog")) if memorized else color
         room = self.WALL_ROOMS.get(name)
         if room is None:
             room = self.WALL_ROOMS[name] = name.split(" ")[0]
@@ -1520,7 +1578,7 @@ class renderer():
     # The map surface is kept from frame to frame. Each tile remembers a signature of everything that decides how
     # it looks (tileSignature); a frame only redraws the tiles whose signature changed. A new floor, theme or tile
     # size starts over (resetMap). Anything drawn on the map outside this (the aim line) clears its tiles' signatures.
-    LIGHT_EXEMPT = (1, 3, 5, 6, 7, 8, 9, expansion.CAMP)  # never dithered by the light, so they stand out
+    LIGHT_EXEMPT = (1, 3, 5, 6, 7, 8, 9, expansion.CAMP, peddler.SIGNPOST)  # never dithered by the light, so they stand out
 
     def resetMap(self):
         self.tileSigs = {}
@@ -1865,6 +1923,9 @@ class renderer():
                 glow = sprites.SCORCHED_DOOR_GLOW if not memorized else themes.remembered(list(sprites.SCORCHED_DOOR_GLOW), self.color("fog"))
                 self.fillTile(glow, x, y)  # lava all round the pit, so it stands out from any floor
                 self.mapSurface.blit(self.pitSprite(sprites.pitStyleFor(i), tuple(glow)), (x * ts, y * ts))
+            case peddler.SIGNPOST:  # the signpost that says the Gray Peddler is on this floor
+                self.floorFill(i, rooms, memorized, x, y)
+                self.mapSurface.blit(self.sprites["signpost"], (x * ts, y * ts))
             case 6:  # Door back to the previous level
                 self.floorFill(i, rooms, memorized, x, y)
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))

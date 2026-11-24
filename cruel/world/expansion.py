@@ -356,6 +356,8 @@ def offsetTile(gm, center, dx, dy):
 
 def hostile(unit, other):
     """Would this faction unit fight other? Everything outside its own faction, except a faction it's at peace with."""
+    if getattr(other, "merchant", False):  # the Gray Peddler: every faction leaves him alone
+        return False
     a, b = factionOf(unit), factionOf(other)
     return a != b and not (a is not None and b is not None and atPeace(a, b))
 

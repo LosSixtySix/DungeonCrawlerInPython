@@ -75,6 +75,23 @@ class FireGiant(Enemy):
         self.visionRange = 6
         self.fireResistPercent = 1.0  # fire can't hurt it (Molten floor included)
 
+class GrayPeddler(Enemy):
+    """The Gray Peddler (see peddler.py): a trader who waits in his room on a floor. While he's calm he never moves
+    and you trade with him. Hurt him and he's hostile for good: from then on he fights like any other enemy."""
+    def __init__(self):
+        super().__init__(40, 13, 1, 0, 5, "The Gray Peddler", 200)
+        self.visionRange = 8
+        self.merchant = True   # a trader: goblins, Organizers and other enemies leave him alone
+        self.hostile = False   # set the first time you hurt him (peddler.provoke)
+        self.wares = []        # his stock: peddler.Ware objects
+
+    @property
+    def loot(self):
+        """What he drops when he dies: every item still in his stock (stations and the pouch upgrade aren't
+        things you carry, so they're lost with him)."""
+        return [ware.item for ware in self.wares if ware.item is not None]
+
+
 class GoblinBuilder(Enemy):
     """Builds an Expansion camp: bonfires, huts and spawners (see expansion.py, which runs its turns)."""
     def __init__(self):

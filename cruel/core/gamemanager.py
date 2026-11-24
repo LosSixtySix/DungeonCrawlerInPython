@@ -20,6 +20,7 @@ from cruel.inventory import relics
 from cruel.world import plants
 from cruel.world import organizers
 from cruel.world import expansion
+from cruel.world import peddler
 from cruel.core import devconsole
 from cruel.core import updater
 from cruel.audio import sound
@@ -72,12 +73,15 @@ POUCH_FULL_MESSAGES = 3  # how many times "pouch full" shows for one material be
 SAVE_VERSION = 2  # 2: the map now fills the whole screen, so saves from the old smaller map can't load
 
 # Windows, in the order Tab cycles through them (after the "map" stop)
-WINDOW_ORDER = ["character", "room", "equipment", "inventory", "materials", "crafting", "levelup", "items", "loot"]
+WINDOW_ORDER = ["character", "room", "equipment", "inventory", "materials", "crafting", "levelup", "items", "loot", "shop"]
 WINDOW_TITLES = {"character": "Character", "room": "Room", "equipment": "Equipment", "materials": "Pouch", "loot": "Loot Table",
-                 "inventory": "Inventory", "levelup": "Level Up", "items": "Items Here", "crafting": "Crafting"}
+                 "inventory": "Inventory", "levelup": "Level Up", "items": "Items Here", "crafting": "Crafting",
+                 "shop": "The Gray Peddler"}
 WINDOW_HOTKEY = {"character": "character", "room": "room", "equipment": "equipment", "materials": "materials", "loot": "loot_table",
-                 "inventory": "inventory", "levelup": "level_up", "items": "interact", "crafting": "crafting"}
-LIST_WINDOWS = {"equipment", "inventory", "levelup", "items", "loot", "crafting"}  # windows that take arrows/Enter when focused
+                 "inventory": "inventory", "levelup": "level_up", "items": "interact", "crafting": "crafting", "shop": "interact"}
+LIST_WINDOWS = {"equipment", "inventory", "levelup", "items", "loot", "crafting", "shop"}  # windows that take arrows/Enter when focused
+OPENED_BY_INTERACT = ("items", "shop")  # windows the interact key opens on what you face, not with a hotkey of their own
+SHOP_TABS = ["Buy", "Sell"]
 
 PAUSE_ROWS = [("toggle", "Save on Exit"), ("toggle", "Generate Room"), ("toggle", "Mini HUD"),
               ("toggle", "Animated Light"), ("choice", "Light Style"), ("page", "Hotkeys"), ("action", "Reset Windows"), ("action", "Quit to Title"),
@@ -157,7 +161,7 @@ HIT_SPECK = 0.04           # every hit leaves a faint speck on the floor
 BLOOD_DRY = 1 / 150       # blood dries away by this much a turn (a full puddle lasts 150 turns)
 
 
-SEE_THROUGH = (0, 9, expansion.CAMP)  # tile types sight passes over (plants depend on the plant)
+SEE_THROUGH = (0, 9, expansion.CAMP, peddler.SIGNPOST)  # tile types sight passes over (plants depend on the plant)
 _RAYS = {}
 
 
@@ -420,6 +424,11 @@ class gameManager():
         self.openWindows = []
         self.focus = "map"
         self.windowSel = {windowId: 0 for windowId in WINDOW_ORDER}
+        self.shopSpot = None      # where the Gray Peddler whose shop is open stands
+        self.shopTab = 0          # 0 Buy, 1 Sell (SHOP_TABS)
+        self.shopScroll = 0       # the shop grid's top row in view
+        self.shopMessage = ""     # what the last buy or sell did
+        self.peddlerNext = False  # developer console /peddler: the next new floor gets him
         self.cycleHeld = False
         self.cycleUsed = False
         self.drag = None
@@ -534,20 +543,22 @@ class gameManager():
             self.cycleUsed = True
             return
         for windowId in WINDOW_ORDER:
-            if windowId != "items" and self.isAction(key, WINDOW_HOTKEY[windowId]):
+            if windowId not in OPENED_BY_INTERACT and self.isAction(key, WINDOW_HOTKEY[windowId]):
                 return self.onWindowHotkey(windowId)
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT) and self.focus in ("inventory", "equipment")                     and not self.pickerActive():
                 return self.dropFocusedItem()
             if self.focus == "crafting" and not self.pickerActive():
                 return self.startCrafting(CRAFT_MORE if event.mod & pygame.KMOD_SHIFT else 1)
+            if self.focus == "shop" and not self.pickerActive():  # Ctrl+Enter on a material sells every whole lot
+                return self.shopEnter(everything=bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT)))
             return self.onEnter()
         if self.isAction(key, "interact"):
             if not self.pickerActive():
                 if event.mod & pygame.KMOD_CTRL:
                     self.interactHere()
                 else:
-                    self.onInteract()
+                    self.onInteract(forceAttack=bool(event.mod & pygame.KMOD_SHIFT))
             return
         if move is not None:
             self.onDirectionKey(*move)
@@ -558,7 +569,10 @@ class gameManager():
             return
         if self.isAction(event.key, "cycle"):
             if self.cycleHeld and not self.cycleUsed and self.pausePage is None:
-                self.cycleFocus(1)
+                if self.focus == "shop":  # in the shop, Tab switches between Buy and Sell
+                    self.toggleShopTab()
+                else:
+                    self.cycleFocus(1)
                 self.change = True
             self.cycleHeld = False
         if self.isAction(event.key, "aim") and self.throwing is None:
@@ -810,6 +824,8 @@ class gameManager():
                 self.windowSel["inventory"] = index
             self.scrollInventory()
             return
+        if windowId == "shop":
+            return self.moveShopSelection(dx, dy)
         if windowId == "equipment" and self.swapActive():
             keys = list(self.player.equipment.keys())
             slots = self.swap["slots"]
@@ -868,6 +884,8 @@ class gameManager():
             self.onPickUpItem()
         elif windowId == "crafting":
             self.startCrafting(1)
+        elif windowId == "shop":
+            self.shopEnter()
 
     # ---------------------------------------------------------------- dropping
     # Ctrl+Enter (or Alt+Enter) on an item in the Inventory or Equipment window drops it in a pile at your feet
@@ -1689,13 +1707,15 @@ class gameManager():
             if self.playerHidden() and not hidden:
                 self.addPopup("Hidden", newPosition)
             return
-        if targetLocation not in (7, 8, expansion.CAMP) and self.player.checkValidMoveLocation(targetLocation):  # stations, other plants and camp pieces block
+        if targetLocation not in (7, 8, expansion.CAMP, peddler.SIGNPOST) and self.player.checkValidMoveLocation(targetLocation):  # stations, other plants and camp pieces block
             self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
             self.currentLocation = copy.copy(self.grid[newPosition])
             self.playerPositionFlat = newPosition
             self.enemyMove = True
 
-    def onInteract(self):
+    def onInteract(self, forceAttack=False):
+        """Use whatever you face. forceAttack (Shift + interact): hit an enemy even if it's the Peddler, who
+        otherwise opens his shop."""
         target = self.PlayerLookPosition
         if target not in self.grid:
             return
@@ -1720,13 +1740,16 @@ class gameManager():
                     self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
                     self.currentLocation = currentWall
                     self.playerPositionFlat = target
+        elif tile[0] == 5 and peddler.isCalm(tile[2]) and not forceAttack:  # the Gray Peddler: his shop
+            self.openShop(target)
+            return
         elif tile[0] == 5:  # enemy
             dealt = self.enemyDodge(tile[2], self.player.DealDamage(), target)
             tile[2].hp -= dealt
             if dealt > 0:
                 self.bleed(target)
                 self.thirst()
-                expansion.playerHurt(self, tile[2], target)  # a neutral faction's goblin: its faction turns on you
+                self.playerHurtEnemy(tile[2], target)
             if tile[2].hp <= 0:
                 self.killEnemy(target)
             elif dealt > 0 and self.player.hasEffect("molten"):  # the Molten Blade
@@ -1743,6 +1766,12 @@ class gameManager():
         self.enemyMove = True
 
     # ------------------------------------------------------------------ loot
+
+    def playerHurtEnemy(self, enemy, position):
+        """You damaged enemy: a neutral goblin faction turns on you (expansion.playerHurt), and so does the Gray
+        Peddler (peddler.provoke)."""
+        expansion.playerHurt(self, enemy, position)
+        peddler.provoke(self, enemy, position)
 
     def breakWall(self, position):
         """A wall was broken: it becomes floor and its materials go straight into the pouch."""
@@ -2316,8 +2345,25 @@ class gameManager():
         else:
             self.trackStarts.add(self.level)
         self.PlaceNextLevelDoor()
+        self.maybeAddPeddler()
         self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
         self.afterLevelChange()
+
+    def maybeAddPeddler(self):
+        """By chance (peddler.APPEAR_CHANCE) a brand-new floor gets the Gray Peddler: his room somewhere away from
+        you, and a signpost beside where you arrive. Nothing else says he's here. Never on the Scorched Depths."""
+        forced, self.peddlerNext = getattr(self, "peddlerNext", False), False
+        if self.proportion == SCORCHED or self.level < peddler.FIRST_FLOOR:
+            return
+        if not forced and rand.random() >= peddler.APPEAR_CHANCE:
+            return
+        trader = enemies.GrayPeddler()
+        trader.wares = peddler.rollStock(self.player)
+        traderSpot = peddler.placeRoom(self.grid, self.rowLength, self.playerPositionFlat, trader)
+        if traderSpot is None:
+            return
+        self.EnemyPositions.add(traderSpot)
+        peddler.placeSignpost(self.grid, self.neighbors(self.playerPositionFlat))
 
     def floorTypeName(self):
         return f"Motherlode ({self.proportion})" if self.level in self.motherlodes else self.proportion
@@ -2342,6 +2388,7 @@ class gameManager():
         self.flecks = []
         self.playerBloodSpot = None
         self.closeWindow("items")
+        self.closeWindow("shop")
         self.picker = {"ChangingColor": False, "ColorSelected": False}
         self.messageBools["floorLevelMessage"] = True
         self.painter.fade = 255
@@ -2856,7 +2903,7 @@ class gameManager():
             enemy = self.grid[position][2]
             enemy.hp -= damage
             self.bleed(position)
-            expansion.playerHurt(self, enemy, position)
+            self.playerHurtEnemy(enemy, position)
             if enemy.hp <= 0:
                 self.killEnemy(position)
         return len(hit)
@@ -3074,7 +3121,7 @@ class gameManager():
                     hit += 1
                     tile[2].hp -= shot["power"]
                     self.bleed(position)
-                    expansion.playerHurt(self, tile[2], position)
+                    self.playerHurtEnemy(tile[2], position)
                     if tile[2].hp <= 0:
                         self.killEnemy(position)
             if self.playerPositionFlat in area:
@@ -3127,7 +3174,7 @@ class gameManager():
                 if kind == 2:
                     tile[2].holeBelow = True  # it stands over a hole now
                     continue
-                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR):
+                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST):
                     continue
                 if kind == 5 and len(tile) > 2 and self.isBig(tile[2]):
                     continue  # a giant is too big to fall: the floor under it holds
@@ -3234,7 +3281,7 @@ class gameManager():
         enemy.hp -= dealt
         self.bleed(position)
         if byPlayer:
-            expansion.playerHurt(self, enemy, position)
+            self.playerHurtEnemy(enemy, position)
         if enemy.hp <= 0:
             self.killEnemy(position)
             return
@@ -3263,7 +3310,7 @@ class gameManager():
         enemy.hp -= dealt
         self.bleed(position)
         if killer == "player":
-            expansion.playerHurt(self, enemy, position)
+            self.playerHurtEnemy(enemy, position)
         if enemy.hp <= 0:
             self.killEnemy(position, killer)
 
@@ -3626,6 +3673,7 @@ class gameManager():
     def enemyTurn(self):
         self.turnCount += 1
         self.MoveEnemies()
+        self.checkShop()
         expansion.stepCamp(self)
         self.searingLight()
         self.stepBurning()
@@ -3680,6 +3728,9 @@ class gameManager():
                 continue  # stale position, the enemy is no longer here
             currentEnemy: enemies.Enemy = self.grid[i][2]
             position = i
+            if peddler.isCalm(currentEnemy):  # the Gray Peddler waits in his room until you hurt him
+                listOfNewPositions.add(i)
+                continue
             if self.isBig(currentEnemy):  # a giant: its whole body moves at once (giantTurn)
                 for action in range(self.enemyActions(currentEnemy)):
                     if self.grid[position][0] != 5 or len(self.grid[position]) < 3 or self.grid[position][2] is not currentEnemy:
@@ -4025,12 +4076,14 @@ class gameManager():
         if tile[0] == 7:
             station = tile[2]
             return f"{station.name} ({station.hp}/{station.maxHp})" if station.claimed else f"{station.name} (unclaimed)"
+        if tile[0] == peddler.SIGNPOST:
+            return "Signpost (a gray rag is tied to it: someone is trading on this floor)"
         if tile[0] == expansion.CAMP:
             piece = tile[2]
             return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
             enemy = tile[2]
-            notes = [note for note in (expansion.attitudeLabel(self, enemy),
+            notes = [note for note in (expansion.attitudeLabel(self, enemy), peddler.attitudeLabel(enemy),
                                        "burning" if getattr(enemy, "burnTurns", 0) > 0 else None) if note]
             return enemy.name + (f" ({', '.join(notes)})" if notes else "")
         return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
@@ -4136,6 +4189,8 @@ class gameManager():
             spec["sections"] = sections
         elif windowId == "crafting":
             self.craftSpec(spec)
+        elif windowId == "shop":
+            self.shopSpec(spec)
         elif windowId == "inventory":
             spec["kind"] = "grid"
             spec["items"] = [item.name + (f" x{playerClass.countOf(item)}" if playerClass.countOf(item) > 1 else "")
@@ -4148,6 +4203,141 @@ class gameManager():
             spec["detail"] = self.itemDetail(player.inventory[index]) if index < len(player.inventory) else \
                 [("muted", "Empty slot", "")]
         return spec
+
+    # ------------------------------------------------------------- the Gray Peddler's shop (peddler.py)
+    # Face him and press interact: his shop opens. It's built like the Inventory window (the same slot grid and
+    # details panel) with a Buy and a Sell tab: Tab switches, Enter buys or sells, Ctrl+Enter sells every whole
+    # lot of a material. Walking away (or hurting him) closes it.
+
+    def shopPeddler(self):
+        """The Peddler whose shop is open, while he's beside you and still willing to trade; otherwise None."""
+        spot = getattr(self, "shopSpot", None)
+        if spot is None or spot not in self.neighbors(self.playerPositionFlat):
+            return None
+        tile = self.grid.get(spot)
+        if not tile or tile[0] != 5 or len(tile) < 3 or not peddler.isCalm(tile[2]):
+            return None
+        return tile[2]
+
+    def openShop(self, spot):
+        self.shopSpot = spot
+        self.shopTab = 0
+        self.shopScroll = 0
+        self.shopMessage = ""
+        self.openWindow("shop")
+
+    def checkShop(self):
+        """Closes the shop once you've walked away from him, or he's turned on you."""
+        if "shop" in self.openWindows and self.shopPeddler() is None:
+            self.closeWindow("shop")
+
+    def shopEntries(self):
+        """What the open tab lists. Buy: ("ware", index in his stock). Sell: ("item", pack slot) for your pack,
+        then ("material", material id) for your pouch."""
+        if self.shopTab == 0:
+            trader = self.shopPeddler()
+            return [("ware", index) for index in range(len(trader.wares))] if trader else []
+        return [("item", index) for index in range(len(self.player.inventory))] + \
+            [("material", materialId) for materialId in peddler.sellableMaterials(self.player)]
+
+    def toggleShopTab(self):
+        self.shopTab = 1 - self.shopTab
+        self.windowSel["shop"] = 0
+        self.shopScroll = 0
+        self.shopMessage = ""
+
+    def moveShopSelection(self, dx, dy):
+        index = self.windowSel["shop"] + dx + dy * INVENTORY_COLUMNS
+        if 0 <= index < len(self.shopEntries()):
+            self.windowSel["shop"] = index
+        self.scrollShop()
+
+    def scrollShop(self):
+        """Keeps the selected slot's row in view."""
+        visibleRows = self.painter.SHOP_ROWS
+        selectedRow = self.windowSel["shop"] // INVENTORY_COLUMNS
+        self.shopScroll = max(selectedRow - visibleRows + 1, min(self.shopScroll, selectedRow))
+
+    def shopEnter(self, everything=False):
+        """Enter in the shop: buy the selected ware, or sell the selected item (one potion off a stack) or one lot
+        of the selected material (with everything, every whole lot)."""
+        trader = self.shopPeddler()
+        entries = self.shopEntries()
+        index = self.windowSel["shop"]
+        if trader is None or index >= len(entries):
+            return
+        kind, which = entries[index]
+        if kind == "ware":
+            _, self.shopMessage = peddler.buy(self.player, trader, which)
+        elif kind == "item":
+            self.shopMessage = peddler.sellItem(self.player, which)
+        else:
+            _, self.shopMessage = peddler.sellMaterial(self.player, which, everything)
+        self.windowSel["shop"] = max(0, min(index, len(self.shopEntries()) - 1))
+        self.scrollShop()
+        self.fitSelections()
+        self.change = True
+
+    def shopSlot(self, kind, which, trader):
+        """(name, price text, dim) for one slot of the shop grid."""
+        player = self.player
+        if kind == "ware":
+            ware = trader.wares[which]
+            return ware.name, str(ware.price), ware.price > player.gold
+        if kind == "item":
+            item = player.inventory[which]
+            count = playerClass.countOf(item)
+            return item.name + (f" x{count}" if count > 1 else ""), str(peddler.offerFor(item)), False
+        have = player.materials.get(which, 0)
+        gold, _ = peddler.offerForMaterial(have)
+        return f"{resources.materialName(which)} x{have}", str(gold) if gold else "-", not gold
+
+    def shopDetail(self, entry, trader):
+        """The details panel for the selected slot: the item's own details (as in the Inventory, without its keys)
+        and what it costs or what he pays."""
+        player = self.player
+        kind, which = entry
+        if kind == "ware":
+            ware = trader.wares[which]
+            if ware.item is not None:
+                lines = [line for line in self.itemDetail(ware.item) if line[0] != "hint"]
+            else:
+                lines = [("title", ware.name, ""), ("muted", ware.recipe.description, ""), ("label", "MAKES", ware.recipe.result)]
+            lines += [("price", "PRICE", f"{ware.price} gold"), ("label", "YOU HAVE", f"{player.gold} gold")]
+            hint = "Enter  buy      Tab  sell"
+        elif kind == "item":
+            item = player.inventory[which]
+            lines = [line for line in self.itemDetail(item) if line[0] != "hint"]
+            lines.append(("price", "HE PAYS", f"{peddler.offerFor(item)} gold"))
+            hint = "Enter  sell      Tab  buy"
+        else:
+            have = player.materials.get(which, 0)
+            gold, taken = peddler.offerForMaterial(have)
+            lines = [("title", resources.materialName(which), ""), ("label", "IN YOUR POUCH", have),
+                     ("price", "HE PAYS", f"1 gold for {peddler.MATERIALS_PER_GOLD}")]
+            if gold:
+                lines.append(("label", "SELL ALL", f"{gold} gold, keeps {have - taken}"))
+                hint = "Enter  sell 11   Ctrl+Enter  all"
+            else:
+                lines.append(("muted", f"You need {peddler.MATERIALS_PER_GOLD} to sell any", ""))
+                hint = "Tab  buy"
+        if self.shopMessage:
+            lines.append(("warn", self.shopMessage, ""))
+        return lines + [("hint", hint, "")]
+
+    def shopSpec(self, spec):
+        trader = self.shopPeddler()
+        entries = self.shopEntries()
+        spec["kind"] = "shop"
+        spec["tabs"] = SHOP_TABS
+        spec["tab"] = self.shopTab
+        spec["gold"] = self.player.gold
+        spec["scroll"] = self.shopScroll
+        spec["slots"] = [self.shopSlot(kind, which, trader) for kind, which in entries]
+        spec["emptyText"] = "He has nothing left to sell" if self.shopTab == 0 else "You have nothing to sell"
+        index = self.windowSel["shop"]
+        spec["detail"] = self.shopDetail(entries[index], trader) if index < len(entries) else \
+            [("muted", spec["emptyText"], "")] + ([("warn", self.shopMessage, "")] if self.shopMessage else [])
 
     STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health",
                   "FireRes": "Fire Resist", "MagicRes": "Magic Resist", "Storage": "Inventory Slots",
