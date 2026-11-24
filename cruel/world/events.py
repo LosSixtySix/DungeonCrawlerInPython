@@ -5,6 +5,9 @@ Floor events: something that can happen on a floor while you're on it. Each new 
 rolls EVENT_CHANCE for an event. If it gets one, the event fires a few turns after you arrive (DELAY), with its
 name shown big on screen like "The Seal is Broken", and lasts for the rest of that floor.
 
+Every floor type can get one, the Metropolis included. When Overgrowth starts on a floor with no plants at all (a
+city, say), OVERGROWTH_SEEDS wild patches spring up in random places so it has something to grow.
+
 Each event's "plants" entry changes how plants grow while it's active (see plants.step):
   growTurns   a growth step happens this often (normally plants.GROW_TURNS)
   birth       births are this many times as likely
@@ -15,6 +18,7 @@ Each event's "plants" entry changes how plants grow while it's active (see plant
 EVENT_CHANCE = 0.2     # chance a new floor gets an event
 FIRST_FLOOR = 1        # no events before this floor (0 is the first floor)
 DELAY = (15, 60)       # the event fires this many turns after you first arrive (random in this range)
+OVERGROWTH_SEEDS = 3   # wild patches Overgrowth plants when it starts on a floor with no plants
 
 EVENTS = {
     "overgrowth": {"name": "Overgrowth", "description": "Plants grow much faster, rarely wither and creep into the walls",
