@@ -81,6 +81,7 @@ class DevConsole():
             "orefloor": (self.cmdOreFloor, "/orefloor <type> [mother]", "Makes the next new floor an ore floor (types: /orefloor)"),
             "moltenvault": (self.cmdMoltenVault, "/moltenvault", "Makes the next new floor All Gold with the Molten Vault theme"),
             "scorched": (self.cmdScorched, "/scorched", "Goes straight to a new Scorched Depths floor (starts a new track)"),
+            "patience": (self.cmdPatience, "/patience", "Skips the 5 minute wait: on the first floor's center tile, the floor gives way"),
             "clear": (self.cmdClear, "/clear", "Clears the console"),
         }
         self.aliases = {"additem": "give", "add": "give", "enemies": "enemy", "item": "items", "aggro": "peaceful", "map": "reveal", "seeall": "reveal", "?": "help"}
@@ -375,6 +376,17 @@ class DevConsole():
     def cmdScorched(self, _args):
         self.gm.enterScorched()
         self.write("good", "Into the Scorched Depths. The Molten Blade is in the chest at the center")
+
+    def cmdPatience(self, _args):
+        gameManager = self.gm
+        if gameManager.level != 0:
+            self.write("error", "Only works on the first floor")
+            return
+        if gameManager.playerPositionFlat != gameManager.centerTile():
+            self.write("error", "Stand on the center tile (where you started) first")
+            return
+        gameManager.patienceFall()
+        self.write("good", f"You fell onto a {gameManager.floorTypeName()}")
 
     def cmdClear(self, _args):
         self.log = []

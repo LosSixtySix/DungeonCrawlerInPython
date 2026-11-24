@@ -69,6 +69,7 @@ class FireGiant(Enemy):
         self.size = 2              # tiles across (and down)
         self.reach = 3             # hits you up to this many tiles from its body (1 = right beside it, +2 extra)
         self.anchor = None         # its top-left tile, kept up to date as it moves
+        self.home = None           # the tile it guards (the Molten Blade's chest): it wanders near it
         self.fireDamage = 3        # fire damage added to every hit that lands
         self.igniteChance = 0.5    # chance that hit sets you burning
         self.visionRange = 6
@@ -125,6 +126,8 @@ class PlantOrganizer(Organizer):
 lowerFloorEnemies = [Goblin,GoblinChief,DireRat,DireMole]
 organizers = [SpiralOrganizer, CircleOrganizer, SquareOrganizer, PlantOrganizer]
 GIANT_COUNT = (2, 3)  # Fire Giants on each Scorched Depths floor
+GIANT_SPAWN = (4, 10)  # they start this many tiles from the center chest...
+GIANT_GUARD = 8        # ...and, when they aren't after you, wander to spots this close to it
 ORGANIZER_CHANCE = 0.2  # each enemy on a new floor is an Organizer (of a random kind) this often
 
 if __name__ == "__main__":
