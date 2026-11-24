@@ -22,6 +22,7 @@ from cruel.world import organizers
 from cruel.world import expansion
 from cruel.world import peddler
 from cruel.world import metropolis
+from cruel.world import livingfloors
 from cruel.world import mineshafts
 from cruel.world import occupancy
 from cruel.world import dewgrubs
@@ -222,6 +223,7 @@ class gameManager():
         self.windowDrawOrder = []
         self.drag = None
         self.peaceful = False  # developer console /peaceful: enemies ignore you and never attack
+        self.simulatingAway = False  # a floor you're not on is taking its turn (livingfloors.py): nothing shows you anything
         self.autoPlay = None   # developer console /play: {"ms", "next"} while turns pass on their own
         self.console = devconsole.DevConsole(self)
         self.updater = updater.Updater()  # checks for a newer build in the background
@@ -2034,6 +2036,8 @@ class gameManager():
         return added
 
     def addPopup(self, text, position):
+        if getattr(self, "simulatingAway", False):  # (on a floor you're not on: you don't see it)
+            return
         now = pygame.time.get_ticks()
         for popup in self.popups:
             if popup[0] == text and popup[1] == position:  # the same message again: restart it instead of stacking
@@ -2483,6 +2487,7 @@ class gameManager():
         self.messageBools["floorLevelMessage"] = True
         self.painter.fade = 255
         self.landFallen()
+        livingfloors.dropUnreachable(self)  # on a new track, the floors above it are gone for good
 
     def PlacePreviousLevelDoor(self):
         position = self.doorPositions[-1]
@@ -3521,7 +3526,8 @@ class gameManager():
             if tile and tile[0] == 5 and len(tile) > 2 and not isinstance(tile[2], enemies.Organizer) \
                     and self.inDemise(position):
                 self.magicEnemy(position, DEMISE_DAMAGE, killer=None)
-        if self.inDemise(self.playerPositionFlat) and not self.player.hasEffect("demise_ward"):
+        if not getattr(self, "simulatingAway", False) and self.inDemise(self.playerPositionFlat) \
+                and not self.player.hasEffect("demise_ward"):
             self.magicPlayer(DEMISE_DAMAGE)
 
     def stepBurning(self):
@@ -3532,7 +3538,7 @@ class gameManager():
             unit.burnTurns -= 1
             self.fireEnemy(position, BURN_DAMAGE, canIgnite=False, unit=unit)
         player = self.player
-        if getattr(player, "burnTurns", 0) > 0:
+        if getattr(player, "burnTurns", 0) > 0 and not getattr(self, "simulatingAway", False):
             player.burnTurns -= 1
             self.firePlayer(BURN_DAMAGE, canIgnite=False)
 
@@ -3670,6 +3676,8 @@ class gameManager():
                 elif last is not None:
                     self.addBlood(last, DRIP)
             enemy.bloodSpot = position
+        if getattr(self, "simulatingAway", False):
+            return
         player = self.player
         here = self.playerPositionFlat
         if 0 < player.getCurrentHealth() <= max(1, player.getMaxHealth() * LOW_HEALTH):
@@ -3814,6 +3822,8 @@ class gameManager():
         if event["id"] == "overgrowth" and not any(tile[0] == 8 for tile in self.grid.values()):
             for _ in range(events.OVERGROWTH_SEEDS):
                 plants.addPatch(self.grid, self.rooms, self.rowLength, None, avoid={self.playerPositionFlat})
+        if getattr(self, "simulatingAway", False):  # (on a floor you're not on: no message)
+            return
         self.messageBools["eventMessage"] = True
         self.painter.fade = 255
         self.change = True
@@ -3833,23 +3843,7 @@ class gameManager():
         self.stepForgetting()
         self.stepThrows()
         self.stepFloorEvent()
-        growth = events.plantRules(self.activeEvent())
-        if self.turnCount % growth.get("growTurns", plants.GROW_TURNS) == 0:
-            # During Overgrowth plants can sprout on you: your tile takes part in the step as the floor under you
-            here = self.playerPositionFlat
-            overgrow = self.activeEvent() == "overgrowth" and self.currentLocation[0] == 0
-            if overgrow:
-                playerTile, self.grid[here] = self.grid[here], copy.copy(self.currentLocation)
-            noBirth = expansion.allFarmTiles(self) | (dwellerfarming.fieldTiles(self) if mineshafts.onSideFloor(self) else set())
-            changed = plants.step(self.grid, self.rooms, self.rowLength, noBirth=noBirth, **growth)
-            if overgrow:
-                sprouted, self.grid[here] = self.grid[here], playerTile
-                if sprouted[0] == 8:
-                    self.overgrowPlayer(sprouted)
-            if self.proportion != metropolis.METROPOLIS or self.activeEvent() == "overgrowth":  # (a city only grows them in Overgrowth)
-                changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
-            if changed:
-                self.change = True
+        self.stepPlants()
         player = self.player
         if player.hasEffect("regen") and self.turnCount % 20 == 0 and player.damageTaken > 0:
             player.damageTaken -= 1  # Gilded Amulet
@@ -3867,6 +3861,40 @@ class gameManager():
                 self.EnemyPositions.add(addPosition)
             else:
                 self.addUnsealed = False
+        livingfloors.simulate(self)  # the floors near you take their turn too
+
+    def stepPlants(self):
+        """Every GROW_TURNS (an event may change it) the floor's plants take a growth step. During Overgrowth plants
+        can sprout on you: your tile takes part in the step as the floor under you (not on a floor you're not on)."""
+        growth = events.plantRules(self.activeEvent())
+        if self.turnCount % growth.get("growTurns", plants.GROW_TURNS) != 0:
+            return
+        away = getattr(self, "simulatingAway", False)
+        here = self.playerPositionFlat
+        overgrow = not away and self.activeEvent() == "overgrowth" and self.currentLocation[0] == 0
+        if overgrow:
+            playerTile, self.grid[here] = self.grid[here], copy.copy(self.currentLocation)
+        noBirth = expansion.allFarmTiles(self) | (dwellerfarming.fieldTiles(self) if mineshafts.onSideFloor(self) else set())
+        changed = plants.step(self.grid, self.rooms, self.rowLength, noBirth=noBirth, **growth)
+        if overgrow:
+            sprouted, self.grid[here] = self.grid[here], playerTile
+            if sprouted[0] == 8:
+                self.overgrowPlayer(sprouted)
+        if self.proportion != metropolis.METROPOLIS or self.activeEvent() == "overgrowth":  # (a city only grows them in Overgrowth)
+            changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid=set() if away else {here}) or changed
+        if changed:
+            self.change = True
+
+    def awayTurn(self):
+        """A turn for a floor you're not on (livingfloors.py puts it in place of yours first): its units, goblin
+        camps, burning, Demise, blood, floor event and plants. Nothing that's only round you."""
+        self.MoveEnemies()
+        expansion.stepCamp(self)
+        self.stepBurning()
+        self.stepDemise()
+        self.stepBlood()
+        self.stepFloorEvent()
+        self.stepPlants()
 
     def MoveEnemies(self):
         listOfNewPositions = set()

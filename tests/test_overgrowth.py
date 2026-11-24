@@ -30,9 +30,12 @@ def growPlantOnPlayer(game, plantKind):
     Returns the tile type the growth step saw where the player stands."""
     realGrowthStep = plants.step
     playerSpot = game.playerPositionFlat
+    yourFloor = game.grid
     seen = {}
 
     def sproutOnThePlayer(grid, *args, **kwargs):
+        if grid is not yourFloor:  # (the floors near yours grow too: livingfloors.py)
+            return False
         seen["tileUnderPlayer"] = grid[playerSpot][0]
         grid[playerSpot] = [PLANT, grid[playerSpot][1], plants.Plant.grown(plantKind)]
         return True
