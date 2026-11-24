@@ -12,10 +12,10 @@ class EventTableTests(unittest.TestCase):
     """The EVENTS table and its lookups."""
 
     def test_every_event_has_a_name_and_description(self):
-        for eventId, info in events.EVENTS.items():
-            self.assertTrue(info["name"])
-            self.assertTrue(info["description"])
-            self.assertEqual(events.name(eventId), info["name"])
+        for eventId, eventDetails in events.EVENTS.items():
+            self.assertTrue(eventDetails["name"])
+            self.assertTrue(eventDetails["description"])
+            self.assertEqual(events.name(eventId), eventDetails["name"])
 
     def test_overgrowth_speeds_up_plants_and_lets_them_corrupt_walls(self):
         rules = events.plantRules("overgrowth")

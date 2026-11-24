@@ -20,7 +20,7 @@ def smallFloor(floorType="Stone"):
     return grid, rooms
 
 
-def at(column, row):
+def spotAt(column, row):
     return row * ROW_LENGTH + column
 
 
@@ -52,9 +52,9 @@ class PlantKindTests(unittest.TestCase):
         self.assertFalse(plants.Plant("glowcap").hides)
 
     def test_every_kind_grows_on_at_most_two_floors_and_has_both_ripe_stages(self):
-        for kind, info in plants.PLANTS.items():
-            self.assertTrue(1 <= len(info["floors"]) <= 2, kind)
-            self.assertEqual(sorted(info["stages"]), ["harvest", "seed"], kind)
+        for kind, plantDetails in plants.PLANTS.items():
+            self.assertTrue(1 <= len(plantDetails["floors"]) <= 2, kind)
+            self.assertEqual(sorted(plantDetails["stages"]), ["harvest", "seed"], kind)
 
     def test_organizers_demise_follows_conway_and_never_grows_wild(self):
         self.assertTrue(plants.isConway("organizers_demise"))
@@ -163,7 +163,7 @@ class FloorHelperTests(unittest.TestCase):
     def test_around_does_not_wrap_past_the_left_and_right_edges(self):
         grid, _rooms = smallFloor()
         self.assertEqual(len(plants.around(CENTER, ROW_LENGTH, grid)), 8)
-        leftEdge = at(0, 3)
+        leftEdge = spotAt(0, 3)
         neighborsOfEdge = plants.around(leftEdge, ROW_LENGTH, grid)
         self.assertEqual(len(neighborsOfEdge), 5)
         self.assertTrue(all(position % ROW_LENGTH <= 1 for position in neighborsOfEdge))
@@ -183,9 +183,9 @@ class GrowthStepTests(unittest.TestCase):
     def test_a_conway_blinker_flips_from_a_row_to_a_column(self):
         grid, rooms = smallFloor("Wood")
         for column in (2, 3, 4):
-            grid[at(column, 3)] = plantTile("organizers_demise")
+            grid[spotAt(column, 3)] = plantTile("organizers_demise")
         self.assertTrue(plants.step(grid, rooms, ROW_LENGTH))
-        self.assertEqual(plantPositions(grid), {at(3, 2), at(3, 3), at(3, 4)})
+        self.assertEqual(plantPositions(grid), {spotAt(3, 2), spotAt(3, 3), spotAt(3, 4)})
 
     def test_a_conway_glider_keeps_its_five_cells_and_crawls(self):
         grid, rooms = {position: [0, 0] for position in range(12 * 12)}, {"Wood": set(range(12 * 12))}
@@ -200,9 +200,9 @@ class GrowthStepTests(unittest.TestCase):
     def test_conway_plants_do_not_sprout_off_their_floor(self):
         grid, rooms = smallFloor("Stone")
         for column in (2, 3, 4):
-            grid[at(column, 3)] = plantTile("organizers_demise")
+            grid[spotAt(column, 3)] = plantTile("organizers_demise")
         plants.step(grid, rooms, ROW_LENGTH)
-        self.assertEqual(plantPositions(grid), {at(3, 3)})  # the ends die, nothing is born on Stone
+        self.assertEqual(plantPositions(grid), {spotAt(3, 3)})  # the ends die, nothing is born on Stone
 
     def test_a_seeding_plant_spreads_to_open_floor_around_it(self):
         grid, rooms = smallFloor("Stone")
@@ -231,7 +231,7 @@ class GrowthStepTests(unittest.TestCase):
 
     def test_a_lonely_seeded_plant_withers_but_a_young_one_does_not(self):
         grid, rooms = smallFloor("Stone")
-        lonelySeeded, lonelySprout = at(1, 1), at(5, 5)
+        lonelySeeded, lonelySprout = spotAt(1, 1), spotAt(5, 5)
         grid[lonelySeeded] = plantTile("bloodcap", "seed")
         grid[lonelySprout] = plantTile("bloodcap")
         plants.step(grid, rooms, ROW_LENGTH, birth=0, death=1.0)
@@ -241,10 +241,10 @@ class GrowthStepTests(unittest.TestCase):
     def test_a_seeded_plant_with_two_or_three_neighbors_survives(self):
         grid, rooms = smallFloor("Stone")
         for column in (2, 3, 4):
-            grid[at(column, 3)] = plantTile("bloodcap", "seed")
+            grid[spotAt(column, 3)] = plantTile("bloodcap", "seed")
         plants.step(grid, rooms, ROW_LENGTH, birth=0, death=1.0)
         self.assertEqual(grid[CENTER][0], 8)  # the middle one has 2 neighbors
-        self.assertEqual(grid[at(2, 3)], [0, 0])  # the ends have 1
+        self.assertEqual(grid[spotAt(2, 3)], [0, 0])  # the ends have 1
 
     def test_invaders_take_over_a_wild_plant_but_not_a_planted_one(self):
         for planted, expectedKind in ((False, "glowcap"), (True, "bloodcap")):

@@ -38,8 +38,8 @@ class WallTypeTests(unittest.TestCase):
         sandWall = wall.SandWall()
         sandWall.takeDamage(5, TILE_SIZE)
         self.assertTrue(sandWall.brokenPoints)
-        for x, y in sandWall.brokenPoints:
-            self.assertTrue(1 <= x <= TILE_SIZE - 2 and 1 <= y <= TILE_SIZE - 2)
+        for pixelX, pixelY in sandWall.brokenPoints:
+            self.assertTrue(1 <= pixelX <= TILE_SIZE - 2 and 1 <= pixelY <= TILE_SIZE - 2)
 
     def test_a_wall_worn_down_to_zero_hp_shatters_completely_on_the_next_hit(self):
         random.seed(4)
@@ -52,7 +52,7 @@ class WallTypeTests(unittest.TestCase):
     def test_random_points_stay_inside_the_ranges_given(self):
         random.seed(5)
         points = wall.getRandomPoints((2, 5), (7, 9), 50)
-        self.assertTrue(all(2 <= x <= 4 and 7 <= y <= 8 for x, y in points))
+        self.assertTrue(all(2 <= pixelX <= 4 and 7 <= pixelY <= 8 for pixelX, pixelY in points))
 
 
 class OreVeinTests(unittest.TestCase):
@@ -91,18 +91,18 @@ class OreFloorTests(unittest.TestCase):
     """The rare ore floors (ORE_FLOORS) and how a floor's type and veins are picked from them."""
 
     def test_every_ore_floor_spec_is_complete(self):
-        for floorName, spec in wall.ORE_FLOORS.items():
+        for floorName, oreFloor in wall.ORE_FLOORS.items():
             with self.subTest(floorName):
-                self.assertGreaterEqual(spec["first"], 1)
-                self.assertGreater(spec["weight"], 0)
-                self.assertTrue(set(spec["rooms"]) <= {"Stone", "Wood", "Sand", "Gold"})
-                self.assertTrue(all(issubclass(veinClass, wall.OreVein) for veinClass in spec["ores"]))
-                self.assertIsInstance(spec["coal"], bool)
+                self.assertGreaterEqual(oreFloor["first"], 1)
+                self.assertGreater(oreFloor["weight"], 0)
+                self.assertTrue(set(oreFloor["rooms"]) <= {"Stone", "Wood", "Sand", "Gold"})
+                self.assertTrue(all(issubclass(veinClass, wall.OreVein) for veinClass in oreFloor["ores"]))
+                self.assertIsInstance(oreFloor["coal"], bool)
 
     def test_an_ore_floor_never_appears_before_any_of_its_ores_can(self):
-        for floorName, spec in wall.ORE_FLOORS.items():
-            earliestOre = min(wall.VEIN_FIRST_FLOOR[veinClass] for veinClass in spec["ores"])
-            self.assertGreaterEqual(spec["first"], earliestOre, floorName)
+        for floorName, oreFloor in wall.ORE_FLOORS.items():
+            earliestOre = min(wall.VEIN_FIRST_FLOOR[veinClass] for veinClass in oreFloor["ores"])
+            self.assertGreaterEqual(oreFloor["first"], earliestOre, floorName)
 
     def test_metal_lodes_have_coal_and_gem_grottos_do_not(self):
         self.assertTrue(wall.ORE_FLOORS["Iron Lode"]["coal"])

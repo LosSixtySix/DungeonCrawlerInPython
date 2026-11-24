@@ -68,7 +68,7 @@ class ShapeTests(unittest.TestCase):
         self.assertEqual(len(cells), 5)
         self.assertTrue(cells <= wood)
         pointedLeftUp, _ = organizers.gliderShape(-1, -1)
-        self.assertEqual(pointedLeftUp, {(-x, -y) for x, y in cells})
+        self.assertEqual(pointedLeftUp, {(-column, -row) for column, row in cells})
 
     def test_a_margin_adds_every_tile_around_the_shape(self):
         self.assertEqual(len(organizers.withMargin({(0, 0)})), 9)
