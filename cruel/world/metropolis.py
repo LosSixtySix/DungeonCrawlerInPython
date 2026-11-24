@@ -76,12 +76,12 @@ class City:
 def streetLines(size, mustCover):
     """Where streets start along one side of the map (each STREET_WIDTH wide), BLOCK_SIZE apart, the first just
     inside the city wall and the last against the far one. One of them covers mustCover (where you arrive)."""
-    lines, at = [1], 1
+    lines, nextLine = [1], 1
     while True:
-        at += STREET_WIDTH + random.randint(*BLOCK_SIZE)
-        if at + STREET_WIDTH >= size - 1:
+        nextLine += STREET_WIDTH + random.randint(*BLOCK_SIZE)
+        if nextLine + STREET_WIDTH >= size - 1:
             break
-        lines.append(at)
+        lines.append(nextLine)
     lines.append(size - 1 - STREET_WIDTH)
     covering = min(max(1, mustCover if mustCover + 1 < size - 1 else mustCover - 1), size - 1 - STREET_WIDTH)
     if not any(line <= mustCover < line + STREET_WIDTH for line in lines):
