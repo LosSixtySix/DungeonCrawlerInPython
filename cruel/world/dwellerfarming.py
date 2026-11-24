@@ -390,7 +390,7 @@ def layOutField(game, farmer, grubCount):
         return False
     keepOff = dwellerbuilding.plannedTiles(getattr(farmer, "plans", []))
     for pen in dewgrubs.pensOf(farmer):
-        keepOff |= set(pen["inside"]) | set(pen["fence"]) | {pen["gate"]}
+        keepOff |= set(pen["inside"]) | set(pen["fence"]) | {pen["gate"], pen.get("backGate")}
     shaft = dwellerbuilding.shaftOf(game, None)
     for spot, kind in sorted(myFields(game, farmer).items()):
         for near in game.neighbors(spot):
