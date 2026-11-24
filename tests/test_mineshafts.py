@@ -9,6 +9,7 @@ from cruel.core import gamemanager
 from cruel.inventory import items
 from cruel.world import dwellers
 from cruel.world import events
+from cruel.world import expansion
 from cruel.world import metropolis
 from cruel.world import mineshafts
 from cruel.world import wall
@@ -135,12 +136,46 @@ class ClimbingTests(unittest.TestCase):
         game.onEnter()
         self.assertEqual(game.sideFloor[0], "mine")
 
-    def test_a_bomb_never_breaks_a_works_floor(self):
+    def test_a_bomb_can_break_a_works_floor(self):
         game = cityGame()
         climbDown(game, "mine")
-        with mock.patch.object(gamemanager, "FLOOR_BREAK_CHANCE", 1), mock.patch.object(game, "collapseFloor") as collapse:
-            game.land({"landing": support.openTile(game), "effect": "Explosive", "power": 3})
-        collapse.assert_not_called()
+        landing = support.openTile(game)
+        with mock.patch.object(gamemanager, "FLOOR_BREAK_CHANCE", 1):
+            game.land({"landing": landing, "effect": "Explosive", "power": 3})
+        self.assertEqual(game.grid[landing][0], expansion.HOLE)
+
+    def test_falling_through_a_works_floor_lands_on_the_floor_below_its_city(self):
+        game = cityGame()
+        level = game.level
+        cityTiles = len(game.grid)
+        spot = shaftSpot(game, "mine")
+        climbDown(game, "mine")
+        game.currentLocation = [expansion.HOLE, 1]
+        game.fall()
+        self.assertEqual(game.level, level + 1)
+        self.assertIsNone(game.sideFloor)
+        self.assertIsNone(game.cityAside)
+        self.assertNotEqual(game.proportion, metropolis.METROPOLIS)
+        self.assertIn((level, spot), game.floorsAside, "the works floor waits aside")
+        self.assertEqual(game.levelGrids[level][2], metropolis.METROPOLIS, "the city is back at its number")
+        self.assertEqual(len(game.levelGrids[level][0]), cityTiles)
+
+    def test_after_the_fall_the_city_and_its_works_floor_are_still_there(self):
+        game = cityGame()
+        level = game.level
+        spot = shaftSpot(game, "mine")
+        climbDown(game, "mine")
+        hole = support.openTile(game)
+        game.grid[hole] = [expansion.HOLE, 1]
+        game.currentLocation = [expansion.HOLE, 1]
+        game.fall()
+        game.changeLevel(level)
+        self.assertEqual(game.proportion, metropolis.METROPOLIS)
+        self.assertEqual(game.grid[spot][0], metropolis.MINESHAFT, "the city's shaft is untouched")
+        support.placePlayer(game, spot)
+        game.onEnter()
+        self.assertEqual(game.sideFloor[0], "mine")
+        self.assertEqual(game.grid[hole][0], expansion.HOLE, "the works floor kept its hole")
 
     def test_floor_keys_and_labels(self):
         game = cityGame()
