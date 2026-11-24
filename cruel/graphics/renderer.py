@@ -75,7 +75,7 @@ class renderer():
     INV_SCROLL_W = 18       # the inventory's scroll bar, between the slots and the details panel
     INV_ROWS = 2            # rows of slots the inventory shows (more scroll; see gameManager.INVENTORY_ROWS)
     SHOP_ROWS = 3           # rows of slots the Peddler's shop shows (more scroll)
-    COIN = (232, 192, 74)   # prices in the shop
+    COIN_COLOR = (232, 192, 74)  # gold coins and prices in the shop
 
     def __init__(self, win):
         self.win = win
@@ -767,7 +767,7 @@ class renderer():
             pygame.draw.rect(win, select if chosen else boxLine, box, width=1)
             self.blitText(win, name, self.windowSmallFont, select if chosen else muted, tabX + 8, tabY)
             tabX += width + 6
-        self.blitText(win, f"Gold {spec['gold']}", self.windowFont, self.COIN, rect.x + self.PAD + 5 * self.BOX_W, tabY, align="right")
+        self.blitText(win, f"Gold {spec['gold']}", self.windowFont, self.COIN_COLOR, rect.x + self.PAD + 5 * self.BOX_W, tabY, align="right")
 
         gridX, gridY = rect.x + self.PAD, rect.y + self.WINDOW_HEAD + self.ROW + 6
         slots = spec["slots"]
@@ -784,7 +784,7 @@ class renderer():
                 continue
             name, priceText, dim = slots[slotIndex]
             nameColor = muted if dim else (select if selected else body)
-            self.blitText(win, priceText, self.windowSmallFont, muted if dim else self.COIN, box.right - 6, box.y + 12, align="right")
+            self.blitText(win, priceText, self.windowSmallFont, muted if dim else self.COIN_COLOR, box.right - 6, box.y + 12, align="right")
             lines = self.wrapText(name, self.windowSmallFont, box.w - 14)[-2:]
             for lineIndex, line in enumerate(reversed(lines)):
                 self.blitText(win, line, self.windowSmallFont, nameColor, box.x + 8, box.bottom - 16 - lineIndex * 18)
@@ -868,7 +868,7 @@ class renderer():
                     return
                 self.blitText(win, part, font, color, area.x, y)
                 if value:
-                    valueColor = self.COIN if style == "price" else select if style == "row" else muted
+                    valueColor = self.COIN_COLOR if style == "price" else select if style == "row" else muted
                     self.blitText(win, str(value), self.windowSmallFont, valueColor, area.right, y, align="right")
                     value = ""
                 y += 22 if style == "title" else 18
