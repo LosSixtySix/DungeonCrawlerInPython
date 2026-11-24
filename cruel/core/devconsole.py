@@ -83,6 +83,7 @@ class DevConsole():
             "scorched": (self.cmdScorched, "/scorched", "Goes straight to a new Scorched Depths floor (starts a new track)"),
             "patience": (self.cmdPatience, "/patience", "Skips the 5 minute wait: on the first floor's center tile, the floor gives way"),
             "peddler": (self.cmdPeddler, "/peddler", "The Gray Peddler will be on the next new floor"),
+            "metropolis": (self.cmdMetropolis, "/metropolis", "The next new floor is a Metropolis (a city of Dwellers)"),
             "clear": (self.cmdClear, "/clear", "Clears the console"),
         }
         self.aliases = {"additem": "give", "add": "give", "enemies": "enemy", "item": "items", "aggro": "peaceful", "map": "reveal", "seeall": "reveal", "?": "help"}
@@ -392,6 +393,10 @@ class DevConsole():
     def cmdPeddler(self, _args):
         self.gm.peddlerNext = True
         self.write("good", "The Gray Peddler will be on the next new floor. Look for the signpost by the door")
+
+    def cmdMetropolis(self, _args):
+        self.gm.metropolisNext = True
+        self.write("good", "The next new floor is a Metropolis. Take the door down")
 
     def cmdClear(self, _args):
         self.log = []
