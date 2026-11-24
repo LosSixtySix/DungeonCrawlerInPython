@@ -290,7 +290,7 @@ def feedTurn(game, position, farmer, grubs, onlyStarving=False):
     dwellerwork.feed(grub, farmer)
     farmer.grubTarget = None
     if wasGrown:
-        dewgrubs.maybeGiveBirth(game, spot, grub, dewgrubs.pensOf(farmer))
+        dewgrubs.maybeGiveBirth(game, spot, grub)
     return position
 
 
