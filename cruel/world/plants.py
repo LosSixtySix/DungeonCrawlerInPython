@@ -2,7 +2,8 @@ import random
 
 """
 Plants: herbs that grow on the floor and are used in alchemy. Each kind grows on at most two floor types
-(the room's floor: Stone, Wood, Sand or Gold). Wild patches appear on new floors; harvesting one (E, like
+(the room's floor: Stone, Wood, Sand or Gold), and in a Metropolis on two of the city's floors ("cityFloors": Street,
+Yard, House, Shop or Noble, see metropolis.py), so every city floor has something that grows on it. Wild patches appear on new floors; harvesting one (E, like
 a wall) gives its herb and sometimes a seed, and a seed can be planted on the tile you face (By Hand tab).
 
 Growth works like Conway's Game of Life, with some randomness. Every GROW_TURNS turns, for each kind:
@@ -36,25 +37,30 @@ you and by enemies) and whether it blocks sight ("blocksSight"). Standing inside
 walkable and blocks sight hides you: enemies only notice you if they're right next to you.
 """
 
-# id -> name, the two floors it grows on, its herb and seed (material ids), and its sprite colors
+# id -> name, the two floors it grows on (and the two city floors), its herb and seed (material ids), and its sprite colors
 PLANTS = {
     "bloodcap": {"name": "Bloodcap", "floors": ("Stone", "Wood"), "herb": "bloodcap", "seed": "bloodcap_spores",
+                 "cityFloors": ("Street", "House"),
                  "stages": ("harvest", "seed"),
                  "walkable": False, "blocksSight": False,
                  "colors": {"c": (176, 36, 44), "C": (226, 84, 84), "w": (240, 226, 206)}},
     "hearthmoss": {"name": "Hearthmoss", "floors": ("Wood", "Sand"), "herb": "hearthmoss", "seed": "hearthmoss_spores",
+                   "cityFloors": ("Yard", "House"),
                    "stages": ("seed", "harvest"),
                    "walkable": True, "blocksSight": False,
                    "colors": {"c": (70, 132, 58), "C": (132, 196, 92), "s": (52, 96, 44)}},
     "glowcap": {"name": "Glowcap", "floors": ("Stone", "Gold"), "herb": "glowcap", "seed": "glowcap_spores",
+                "cityFloors": ("Street", "Noble"),
                 "stages": ("harvest", "seed"),
                 "walkable": True, "blocksSight": False,
                 "colors": {"c": (214, 200, 96), "C": (255, 246, 176), "s": (150, 140, 110)}},
     "emberroot": {"name": "Emberroot", "floors": ("Sand", "Gold"), "herb": "emberroot", "seed": "emberroot_seed",
+                  "cityFloors": ("Yard", "Shop"),
                   "stages": ("seed", "harvest"),
                   "walkable": False, "blocksSight": True,
                   "colors": {"c": (214, 96, 30), "C": (255, 170, 70), "s": (120, 70, 40)}},
     "shadowfern": {"name": "Shadowfern", "floors": ("Stone", "Wood"), "herb": "shadowfern", "seed": "shadowfern_spores",
+                   "cityFloors": ("Shop", "Noble"),
                    "stages": ("harvest", "seed"),
                    "walkable": True, "blocksSight": True,
                    "colors": {"c": (62, 116, 76), "C": (112, 170, 112), "s": (34, 58, 40)}},
@@ -180,12 +186,21 @@ class Plant():
         return self.walkable and self.blocksSight
 
 
+CITY_FLOORS = ("Street", "Yard", "House", "Shop", "Noble")  # a Metropolis's floors (metropolis.py)
+
+
 def floorOf(i, rooms):
-    """The floor type of a tile (the same rule the renderer uses to color floors)."""
-    for room in ("Stone", "Wood", "Gold", "Molten"):
+    """The floor type of a tile (the same rule the renderer uses to color floors): a cave room, a city room, or
+    Sand if it's in none."""
+    for room in ("Stone", "Wood", "Gold", "Molten") + CITY_FLOORS:
         if i in rooms.get(room, ()):
             return room
     return "Sand"
+
+
+def growsOn(kind, floor):
+    """Can this kind grow on this floor type (one of its cave floors, or one of its city floors)?"""
+    return floor in PLANTS[kind]["floors"] or floor in PLANTS[kind].get("cityFloors", ())
 
 
 def isConway(kind):
@@ -194,11 +209,11 @@ def isConway(kind):
 
 def wildKinds(floor=None):
     """The kinds that grow in wild patches (on this floor type, if given)."""
-    return [k for k, info in PLANTS.items() if info.get("wild", True) and (floor is None or floor in info["floors"])]
+    return [k for k, info in PLANTS.items() if info.get("wild", True) and (floor is None or growsOn(k, floor))]
 
 
 def canGrow(kind, i, grid, rooms):
-    return i in grid and grid[i][0] == 0 and floorOf(i, rooms) in PLANTS[kind]["floors"]
+    return i in grid and grid[i][0] == 0 and growsOn(kind, floorOf(i, rooms))
 
 
 def around(i, rowLength, grid):
@@ -258,7 +273,7 @@ def step(grid, rooms, rowLength, birth=1.0, death=DEATH_CHANCE, corrupt=False, n
         if plant.planted:
             continue
         invaders = [k for k in TAKES_OVER if plant.kind in TAKES_OVER[k] and counts.get((i, k), 0) >= TAKEOVER_NEIGHBORS
-                    and floorOf(i, rooms) in PLANTS[k]["floors"]]
+                    and growsOn(k, floorOf(i, rooms))]
         random.shuffle(invaders)
         for k in invaders:
             if random.random() < TAKEOVER_CHANCE:
@@ -294,7 +309,7 @@ def growPatch(grid, rooms, rowLength, start, kind, avoid=()):
 def addPatch(grid, rooms, rowLength, kind=None, avoid=()):
     """One wild patch somewhere it can grow (of this kind, or any kind). Returns how many were placed."""
     floors = [i for i, tile in grid.items() if tile[0] == 0 and i not in avoid
-              and (kind is None or floorOf(i, rooms) in PLANTS[kind]["floors"])]
+              and (kind is None or growsOn(kind, floorOf(i, rooms)))]
     for _ in range(6):  # a few tries, in case a spot has no room around it
         if not floors:
             return 0
@@ -351,6 +366,8 @@ def plantDescription(kind):
     info = PLANTS[kind]
     floors = " and ".join(info["floors"])
     text = f"Grows on {floors} floor{'s' if len(info['floors']) > 1 else ''}, {traits(kind)}"
+    if "cityFloors" in info:
+        text += f"; in a city, on {' and '.join(info['cityFloors'])} floors"
     text += f". {info['note']}" if "note" in info else ""
     first, second = ("herbs" if s == "harvest" else "seeds" for s in info["stages"])
     text += f". Planted, it gives {first}, then {second}"

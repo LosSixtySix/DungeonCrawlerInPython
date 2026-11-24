@@ -9,6 +9,7 @@ from unittest import mock
 
 from cruel.core import gamemanager
 from cruel.entities import enemies
+from cruel.inventory import recipes
 from cruel.inventory import relics
 from cruel.world import dwellers
 from cruel.world import events
@@ -94,8 +95,7 @@ class CityLayoutTests(unittest.TestCase):
                     and spot % ROW_LENGTH not in (0,) and any(abs(spot - insideSpot) in (1, ROW_LENGTH) for insideSpot in inside)]
             self.assertEqual(gaps, [door])
             outside = [spot for spot in metropolis.neighborsOf(self.city, door) if spot not in inside]
-            open = self.city.rooms[metropolis.STREET] | self.city.rooms[metropolis.YARD]
-            self.assertTrue(any(spot in open for spot in outside), "the door opens onto a road or a yard")
+            self.assertTrue(any(spot in self.city.rooms[metropolis.STREET] for spot in outside), "the door opens onto a street")
 
     def test_three_to_five_shops_each_a_different_kind(self):
         for seed in range(15):
@@ -104,11 +104,41 @@ class CityLayoutTests(unittest.TestCase):
             self.assertTrue(3 <= len(kinds) <= 5)
             self.assertEqual(len(set(kinds)), len(kinds))
 
-    def test_roads_are_street_and_the_ground_between_buildings_is_yard(self):
+    def test_roads_are_street_and_the_rock_between_buildings_is_yard(self):
         self.assertEqual(self.city.rooms[metropolis.STREET] & self.city.rooms[metropolis.YARD], set())
         for spot in self.city.rooms[metropolis.STREET]:
             self.assertIn(spot, self.city.roads)
         self.assertGreater(len(self.city.rooms[metropolis.YARD]), 100)
+        for spot in self.city.rooms[metropolis.YARD]:
+            self.assertIsInstance(self.city.grid[spot][2], wall.StoneWall)
+
+    def test_the_city_is_rock_with_the_roads_carved_out(self):
+        for seed in range(6):
+            city = newCity(seed)
+            buildingTiles = set()
+            for building in city.buildings:
+                buildingTiles |= building.tiles
+            for spot, tile in city.grid.items():
+                column, row = spot % ROW_LENGTH, spot // ROW_LENGTH
+                if not city.inside(column, row) or spot in buildingTiles:
+                    continue
+                if spot in city.roads:
+                    self.assertNotEqual(tile[0], WALL, "a road is open")
+                else:
+                    self.assertEqual(tile[0], WALL, "everything off the roads is rock")
+                    self.assertIsInstance(tile[2], wall.StoneWall)
+
+    def test_every_door_has_a_doorstep_carved_to_the_road(self):
+        for seed in range(6):
+            city = newCity(seed)
+            for building in city.buildings:
+                outside = [near for near in metropolis.neighborsOf(city, building.door) if near not in building.tiles]
+                self.assertTrue(any(near in city.roads for near in outside), "the step outside the door is road")
+
+    def test_digging_out_the_rock_leaves_yard_ground(self):
+        game = cityGame()
+        rock = next(spot for spot in game.rooms[metropolis.YARD] if game.grid[spot][0] == WALL)
+        self.assertEqual(plants.floorOf(rock, game.rooms), metropolis.YARD)
 
     def test_the_rooms_do_not_overlap(self):
         rooms = [self.city.rooms[room] for room in (metropolis.STREET, metropolis.YARD, metropolis.HOUSE, metropolis.SHOP, metropolis.NOBLE)]
@@ -328,6 +358,40 @@ class CityEventTests(unittest.TestCase):
             game.enemyTurn()
         self.assertGreater(self.plantCount(game), 0)
 
+    def test_plants_grow_on_every_city_floor(self):
+        for floor in plants.CITY_FLOORS:
+            self.assertTrue(plants.wildKinds(floor), f"nothing grows on {floor}")
+
+    def test_overgrowth_plants_can_sprout_anywhere_in_the_city(self):
+        game = cityGame()
+        self.startSoon(game, "overgrowth")
+        for _ in range(40):
+            game.enemyTurn()
+        floors = {plants.floorOf(spot, game.rooms) for spot, tile in game.grid.items() if tile[0] == 8}
+        self.assertTrue(floors)
+        self.assertLessEqual(floors, set(plants.CITY_FLOORS), "they grow on the city's floors")
+
+    def test_you_can_plant_a_street_seed_on_a_street_but_not_another(self):
+        game = cityGame()
+        street = next(spot for spot in game.rooms[metropolis.STREET] if game.grid[spot][0] == FLOOR
+                      and spot != game.playerPositionFlat)
+        game.PlayerLookPosition = street
+        recipesById = {recipe.id: recipe for recipe in recipes.RECIPES}
+        for kind in ("bloodcap", "hearthmoss"):
+            game.player.addMaterial(plants.PLANTS[kind]["seed"], 1)
+        self.assertIsNone(game.craftProblem(recipesById["plant_bloodcap"]))
+        self.assertEqual(game.craftProblem(recipesById["plant_hearthmoss"]), "it only grows on Yard or House floors")
+
+    def test_which_kinds_can_grow_on_a_street(self):
+        game = cityGame()
+        street = next(spot for spot in game.rooms[metropolis.STREET] if game.grid[spot][0] == FLOOR
+                      and spot not in (game.playerPositionFlat,))
+        streetKind = next(kind for kind in plants.PLANTS if plants.growsOn(kind, metropolis.STREET))
+        yardOnlyKind = next(kind for kind in plants.PLANTS if not plants.growsOn(kind, metropolis.STREET)
+                            and plants.PLANTS[kind].get("cityFloors"))
+        self.assertTrue(plants.canGrow(streetKind, street, game.grid, game.rooms))
+        self.assertFalse(plants.canGrow(yardOnlyKind, street, game.grid, game.rooms))
+
     def test_overgrowth_on_a_floor_that_has_plants_plants_no_more(self):
         random.seed(5)
         game = support.newGame(level=1)
@@ -421,6 +485,11 @@ class LookTests(unittest.TestCase):
     def test_other_themes_color_city_rooms_like_stone(self):
         stoneTheme = themes.randomTheme("Mostly Stone")
         self.assertEqual(stoneTheme.colors["floorStreet"], stoneTheme.colors["floorStone"])
+
+    def test_the_rock_is_drawn_and_dug_like_any_floors_stone(self):
+        game = cityGame()
+        rock = next(spot for spot in game.rooms[metropolis.YARD] if game.grid[spot][0] == WALL)
+        self.assertEqual(game.grid[rock][2].name, wall.StoneWall().name)
 
     def test_city_walls_give_stone(self):
         random.seed(1)
@@ -543,6 +612,15 @@ class LightTests(unittest.TestCase):
         game.change = True
         game.setPositionsVisible()
         game.draw()  # (and it's drawn over you)
+
+    def test_lamp_posts_only_stand_in_open_road_so_they_never_block_the_way(self):
+        for seed in range(10):
+            city = newCity(seed)
+            for spot, tile in city.grid.items():
+                if tile[0] == metropolis.STREET_LIGHT:
+                    for stepColumn in (-1, 0, 1):
+                        for stepRow in (-1, 0, 1):
+                            self.assertIn(spot + stepColumn + stepRow * ROW_LENGTH, city.roads)
 
     def test_lamp_posts_stand_round_the_plaza(self):
         for lamp in self.city.grid:
