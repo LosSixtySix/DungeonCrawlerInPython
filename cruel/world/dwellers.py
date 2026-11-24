@@ -25,6 +25,13 @@ clear line of sight to the spot (the one you hurt always knows). If nobody sees 
     from you to run to) it fights back instead. FORGIVE_TURNS after it last saw you, it calms down.
   - A hostile guard, one that saw it or was told, hunts you: to where you were last seen, then after you while it
     sees you. Guards never calm down.
+
+Enemies of the city. Every Dweller is always hostile to every monster that isn't a Dweller or the Gray Peddler
+(isCityEnemy): goblins of any faction (neutral ones too) or none, and anything else. Only guards hunt and kill
+them: a guard goes after any enemy it can see, or one it has been told about. A citizen, noble or merchant that sees
+an enemy runs to the nearest guard and, within TELL_REACH, tells it where the enemy is (then goes back to its day);
+with no guard left, it runs away from the enemy. Only when it's cornered by one (the enemy beside it, no free tile
+further away) does it fight back. None of this turns the city against you.
 """
 
 IDLE_CHANCE = 0.4           # a calm Dweller stands still this often
@@ -214,8 +221,103 @@ def attitudeLabel(enemy):
 
 # ---------------------------------------------------------------- a turn
 
+def isCityEnemy(enemy):
+    """Is this a monster the Dwellers are always hostile to: anything but a Dweller or the Gray Peddler (every
+    goblin included, a neutral faction's too)?"""
+    return enemy is not None and not isDweller(enemy) and not getattr(enemy, "merchant", False)
+
+
+def isGoblin(enemy):
+    """Any goblin: a faction's (neutral or not) or a wild one, builders and farmers included."""
+    return getattr(enemy, "name", "").startswith("Goblin")
+
+
+def enemyBeside(game, position):
+    """(position, enemy) of an enemy of the city right beside position, or None."""
+    for spot in game.neighbors(position):
+        tile = game.grid[spot]
+        if tile[0] == 5 and len(tile) > 2 and isCityEnemy(tile[2]):
+            return spot, tile[2]
+    return None
+
+
+def enemyInSight(game, position, dweller):
+    """(position, enemy) of the nearest enemy of the city this Dweller can see, or None."""
+    seen = []
+    for spot in set(game.EnemyPositions) | getattr(game, "movedEnemies", set()):
+        tile = game.grid.get(spot)
+        if tile and tile[0] == 5 and len(tile) > 2 and isCityEnemy(tile[2]) and canSee(game, position, dweller, spot):
+            seen.append((distance(game, position, spot), spot, tile[2]))
+    if not seen:
+        return None
+    _, spot, enemy = min(seen, key=lambda found: found[0])
+    return spot, enemy
+
+
+def guardAgainstEnemies(game, position, guard):
+    """A guard against the city's enemies: it hits one beside it, heads for one it can see, or goes to where it was
+    told one is. (A guard hunting you deals with you first.) Returns where it ends up, or None if there's nothing
+    for it to do."""
+    huntingYou = guard.hostile and (guard.sawYouAt is not None or besideYou(game, position))
+    if huntingYou:
+        return None
+    beside = enemyBeside(game, position)
+    if beside is not None:
+        enemySpot, enemy = beside
+        expansion.attack(game, position, guard, enemy, enemySpot)  # (it fights back)
+        return position
+    seen = enemyInSight(game, position, guard)
+    if seen is not None:
+        guard.enemyAt = None  # it's found it
+        return stepToward(game, position, seen[0], pushPast=True)
+    toldOf = getattr(guard, "enemyAt", None)
+    if toldOf is not None:
+        if distance(game, position, toldOf) <= 1:
+            guard.enemyAt = None  # nothing there now
+            return position
+        return stepToward(game, position, toldOf, pushPast=True)
+    return None
+
+
+def raiseTheAlarm(game, position, dweller):
+    """A citizen, noble or merchant against the city's enemies: cornered by one, it fights back; seeing one, it
+    runs to the nearest guard to tell it where (or, with no guard left, away from the enemy). Returns where it ends
+    up, or None if it has no enemy to deal with."""
+    beside = enemyBeside(game, position)
+    if beside is not None and corneredBy(game, position, beside[0]):
+        expansion.attack(game, position, dweller, beside[1], beside[0])
+        return position
+    seen = enemyInSight(game, position, dweller)
+    if seen is not None:
+        dweller.enemyAt = seen[0]  # what it will tell a guard
+    enemyAt = getattr(dweller, "enemyAt", None)
+    if enemyAt is None:
+        return None
+    found = nearestGuard(game, position)
+    if found is None:
+        return stepAwayFrom(game, position, enemyAt)
+    guardSpot, guard = found
+    if distance(game, position, guardSpot) <= TELL_REACH:
+        if getattr(guard, "enemyAt", None) is None:
+            game.addPopup("!", guardSpot)
+        guard.enemyAt = enemyAt
+        dweller.enemyAt = None  # told: back to its day
+        return position
+    return stepToward(game, position, guardSpot)
+
+
+def dealWithEnemies(game, position, dweller):
+    """Guards fight the city's enemies; everyone else raises the alarm. None if there's nothing to deal with."""
+    if dweller.role == "guard":
+        return guardAgainstEnemies(game, position, dweller)
+    return raiseTheAlarm(game, position, dweller)
+
+
 def takeTurn(game, position, dweller):
     """One action for the Dweller at position (already lifted off its tile). Returns where it ends up."""
+    dealtWith = dealWithEnemies(game, position, dweller)
+    if dealtWith is not None:
+        return dealtWith
     if not dweller.hostile:
         return calmTurn(game, position, dweller)
     noticeYou(game, position, dweller)
@@ -232,13 +334,19 @@ def besideYou(game, position):
     return not game.peaceful and game.playerPositionFlat in game.neighbors(position)
 
 
-def cornered(game, position):
-    """Is a fleeing Dweller cornered: beside you, with no free tile further from you to run to?"""
-    if not besideYou(game, position):
+def corneredBy(game, position, threatSpot):
+    """Is a Dweller at position cornered by whatever is on threatSpot: right beside it, with no free tile further
+    from it to run to?"""
+    if threatSpot not in game.neighbors(position):
         return False
-    here = distance(game, position, game.playerPositionFlat)
-    return not any(organizers.passable(game.grid[spot]) and distance(game, spot, game.playerPositionFlat) > here
+    here = distance(game, position, threatSpot)
+    return not any(organizers.passable(game.grid[spot]) and distance(game, spot, threatSpot) > here
                    for spot in game.neighbors(position))
+
+
+def cornered(game, position):
+    """Is a fleeing Dweller cornered by you?"""
+    return besideYou(game, position) and corneredBy(game, position, game.playerPositionFlat)
 
 
 def nearestGuard(game, position):
@@ -247,15 +355,20 @@ def nearestGuard(game, position):
     return min(guards, key=lambda found: distance(game, position, found[0])) if guards else None
 
 
-def stepAway(game, position):
-    """One step to the free tile furthest from you (a Dweller with no guard to run to)."""
+def stepAwayFrom(game, position, threatSpot):
+    """One step to the free tile furthest from threatSpot (a Dweller with no guard to run to)."""
     away = [spot for spot in game.neighbors(position) if organizers.passable(game.grid[spot])]
     if not away:
         return position
-    best = max(away, key=lambda spot: distance(game, spot, game.playerPositionFlat))
-    if distance(game, best, game.playerPositionFlat) <= distance(game, position, game.playerPositionFlat):
+    best = max(away, key=lambda spot: distance(game, spot, threatSpot))
+    if distance(game, best, threatSpot) <= distance(game, position, threatSpot):
         return position
     return organizers.moveTo(game, position, best)
+
+
+def stepAway(game, position):
+    """One step to the free tile furthest from you."""
+    return stepAwayFrom(game, position, game.playerPositionFlat)
 
 
 def fleeTurn(game, position, dweller):
