@@ -4,13 +4,13 @@ import random
 
 import pygame
 
-import paths
-from music.clausthy_loop import LoopingMusic
-from music.clausthy_sfx import SoundVariations
+from cruel.core import paths
+from cruel.audio.clausthy_loop import LoopingMusic
+from cruel.audio.clausthy_sfx import SoundVariations
 
 """
-Music and sound effects. The music was made in Clausthy's Loop Studio and is played by music/clausthy_loop.py; the
-sound effects come from Clausthy's SFX Lab and are played by music/clausthy_sfx.py (a random variation
+Music and sound effects. The music was made in Clausthy's Loop Studio and is played by cruel/audio/clausthy_loop.py; the
+sound effects come from Clausthy's SFX Lab and are played by cruel/audio/clausthy_sfx.py (a random variation
 each time, so repeats don't sound robotic).
 
   - The title screen plays the menu theme: its intro once, then the loop forever with no gap.

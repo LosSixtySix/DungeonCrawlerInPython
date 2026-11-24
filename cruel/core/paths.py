@@ -5,8 +5,9 @@ import sys
 """
 Where the game finds its files.
 
-resourcePath(): read-only files that ship with the game (the font). When running from a PyInstaller
-build they are inside the build's _internal folder (sys._MEIPASS); from source they sit next to this file.
+resourcePath(): read-only files that ship with the game (assets/ and music/), named relative to the repo root.
+When running from a PyInstaller build they are inside the build's _internal folder (sys._MEIPASS); from
+source they are in the repo root (two folders up from this file, which is in cruel/core/).
 
 savePath(): files the game writes while you play (save game, settings, attempts, menu options).
 They go in %APPDATA%\\CRUEL on Windows (~/.local/share/CRUEL elsewhere), so they are kept no matter
@@ -16,7 +17,7 @@ where the game is launched from, and survive replacing the game folder with a ne
 GAME_NAME = "CRUEL"
 SAVED_FILES = ["savegame.pkl", "settings.json", "attempts.json", "menuOpts.txt"]
 
-_SOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
+_SOURCE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # the repo root
 _RESOURCE_DIR = getattr(sys, "_MEIPASS", _SOURCE_DIR)
 
 
@@ -37,7 +38,7 @@ def savePath(name):
 
 
 def _setUpSaveDir():
-    """Make the save folder. The first time, copy over any saves left next to the source files
+    """Make the save folder. The first time, copy over any saves left in the repo root
     by older versions of the game (they used to be written to the current folder)."""
     os.makedirs(SAVE_DIR, exist_ok=True)
     for name in SAVED_FILES:

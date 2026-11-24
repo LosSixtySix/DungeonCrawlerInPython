@@ -1,12 +1,12 @@
 import math
 import random as rand
 
-import enemies
-import loot
-import organizers
-import plants
-import resources
-import wall
+from cruel.entities import enemies
+from cruel.inventory import loot
+from cruel.world import organizers
+from cruel.world import plants
+from cruel.inventory import resources
+from cruel.world import wall
 
 """
 The Expansion event: a goblin war band (a Goblin Chief, 2 Goblins and 3 Goblin Builders, see WARBAND) turns up somewhere out of

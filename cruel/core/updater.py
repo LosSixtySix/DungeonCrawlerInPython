@@ -6,7 +6,7 @@ import tempfile
 import threading
 import urllib.request
 
-from version import VERSION
+from cruel.core.version import VERSION
 
 """
 Self-update over Tailscale.

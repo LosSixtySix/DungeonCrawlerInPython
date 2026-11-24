@@ -3,14 +3,14 @@
 #   .\distribution\release.ps1                  bump the patch number (0.1.0 -> 0.1.1)
 #   .\distribution\release.ps1 -Version 0.2.0   set the version yourself
 #
-# Afterwards commit version.py, so the source matches what was released.
+# Afterwards commit cruel\core\version.py, so the source matches what was released.
 
 param([string]$Version)
 
 $ErrorActionPreference = 'Stop'
 $Repo = Split-Path $PSScriptRoot
 $Release = Join-Path $Repo 'release'  # served by: tailscale serve --service=svc:cruel --http=80 <this folder>
-$VersionPy = Join-Path $Repo 'version.py'
+$VersionPy = Join-Path $Repo 'cruel\core\version.py'
 
 # Work out the new version
 $source = Get-Content $VersionPy -Raw
@@ -40,4 +40,4 @@ Copy-Item (Join-Path $PSScriptRoot 'install.ps1') $Release -Force
 
 Write-Host "Published CRUEL v$Version to $Release" -ForegroundColor Green
 Write-Host 'Players get it the next time they open the game (or run the install command).'
-Write-Host 'Remember to commit version.py.'
+Write-Host 'Remember to commit cruel\core\version.py.'

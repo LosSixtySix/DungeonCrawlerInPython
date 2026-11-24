@@ -1,6 +1,6 @@
-import items
-import resources
-import relics
+from cruel.inventory import items
+from cruel.inventory import resources
+from cruel.inventory import relics
 import random
 import math
 import copy

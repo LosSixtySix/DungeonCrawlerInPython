@@ -42,8 +42,8 @@ Once they've all updated, remove that grant and the old serve.
 .\distribution\release.ps1 -Version 0.2.0  # pick the number yourself
 ```
 
-It bumps `version.py`, builds with PyInstaller, then puts `CRUEL.zip`, `install.ps1` and `version.json` in
-`release\`. Commit `version.py` afterwards.
+It bumps `cruel\core\version.py`, builds with PyInstaller, then puts `CRUEL.zip`, `install.ps1` and `version.json` in
+`release\`. Commit `cruel\core\version.py` afterwards.
 
 ## What players do
 

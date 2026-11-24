@@ -1,8 +1,8 @@
 import math
 import random
 import pygame
-import plants
-import themes
+from cruel.world import plants
+from cruel.world import themes
 
 """
 10x10 pictures for chests and doors, drawn top-down in the "Crypt" style.

@@ -1,6 +1,6 @@
 import json
 import datetime
-import paths
+from cruel.core import paths
 
 """
 A history of every run that ended in death, kept in attempts.json so it survives between games.

@@ -1,8 +1,8 @@
 import random
 
-import plants
-import relics
-import resources
+from cruel.world import plants
+from cruel.inventory import relics
+from cruel.inventory import resources
 
 """
 Every drop chance in one place. The game rolls drops from these tables, and the in-game Loot Table window

@@ -1,6 +1,6 @@
 import random
 
-import items
+from cruel.inventory import items
 
 """
 Relics: rare items that can only be found, never crafted. Each one has a relic power, a special effect no
