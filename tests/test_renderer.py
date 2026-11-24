@@ -10,8 +10,11 @@ import pygame
 from cruel.core import gamemanager
 from cruel.graphics import renderer
 from cruel.world import metropolis
+from cruel.world import plants
 from cruel.world import themes
+from tests import support
 from tests.support import newGame
+from tests.test_mineshafts import cityGame, shaftSpot
 
 # Every floor type's themes but the Scorched Depths (those have their own tests)
 FLOOR_TYPES = [floorType for floorType in themes.THEMES if floorType != "Scorched Depths"]
@@ -213,6 +216,42 @@ class PlayingFrameTests(unittest.TestCase):
         with mock.patch.object(renderer.renderer, "plantPicture", wraps=game.painter.plantPicture) as plantPicture:
             game.draw()  # (a mineshaft has a kind, like a plant: it used to be drawn as one, and that crashed)
         plantPicture.assert_not_called()
+
+    def test_neither_end_of_either_mineshaft_is_ever_drawn_as_a_plant(self):
+        game = self.game
+        for kind in metropolis.WORKS:
+            for down in (True, False):
+                game.grid[game.playerPositionFlat] = [1, 1, metropolis.Mineshaft(kind, down)]
+                with mock.patch.object(renderer.renderer, "plantPicture", wraps=game.painter.plantPicture) as plantPicture:
+                    game.draw()
+                plantPicture.assert_not_called()
+
+    def test_walking_onto_a_citys_mineshafts_and_the_shafts_up_from_their_floors(self):
+        """The real thing: a Metropolis's shafts, and the ends of them on the mine and the farm."""
+        for kind in metropolis.WORKS:
+            game = cityGame(3)
+            game.setPositionsVisible()
+            for climb in (False, True):
+                if climb:
+                    game.onEnter()  # (down the shaft: you arrive standing on the shaft back up)
+                    self.assertEqual(game.currentLocation[0], metropolis.MINESHAFT)
+                else:
+                    support.placePlayer(game, shaftSpot(game, kind))
+                game.grid[game.playerPositionFlat] = list(game.currentLocation)  # (as the game loop leaves it: what
+                game.grid[game.playerPositionFlat][0] = 1                         # you stand on stays on your tile)
+                drawnAsPlants = []
+                original = game.painter.plantPicture
+                with mock.patch.object(game.painter, "plantPicture",
+                                       side_effect=lambda plant: drawnAsPlants.append(plant) or original(plant)):
+                    game.draw()
+                self.assertFalse([thing for thing in drawnAsPlants if not isinstance(thing, plants.Plant)], (kind, climb))
+
+    def test_a_plant_you_stand_in_is_still_drawn_over_you(self):
+        game = self.game
+        game.grid[game.playerPositionFlat] = [1, 1, plants.Plant.grown("bloodcap")]
+        with mock.patch.object(renderer.renderer, "plantPicture", wraps=game.painter.plantPicture) as plantPicture:
+            game.draw()
+        plantPicture.assert_called()
 
     def test_every_floor_theme_draws(self):
         game = self.game
