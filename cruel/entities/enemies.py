@@ -108,6 +108,7 @@ class Dweller(Enemy):
         self.toldGuard = False    # a citizen, noble or merchant that has told a guard (it goes home and hides)
         self.lastSawYou = 0       # the turn it last saw you (a hostile one calms down FORGIVE_TURNS after)
         self.sawYouAt = None      # where it last saw you (what it tells a guard)
+        self.enemyAt = None       # where it saw an enemy of the city: a guard heads there, anyone else tells a guard
 
 
 class DwellerCitizen(Dweller):
