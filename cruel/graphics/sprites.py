@@ -223,6 +223,61 @@ SIGNPOST = [
 SIGNPOST_COLORS = {"w": (138, 100, 60), "W": (168, 124, 76), "y": (232, 192, 74), "p": (110, 80, 50), "r": (154, 157, 166)}
 PEDDLER_STONE_COLOR = (86, 92, 104)  # the Peddler's room walls: cold blue-gray, the same on every floor
 
+# The Metropolis's Dwellers (metropolis.py), drawn on their design sheet: upright insectoids seen from above, a big
+# chitin head and shell, mandibles at the front (facing down), antennae out to the sides, and each role's gear.
+DWELLER_CITIZEN = [
+    "..........",
+    "..kkkkkk..",
+    ".kjjjjjjk.",
+    "akjjjjjjka",
+    "akkhhhhkka",
+    "akkhhhhkka",
+    ".akhhhhka.",
+    ".nkjhhjkn.",
+    "n..jkkj..n",
+    "..........",
+]
+DWELLER_CITIZEN_COLORS = {"a": (90, 68, 40), "h": (106, 80, 48), "j": (58, 42, 22), "n": (122, 90, 52)}
+DWELLER_NOBLE = [
+    "..kkkkkk..",
+    ".kphhhhpk.",
+    "kpkhhhhkpk",
+    "akpkhhkpka",
+    "akkhhhhkka",
+    "akkPPPPkka",
+    ".ajjjjjka.",
+    ".nkjVVjkn.",
+    "n.kjvvjk.n",
+    "...jkkj...",
+]
+DWELLER_NOBLE_COLORS = {"P": (138, 90, 192), "V": (176, 122, 224), "a": (74, 48, 88), "h": (90, 58, 106), "j": (42, 26, 52), "n": (106, 74, 128), "p": (90, 58, 138), "v": (122, 74, 176)}
+DWELLER_GUARD = [
+    "..........",
+    "..kkkkkk..",
+    ".khhhhhhk.",
+    "akhhhhhhk.",
+    "akkhhhhkk.",
+    "akkjhhjkk.",
+    ".akjjjjka.",
+    ".nkjMMjkn.",
+    "n.jjkkjjn.",
+    "..j....j..",
+]
+DWELLER_GUARD_COLORS = {"M": (168, 178, 194), "a": (58, 66, 78), "h": (58, 66, 78), "j": (30, 34, 40), "n": (74, 82, 96)}
+DWELLER_MERCHANT = [
+    "..........",
+    "..kkkkkk..",
+    ".kbByyBbk.",
+    "akbhhhhbka",
+    "akkhhhhkka",
+    "akkhhhhkka",
+    ".akjhhjka.",
+    ".nkjEEjkn.",
+    "n..jkkj..n",
+    "....jj....",
+]
+DWELLER_MERCHANT_COLORS = {"B": (138, 100, 58), "E": (122, 176, 74), "a": (58, 74, 40), "b": (106, 74, 42), "h": (74, 90, 48), "j": (34, 48, 26), "n": (90, 106, 58), "y": (242, 192, 64)}
+
 # Expansion factions: the Goblin, Goblin Chieftain and Goblin Builder pictures in each faction's colors (only cloth
 # and armor change). Ids match expansion.LOOKS.
 EXPANSION_LOOKS = {
@@ -290,6 +345,10 @@ ENEMY_SPRITES = {
     "Goblin Builder": (GOBLIN_BUILDER, GOBLIN_BUILDER_COLORS),
     "Goblin Farmer": (GOBLIN_FARMER, GOBLIN_FARMER_COLORS),
     "The Gray Peddler": (GRAY_PEDDLER, GRAY_PEDDLER_COLORS),
+    "Dweller Citizen": (DWELLER_CITIZEN, DWELLER_CITIZEN_COLORS),
+    "Dweller Noble": (DWELLER_NOBLE, DWELLER_NOBLE_COLORS),
+    "Dweller Guard": (DWELLER_GUARD, DWELLER_GUARD_COLORS),
+    "Dweller Merchant": (DWELLER_MERCHANT, DWELLER_MERCHANT_COLORS),
     **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
        for pattern, emblem in ORGANIZER_EMBLEMS.items()},
 }

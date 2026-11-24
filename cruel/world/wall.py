@@ -82,6 +82,41 @@ class PeddlerWall(Wall):
         self.soft = False
 
 
+class CityBuildingWall(Wall):
+    """A wall of a Metropolis building (metropolis.py). Each kind is named after the room it closes in (the renderer
+    colors a wall by the first word of its name), and is ordinary stone to dig. Breaking one where a Dweller can see
+    is a hostile act."""
+    ROOM = "House"
+
+    def __init__(self):
+        super().__init__()
+        self.name = f"{self.ROOM} Wall"
+        self.hp = 40
+        self.hardness = 5
+        self.soft = False
+
+
+class HouseWall(CityBuildingWall):
+    ROOM = "House"
+
+
+class ShopWall(CityBuildingWall):
+    ROOM = "Shop"
+
+
+class NobleWall(CityBuildingWall):
+    ROOM = "Noble"
+
+
+class CityWall(CityBuildingWall):
+    """The wall round the whole city: twice as thick as a building's."""
+    ROOM = "City"
+
+    def __init__(self):
+        super().__init__()
+        self.hp = 80
+
+
 # ---------------------------------------------------------------- ore veins
 # Veins are walls with ore in them. They're drawn in the room's own wall color with flecks of a fixed ore
 # color. Any pick can mine any vein; harder veins just take more swings (hardness caps damage per hit).

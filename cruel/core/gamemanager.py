@@ -21,6 +21,8 @@ from cruel.world import plants
 from cruel.world import organizers
 from cruel.world import expansion
 from cruel.world import peddler
+from cruel.world import metropolis
+from cruel.world import dwellers
 from cruel.core import devconsole
 from cruel.core import updater
 from cruel.audio import sound
@@ -429,6 +431,7 @@ class gameManager():
         self.shopScroll = 0       # the shop grid's top row in view
         self.shopMessage = ""     # what the last buy or sell did
         self.peddlerNext = False  # developer console /peddler: the next new floor gets him
+        self.metropolisNext = False  # developer console /metropolis: the next new floor is a city
         self.cycleHeld = False
         self.cycleUsed = False
         self.drag = None
@@ -2337,7 +2340,7 @@ class gameManager():
         if self.newFloorMotherlode:
             self.motherlodes.add(self.level)
         self.deepest = max(self.deepest, self.level)
-        event = events.roll(self.level)
+        event = events.roll(self.level) if self.proportion != metropolis.METROPOLIS else None  # (a city stays calm)
         if event:
             self.floorEvents[self.level] = event
         if upDoor:
@@ -2353,7 +2356,7 @@ class gameManager():
         """By chance (peddler.APPEAR_CHANCE) a brand-new floor gets the Gray Peddler: his room somewhere away from
         you, and a signpost beside where you arrive. Nothing else says he's here. Never on the Scorched Depths."""
         forced, self.peddlerNext = getattr(self, "peddlerNext", False), False
-        if self.proportion == SCORCHED or self.level < peddler.FIRST_FLOOR:
+        if self.proportion in (SCORCHED, metropolis.METROPOLIS) or self.level < peddler.FIRST_FLOOR:
             return
         if not forced and rand.random() >= peddler.APPEAR_CHANCE:
             return
@@ -2370,7 +2373,7 @@ class gameManager():
 
     def floorSubtitle(self):
         """The second line of the "Floor N" message: the theme, plus the floor type on an ore floor."""
-        if self.proportion in wall.ORE_FLOORS:
+        if self.proportion in wall.ORE_FLOORS or self.proportion == metropolis.METROPOLIS:
             return f"{self.floorTypeName()}  -  {self.theme.name}"
         return self.theme.name
 
@@ -2408,9 +2411,11 @@ class gameManager():
         R = self.rowLength
         px, py = self.playerPositionFlat % R, self.playerPositionFlat // R
         radius = self.doorRadius()
+        streets = self.rooms.get(metropolis.STREET) if self.proportion == metropolis.METROPOLIS else None  # a city's is on a street
         while True:
             spots = [i for i in range(self.numberOfSpots) if i != self.playerPositionFlat and self.grid[i][0] in (0, 2)
-                     and (i % R - px) ** 2 + (i // R - py) ** 2 <= radius * radius]
+                     and (i % R - px) ** 2 + (i // R - py) ** 2 <= radius * radius
+                     and (streets is None or (i in streets and self.grid[i][0] == 0))]
             if spots:
                 break
             radius += DOOR_RADIUS_GROWTH  # nowhere in range (shouldn't happen): look further out
@@ -2465,6 +2470,8 @@ class gameManager():
         return i // self.rowLength == j // self.rowLength
 
     def generateNewLevel(self, addStartingItem=False, depth=0):
+        if depth > 0 and self.cityNext(depth):
+            return self.generateMetropolis()
         grid = {}
         ListOfEnemyPositions = set()
         for i in range(self.numberOfSpots):
@@ -2523,6 +2530,22 @@ class gameManager():
             clusters = int(expected) + (1 if rand.random() < expected % 1 else 0)
             for _ in range(clusters):
                 self.growVein(grid, rand.choice(walls), veinClass, rand.randint(2, 5))
+
+    def cityNext(self, depth):
+        """Is the new floor at this depth a Metropolis? By chance (metropolis.APPEAR_CHANCE) from
+        metropolis.FIRST_FLOOR down, or because the console asked. Never when Patience is dropping you onto an ore
+        floor."""
+        forced, self.metropolisNext = getattr(self, "metropolisNext", False), False
+        if self.forcedOreFloor:
+            return False
+        return forced or (depth >= metropolis.FIRST_FLOOR and rand.random() < metropolis.APPEAR_CHANCE)
+
+    def generateMetropolis(self):
+        """A city floor (metropolis.py), returned the way generateNewLevel returns a floor. Only Dwellers live there."""
+        city = metropolis.buildCity(self.rowLength, self.numberOfSpots // self.rowLength, self.playerPositionFlat)
+        self.newFloorMotherlode = False
+        nodes = connectingEmptyRooms.createNodes(city.grid, self.rowLength, 5)
+        return city.grid, set(city.dwellers), city.rooms, metropolis.METROPOLIS, nodes
 
     def pickOreFloor(self, depth):
         """(ore floor type, motherlode) for a new floor at this depth, or (None, False) for a normal floor."""
@@ -3697,7 +3720,8 @@ class gameManager():
                 sprouted, self.grid[here] = self.grid[here], playerTile
                 if sprouted[0] == 8:
                     self.overgrowPlayer(sprouted)
-            changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
+            if self.proportion != metropolis.METROPOLIS:  # (no wild plants spring up in a city)
+                changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid={self.playerPositionFlat}) or changed
             if changed:
                 self.change = True
         player = self.player
@@ -3770,6 +3794,8 @@ class gameManager():
         """One action for the enemy at i (already lifted off its tile). Returns (where it ends up, the enemy)."""
         if isinstance(currentEnemy, enemies.Organizer):  # builders: their own turn (organizers.py)
             return organizers.takeTurn(self, i, currentEnemy, organizerContext)
+        if dwellers.isDweller(currentEnemy):  # a Metropolis Dweller (dwellers.py)
+            return dwellers.takeTurn(self, i, currentEnemy), currentEnemy
         if getattr(currentEnemy, "faction", None) is not None:  # an Expansion faction's goblin (expansion.py)
             return expansion.takeTurn(self, i, currentEnemy, campContext), currentEnemy
         finalPosition = expansion.otherTurn(self, i, currentEnemy, campContext)  # fighting back, or drawn to a bonfire

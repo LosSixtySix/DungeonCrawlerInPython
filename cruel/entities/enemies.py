@@ -92,6 +92,61 @@ class GrayPeddler(Enemy):
         return [ware.item for ware in self.wares if ware.item is not None]
 
 
+class Dweller(Enemy):
+    """A Dweller of the Metropolis (metropolis.py): an insectoid city-dweller. dwellers.py runs its turns. It's calm
+    until it sees you do something hostile (dwellers.hostileAct); then citizens, nobles and merchants run to a guard
+    to tell it, and guards hunt you. None of them dig."""
+    role = None
+
+    def __init__(self, hp, ac, speed, damage, vision, gold, name):
+        super().__init__(hp, ac, speed, 0, damage, name, gold)
+        self.visionRange = vision
+        self.dweller = True
+        self.hostile = False
+        self.home = None          # where it belongs: a citizen's house, a noble's mansion, a guard's post, a shop counter
+        self.goal = None          # where it's walking to while calm
+        self.toldGuard = False    # a citizen, noble or merchant that has told a guard (it goes home and hides)
+        self.lastSawYou = 0       # the turn it last saw you (a hostile one calms down FORGIVE_TURNS after)
+        self.sawYouAt = None      # where it last saw you (what it tells a guard)
+
+
+class DwellerCitizen(Dweller):
+    role = "citizen"
+
+    def __init__(self):
+        super().__init__(6, 8, 1, 1, 6, 6, "Dweller Citizen")
+
+
+class DwellerNoble(Dweller):
+    role = "noble"
+
+    def __init__(self):
+        super().__init__(8, 9, 1, 1, 6, 40, "Dweller Noble")
+
+
+class DwellerGuard(Dweller):
+    """The only Dweller that hunts you once it's hostile."""
+    role = "guard"
+
+    def __init__(self):
+        super().__init__(18, 14, FAST, 4, 7, 15, "Dweller Guard")
+
+
+class DwellerMerchant(Dweller):
+    """Keeps a shop (cityshops.py): face it and press interact to trade."""
+    role = "merchant"
+
+    def __init__(self):
+        super().__init__(10, 10, 1, 1, 6, 30, "Dweller Merchant")
+        self.shopKind = None   # metropolis.SHOP_KIND_IDS
+        self.wares = []        # its stock: peddler.Ware objects
+
+    @property
+    def loot(self):
+        """Nothing extra drops where it dies: its stock stays in the shop (cityshops.merchantFell)."""
+        return []
+
+
 class GoblinBuilder(Enemy):
     """Builds an Expansion camp: bonfires, huts and spawners (see expansion.py, which runs its turns)."""
     def __init__(self):

@@ -614,10 +614,45 @@ THEMES = {
          "floor": {"Stone": "#2a3644", "Wood": "#383040", "Sand": "#3e4a50", "Gold": "#46442e"},
          "wall": {"Stone": "#56687c", "Wood": "#645a6e", "Sand": "#6c7e86", "Gold": "#c4b05a"}},
     ],
+    # The city floor (metropolis.py): Street, House, Shop and Noble rooms, and the City wall round it. The standard
+    # rooms (Stone, Wood, Sand, Gold) reuse the street, house, shop and noble colors.
+    "Metropolis": [
+        {"name": "Amber Hive",
+         "fog": "#0d0a06", "panel": "#161109", "font": "#f2b441", "boxLine": "#45331a", "select": "#ffe0a0",
+         "player": "#bfe8ff", "marker": "#0d0a06", "enemy": "#ff5a48", "chest": "#b08ae0",
+         "doorNext": "#58c8e0", "doorPrev": "#2a6878", "aim": "#7a2a10",
+         "floor": {"Stone": "#3a2e1c", "Wood": "#4a3520", "Sand": "#5a4626", "Gold": "#6a5226", "Street": "#3a2e1c", "House": "#4a3520", "Shop": "#5a4626", "Noble": "#6a5226", "City": "#231a0e"},
+         "wall": {"Stone": "#6e5634", "Wood": "#8a6436", "Sand": "#a07c40", "Gold": "#e0b04a", "Street": "#6e5634", "House": "#8a6436", "Shop": "#a07c40", "Noble": "#e0b04a", "City": "#4a3820"}},
+        {"name": "Chitin Spires",
+         "fog": "#07090a", "panel": "#0d1112", "font": "#5fd6c8", "boxLine": "#26383a", "select": "#b0fff4",
+         "player": "#ffe0a0", "marker": "#07090a", "enemy": "#ff6a50", "chest": "#c08ae8",
+         "doorNext": "#e0c060", "doorPrev": "#6a5a2a", "aim": "#7a2a1e",
+         "floor": {"Stone": "#1e2426", "Wood": "#262a2c", "Sand": "#20302e", "Gold": "#2a3836", "Street": "#1e2426", "House": "#262a2c", "Shop": "#20302e", "Noble": "#2a3836", "City": "#121617"},
+         "wall": {"Stone": "#3e484c", "Wood": "#4a5256", "Sand": "#3e6a64", "Gold": "#5fd6c8", "Street": "#3e484c", "House": "#4a5256", "Shop": "#3e6a64", "Noble": "#5fd6c8", "City": "#2a3234"}},
+        {"name": "Verdigris Bazaar",
+         "fog": "#080c09", "panel": "#0e1410", "font": "#8fe0a8", "boxLine": "#2a3a2e", "select": "#d0ffe0",
+         "player": "#ffe0a0", "marker": "#080c09", "enemy": "#ff6040", "chest": "#c09ae8",
+         "doorNext": "#ffd070", "doorPrev": "#7a5a28", "aim": "#7a2a1e",
+         "floor": {"Stone": "#2a3a30", "Wood": "#3a3628", "Sand": "#2e4a3a", "Gold": "#3a5244", "Street": "#2a3a30", "House": "#3a3628", "Shop": "#2e4a3a", "Noble": "#3a5244", "City": "#18201a"},
+         "wall": {"Stone": "#4c6a58", "Wood": "#6a5a3e", "Sand": "#5a9a78", "Gold": "#b07a3e", "Street": "#4c6a58", "House": "#6a5a3e", "Shop": "#5a9a78", "Noble": "#b07a3e", "City": "#34463a"}},
+        {"name": "Pale Wax Warrens",
+         "fog": "#100e0b", "panel": "#18150f", "font": "#f4e6c0", "boxLine": "#46402e", "select": "#ffe8a0",
+         "player": "#3a6ad8", "marker": "#100e0b", "enemy": "#e0483a", "chest": "#9a7ae0",
+         "doorNext": "#4ab0e0", "doorPrev": "#2a5878", "aim": "#7a2a1e",
+         "floor": {"Stone": "#5a5446", "Wood": "#6a6250", "Sand": "#76694c", "Gold": "#80704a", "Street": "#5a5446", "House": "#6a6250", "Shop": "#76694c", "Noble": "#80704a", "City": "#34302a"},
+         "wall": {"Stone": "#a49a80", "Wood": "#c8bc9a", "Sand": "#d8c892", "Gold": "#f0dc98", "Street": "#a49a80", "House": "#c8bc9a", "Shop": "#d8c892", "Noble": "#f0dc98", "City": "#7a725e"}},
+        {"name": "Obsidian Court",
+         "fog": "#09070d", "panel": "#100d16", "font": "#c8a0ff", "boxLine": "#2e2840", "select": "#e8d8ff",
+         "player": "#ffe0a0", "marker": "#09070d", "enemy": "#ff5a70", "chest": "#e0c060",
+         "doorNext": "#60e0c0", "doorPrev": "#2a6a5a", "aim": "#7a2a3a",
+         "floor": {"Stone": "#1c1a24", "Wood": "#24202c", "Sand": "#2a2438", "Gold": "#34284a", "Street": "#1c1a24", "House": "#24202c", "Shop": "#2a2438", "Noble": "#34284a", "City": "#121018"},
+         "wall": {"Stone": "#3a3648", "Wood": "#46405a", "Sand": "#5a4c7a", "Gold": "#a07ae0", "Street": "#3a3648", "House": "#46405a", "Shop": "#5a4c7a", "Noble": "#a07ae0", "City": "#2a2636"}},
+    ],
 }
 
 
 MOLTEN_DEFAULT = {"floor": "#5a2410", "wall": "#d2561c"}
+CITY_ROOMS = ("Street", "House", "Shop", "Noble", "City")  # the Metropolis's rooms (metropolis.py)
 
 
 def hexToRGB(h):
@@ -652,10 +687,12 @@ class Theme():
         self.colors["memChest"] = remembered(self.colors["chest"], fog)
         # Dimmer text for hints and "OFF" values: the text color pulled toward the panel color.
         self.colors["muted"] = mix(self.colors["font"], self.colors["panel"], 0.45)
-        for room in ["Stone", "Wood", "Sand", "Gold", "Molten"]:
-            # only the Scorched Depths themes set Molten; every other theme gets the same default lava
-            floor = hexToRGB(data["floor"].get(room, MOLTEN_DEFAULT["floor"]))
-            wall = hexToRGB(data["wall"].get(room, MOLTEN_DEFAULT["wall"]))
+        for room in ["Stone", "Wood", "Sand", "Gold", "Molten"] + list(CITY_ROOMS):
+            # only the Scorched Depths themes set Molten; every other theme gets the same default lava. Only the
+            # Metropolis themes set the city's rooms; every other theme uses its Stone colors for them.
+            fallback = MOLTEN_DEFAULT if room == "Molten" else {"floor": data["floor"]["Stone"], "wall": data["wall"]["Stone"]}
+            floor = hexToRGB(data["floor"].get(room, fallback["floor"]))
+            wall = hexToRGB(data["wall"].get(room, fallback["wall"]))
             self.colors[f"floor{room}"] = floor
             self.colors[f"wall{room}"] = wall
             self.colors[f"memFloor{room}"] = remembered(floor, fog)

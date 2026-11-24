@@ -1544,9 +1544,10 @@ class renderer():
     def fillTile(self, color, x, y):
         pygame.draw.rect(self.mapSurface, color, pygame.Rect(x * self.tileSize, y * self.tileSize, self.tileSize, self.tileSize))
 
-    ROOM_ORDER = ("Stone", "Wood", "Gold", "Molten")  # a tile in none of these is Sand (Molten last: a floor laid on it wins)
+    # A tile in none of these is Sand. (Molten after the first four: a floor laid on it wins.)
+    ROOM_ORDER = ("Stone", "Wood", "Gold", "Molten") + themes.CITY_ROOMS
     COLOR_NAMES = {(prefix, memorized): {room: ("mem" + prefix.capitalize() if memorized else prefix) + room
-                                         for room in ("Stone", "Wood", "Gold", "Sand", "Molten")}
+                                         for room in ("Stone", "Wood", "Gold", "Sand", "Molten") + themes.CITY_ROOMS}
                    for prefix in ("floor", "wall") for memorized in (False, True)}
 
     def roomOf(self, i, rooms):
