@@ -25,6 +25,10 @@ clear line of sight to the spot (the one you hurt always knows). If nobody sees 
     from you to run to) it fights back instead. FORGIVE_TURNS after it last saw you, it calms down.
   - A hostile guard, one that saw it or was told, hunts you: to where you were last seen, then after you while it
     sees you. Guards never calm down.
+
+Goblins. Every Dweller is always hostile to every goblin (an Expansion faction's, a neutral faction's, or a wild
+one), whatever it thinks of you: a guard goes after any goblin it can see and fights it, and a citizen, noble or
+merchant fights a goblin right beside it. Fighting goblins never turns the city against you.
 """
 
 IDLE_CHANCE = 0.4           # a calm Dweller stands still this often
@@ -214,8 +218,54 @@ def attitudeLabel(enemy):
 
 # ---------------------------------------------------------------- a turn
 
+def isGoblin(enemy):
+    """Any goblin: a faction's (neutral or not) or a wild one, builders and farmers included."""
+    return getattr(enemy, "name", "").startswith("Goblin")
+
+
+def goblinBeside(game, position):
+    """(position, goblin) of a goblin right beside position, or None."""
+    for spot in game.neighbors(position):
+        tile = game.grid[spot]
+        if tile[0] == 5 and len(tile) > 2 and isGoblin(tile[2]):
+            return spot, tile[2]
+    return None
+
+
+def goblinInSight(game, position, dweller):
+    """(position, goblin) of the nearest goblin this Dweller can see, or None."""
+    seen = []
+    for spot in set(game.EnemyPositions) | getattr(game, "movedEnemies", set()):
+        tile = game.grid.get(spot)
+        if tile and tile[0] == 5 and len(tile) > 2 and isGoblin(tile[2]) and canSee(game, position, dweller, spot):
+            seen.append((distance(game, position, spot), spot, tile[2]))
+    if not seen:
+        return None
+    _, spot, goblin = min(seen, key=lambda found: found[0])
+    return spot, goblin
+
+
+def fightGoblins(game, position, dweller):
+    """A Dweller's turn against goblins, if it has one: it hits a goblin beside it (unless it's a hostile Dweller
+    with you beside it: you come first), and a guard heads for a goblin it can see (unless it's hunting you).
+    Returns where it ends up, or None if there's no goblin for it to deal with."""
+    beside = goblinBeside(game, position)
+    if beside is not None and not (dweller.hostile and besideYou(game, position)):
+        goblinSpot, goblin = beside
+        expansion.attack(game, position, dweller, goblin, goblinSpot)  # (it fights back)
+        return position
+    if dweller.role == "guard" and not (dweller.hostile and dweller.sawYouAt is not None):
+        seen = goblinInSight(game, position, dweller)
+        if seen is not None:
+            return stepToward(game, position, seen[0], pushPast=True)
+    return None
+
+
 def takeTurn(game, position, dweller):
     """One action for the Dweller at position (already lifted off its tile). Returns where it ends up."""
+    fought = fightGoblins(game, position, dweller)
+    if fought is not None:
+        return fought
     if not dweller.hostile:
         return calmTurn(game, position, dweller)
     noticeYou(game, position, dweller)
