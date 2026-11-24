@@ -11,7 +11,7 @@ from cruel.world import wall
 
 """
 The Dwellers building on their city's works floors (mineshafts.py): a new storehouse when every storage chest is full
-(up to MOST_STOREHOUSES), and on a farm a new pen when the pens are too crowded (dewgrubs.py).
+and on a farm a new pen when the pens are full (dewgrubs.py), wherever there's room for them.
 
 A building is planned on a site (findSite; a worker that finds none waits SEARCH_AGAIN_TURNS to look again): a box near the shaft (its middle within SITE_REACH, outside the
 clearing) of open floor or rock the miners could break, clear of the fields, the shaft, the lamps and other
@@ -20,7 +20,7 @@ one nearest the shaft with the least rock to dig wins. The box's edge is its wal
 but for the door in the middle of the side facing the shaft; a storehouse has STOREHOUSE_CHESTS chests along its
 back wall.
 
-The plan is shared by the floor's workers (worker.plans). Up to BUILDERS of them build it at once (and any worker
+The plan is shared by the floor's workers (worker.plans). Up to BUILDERS of them (never a farm's keepers) build it at once (and any worker
 with something to store and no chest with room for it), one piece a turn, standing beside it (a wall or chest is
 put in from inside the building or its doorway, beside it or diagonal to it, so no builder walls itself out and the
 corners can be reached):
@@ -32,7 +32,6 @@ is crossed off.
 """
 
 BUILDERS = 2                # workers putting up a building at once
-MOST_STOREHOUSES = 6        # storehouses a works floor can have
 SITE_REACH = 18             # how far from the shaft a new building's middle can be
 SEARCH_AGAIN_TURNS = 200    # a worker that found no site for a building doesn't look again for this long
 WALLS = {"storehouse": wall.ShopWall, "pen": wall.PenFence}
@@ -148,10 +147,6 @@ def plansOf(worker):
     return getattr(worker, "plans", None)
 
 
-def storehouseCount(game):
-    return len(dwellerwork.storageChests(game)) // mineshafts.STOREHOUSE_CHESTS
-
-
 def newPlan(game, position, worker, kind, width, height):
     plans = plansOf(worker)
     if game.turnCount < getattr(worker, "searchAgainAt", 0):
@@ -168,15 +163,13 @@ def newPlan(game, position, worker, kind, width, height):
 
 def storehousePlan(game, position, worker):
     """The storehouse being built, or a new one planned (every chest is full). None if this worker can't build or
-    there are MOST_STOREHOUSES already."""
+    there's no site for one."""
     plans = plansOf(worker)
     if plans is None:
         return None
     planned = next((plan for plan in plans if plan["kind"] == "storehouse"), None)
     if planned is not None:
         return planned
-    if storehouseCount(game) >= MOST_STOREHOUSES:
-        return None
     return newPlan(game, position, worker, "storehouse", mineshafts.STOREHOUSE_SIZE, mineshafts.STOREHOUSE_SIZE)
 
 
@@ -192,9 +185,10 @@ def penPlan(game, position, worker):
 
 
 def planFor(game, worker):
-    """The building this worker puts up now: the first plan, if it's already building or fewer than BUILDERS are."""
+    """The building this worker puts up now: the first plan, if it's already building or fewer than BUILDERS are.
+    A farm's keepers never build (they have the grubs to feed: dwellerfarming.py)."""
     plans = plansOf(worker)
-    if not plans:
+    if not plans or getattr(worker, "farmRole", None) == "keeper":
         worker.job = None
         return None
     if getattr(worker, "job", None) == "build":

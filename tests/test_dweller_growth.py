@@ -11,6 +11,7 @@ from cruel.inventory import loot
 from cruel.inventory import resources
 from cruel.world import dewgrubs
 from cruel.world import dwellerbuilding
+from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import dwellerwork
 from cruel.world import mineshafts
@@ -65,6 +66,12 @@ class PenTest(WorkTest):
         farmer.plans = self.plans
         return farmer
 
+    def foodPutBy(self, amount=100):
+        """A storage chest with herbs in it (a grub only gives birth with food put by)."""
+        chest = self.storageChest(10, 60)
+        chest.append(resources.MaterialStack("bloodcap", amount))
+        return chest
+
     def grubsIn(self, pen):
         return [grub for spot, grub in dwellerwork.grubsHere(self.game) if spot in pen["inside"] and grub.pen == pen["inside"]]
 
@@ -73,6 +80,7 @@ class PenTest(WorkTest):
 
 class YoungGrubTests(PenTest):
     def test_a_fed_grown_grub_can_give_birth_to_a_young_one_in_its_pen(self):
+        self.foodPutBy()
         pen = self.pen(40, 30)
         mother = self.fill(pen, 1)[0]
         motherSpot = self.positionOf(mother)
@@ -85,15 +93,26 @@ class YoungGrubTests(PenTest):
         self.assertEqual(young.pen, pen["inside"])
         self.assertIn(youngSpot, self.game.EnemyPositions)
 
-    def test_no_young_once_every_pen_is_full(self):
+    def test_no_young_without_food_put_by_for_it(self):
         pen = self.pen(40, 30)
-        grubs = self.fill(pen, dewgrubs.PEN_MOST)
+        grubs = self.fill(pen, 2)
+        chest = self.foodPutBy(14)  # (2 grubs and the young one need 5 herbs each)
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
             self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
-        other = self.pen(60, 30)  # room in another pen: now it can
+        chest[0].amount += 1
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
             self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
-        self.assertEqual(len(self.grubsIn(other)), 0)
+
+    def test_a_full_pen_still_has_young_and_the_farmers_then_move_grubs_out(self):
+        self.foodPutBy()
+        pen = self.pen(40, 30)
+        grubs = self.fill(pen, dewgrubs.PEN_MOST)
+        other = self.pen(60, 30)
+        with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
+            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
+        self.assertEqual(len(self.grubsIn(pen)), dewgrubs.PEN_MOST + 1, "no hard limit")
+        grub, target = dewgrubs.grubToMove(self.game, self.farmer(52, 25))
+        self.assertEqual((grub.pen, target), (pen["inside"], other["inside"]))
 
     def test_a_young_grub_has_no_young(self):
         pen = self.pen(40, 30)
@@ -104,27 +123,27 @@ class YoungGrubTests(PenTest):
     def test_a_young_grub_makes_no_dew_until_it_grows_up_after_enough_feedings(self):
         young = enemies.DewGrub(grown=False)
         farmer = enemies.DwellerCitizen()
+        farmer.materials = {"bloodcap": 100}
         for _ in range(dewgrubs.FEEDINGS_TO_GROW - 1):
-            farmer.food = "bloodcap"
             dwellerwork.feed(young, farmer)
         self.assertFalse(young.grown)
         self.assertFalse(young.dewReady)
         self.assertEqual(young.feedings, 0)
-        farmer.food = "bloodcap"
         dwellerwork.feed(young, farmer)
         self.assertTrue(young.grown)
         self.assertEqual(young.name, "Dew Grub")
         self.assertEqual(young.maxHp, enemies.DewGrub.GROWN_HP)
         for _ in range(dwellerwork.FEEDINGS_FOR_DEW):
-            farmer.food = "bloodcap"
             dwellerwork.feed(young, farmer)
         self.assertTrue(young.dewReady)
 
     def test_a_farmer_feeding_a_grown_grub_can_bring_a_birth(self):
+        self.foodPutBy()
         pen = self.pen(40, 30)
-        self.fill(pen, 2)
+        for grub in self.fill(pen, 2):
+            grub.hunger = dwellerfarming.HUNGRY_TURNS
         farmer = self.farmer(43, 29)
-        farmer.food = "bloodcap"
+        farmer.materials = {"bloodcap": 1}
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1), mock.patch.object(dwellers, "IDLE_CHANCE", 0), \
                 mock.patch.object(dwellerwork, "GRUB_SHUFFLE", 0):
             self.assertTrue(self.runTurns(30, until=lambda: len(self.grubsIn(pen)) == 3))
@@ -290,11 +309,11 @@ class StorehouseTests(PenTest):
                      if stack.materialId == "iron_ore")
         self.assertEqual(stored, 6)
 
-    def test_with_the_most_storehouses_what_doesnt_fit_goes_up_to_the_city(self):
+    def test_with_nowhere_to_build_a_storehouse_what_doesnt_fit_goes_up_to_the_city(self):
         self.fullChest(40, 30)
         miner = self.miner(44, 34)
         miner.materials = {"iron_ore": 3}
-        with mock.patch.object(dwellerbuilding, "MOST_STOREHOUSES", 0):
+        with mock.patch.object(dwellerbuilding, "findSite", return_value=None):
             dwellerwork.workTurn(self.game, self.spot(44, 34), miner)
         self.assertEqual(dwellerwork.carrying(miner), {})
         self.assertEqual(self.plans, [])
@@ -335,12 +354,13 @@ class GrowingFloorTests(unittest.TestCase):
             game.enemyTurn()
         return game
 
-    def test_a_farm_grows_new_pens_and_keeps_every_pen_at_two_to_six(self):
-        game = self.runFloor("farm", 3000)
-        farmer = next(dweller for _, dweller in dwellers.cityDwellers(game) if dweller.work == "farm")
-        self.assertGreater(len(farmer.pens), mineshafts.PENS[1])
-        counts = dewgrubs.headcounts(dwellerwork.grubsHere(game), farmer.pens)
-        self.assertLessEqual(max(counts.values()), dewgrubs.PEN_MOST)
+    def test_a_farm_keeps_its_grubs_fed_grows_its_herd_and_makes_dew(self):
+        game = self.runFloor("farm", 1500, seed=7)
+        grubs = dwellerwork.grubsHere(game)
+        self.assertGreater(len(grubs), sum(mineshafts.GRUBS_PER_PEN), "the herd has grown")
+        self.assertTrue(all(grub.hunger < dwellerfarming.STARVE_TURNS for _, grub in grubs))
+        dew = sum(stack.amount for spot in dwellerwork.storageChests(game) for stack in game.grid[spot][2] if stack.materialId == "dew")
+        self.assertGreater(dew, 0)
 
 
 if __name__ == "__main__":

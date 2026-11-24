@@ -6,6 +6,7 @@ from cruel.inventory import loot
 from cruel.inventory import resources
 from cruel.world import dewgrubs
 from cruel.world import dwellerbuilding
+from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import expansion
 from cruel.world import metropolis
@@ -22,8 +23,8 @@ What a worker brings in it carries in its pockets (its materials, like any enemy
 you get your share). Once it has something, it takes it to the nearest storage chest with room for it
 (items.StorageChest, in the storehouses by the shaft) and puts it in, adding to a stack of the same thing if there is
 one. A stack holds up to STACK_LIMIT and a chest up to CHEST_STACKS stacks. When every chest is full the workers
-build another storehouse (dwellerbuilding.py); once there are dwellerbuilding.MOST_STOREHOUSES, what doesn't fit goes
-up the shaft to the city (it's gone).
+build another storehouse (dwellerbuilding.py); if there's nowhere left to build one, what doesn't fit goes up the
+shaft to the city (it's gone). (A farmer keeps some food and seeds: dwellerfarming.toStore.)
 
 A worker with a building to put up (dwellerbuilding.py) builds it before its own work, if it's one of the
 dwellerbuilding.BUILDERS at it (or it's carrying something with nowhere to put it).
@@ -33,15 +34,8 @@ dwellerbuilding.BUILDERS at it (or it's carrying something with nowhere to put i
           then rolls what the wall gives (loot.rollWall, with MINER_WISDOM) and takes it in. With no seam it can
           reach, it tunnels: it breaks the wall it can reach that's nearest the nearest seam. It never breaks the
           city's own walls (the storehouses) or a wall a lamp hangs on.
-  Farmer  tends the farm's fields (its fields: {tile: crop kind}, shared by the farm's farmers) and its Dew Grubs,
-          doing the first of these it can:
-            - carrying Dew: takes it in.
-            - moving a Dew Grub to another pen, or one needs moving (dewgrubs.py).
-            - holding food (a crop it picked): feeds it to the nearest Dew Grub that's hungry (one whose Dew isn't
-              waiting to be collected).
-            - a Dew Grub has Dew ready: collects it (DEW_PER_GRUB) into its pockets.
-            - a crop is ripe: picks it (that's its food) and sows the field tile again with a sprout.
-            - a field tile is bare (its crop withered or was taken): sows it.
+  Farmer  farms the farm's fields like a goblin farmer and feeds the Dew Grubs (dwellerfarming.py); a grub with
+          Dew ready, it collects it (DEW_PER_GRUB) into its pockets.
 
 The Dew Grub (enemies.DewGrub) stays in its pen, shuffling about it now and then (GRUB_SHUFFLE). Each time a grown
 one is fed it counts a feeding; after FEEDINGS_FOR_DEW it has made Dew, and eats no more until a farmer collects it.
@@ -77,7 +71,8 @@ def carrying(worker):
 def workTurn(game, position, worker):
     """A calm worker's turn at its work. Returns where it ends up, or None if there's nothing for it to do (it
     wanders like any calm Dweller)."""
-    if carrying(worker):
+    loaded = dwellerfarming.needsHauling(worker) if worker.work == "farm" else bool(toStore(worker))
+    if loaded:  # (a farmer keeps its food and seeds, and takes the rest in once it's a load)
         moved = haul(game, position, worker)
         if moved is not None:
             return moved
@@ -90,15 +85,16 @@ def workTurn(game, position, worker):
     if worker.work == "mine":
         return mine(game, position, worker)
     if worker.work == "farm":
-        return farm(game, position, worker)
+        return dwellerfarming.farmTurn(game, position, worker)
     return None
 
 
 def walkTo(game, position, worker, goal):
     """A step toward goal (a tile or the wall or chest beside where it's going). A worker that hasn't got any closer
-    for GIVE_UP_TURNS turns forgets its target; one stuck for STUCK_SWAP_TURNS swaps past whoever is in its way."""
+    for GIVE_UP_TURNS turns forgets its target; one stuck for STUCK_SWAP_TURNS swaps past whoever is in its way. A
+    farmer walks through any plant (like a goblin farmer)."""
     stuck = getattr(worker, "stuckTurns", 0) >= STUCK_SWAP_TURNS
-    newPosition = dwellers.stepToward(game, position, goal, forceSwap=stuck)
+    newPosition = dwellers.stepToward(game, position, goal, forceSwap=stuck, throughPlants=worker.work == "farm")
     if newPosition == position:
         worker.stuckTurns = getattr(worker, "stuckTurns", 0) + 1
         if worker.stuckTurns >= GIVE_UP_TURNS:
@@ -148,30 +144,46 @@ def putInChest(chest, materials):
     return leftOver
 
 
+def toStore(worker):
+    """What a worker takes in: everything a miner carries; a farmer's Dew and what food and seeds it doesn't keep."""
+    return dwellerfarming.toStore(worker) if worker.work == "farm" else carrying(worker)
+
+
+def drop(worker, materials):
+    """Takes materials ({id: amount}) out of the worker's pockets."""
+    for materialId, amount in materials.items():
+        left = carrying(worker).get(materialId, 0) - amount
+        if left > 0:
+            worker.materials[materialId] = left
+        else:
+            worker.materials.pop(materialId, None)
+
+
 def haul(game, position, worker):
-    """Takes what it carries to the nearest storage chest with room for it and puts it in (what doesn't fit, it
-    keeps). None if no chest has room."""
-    load = carrying(worker)
+    """Takes what it has to store (toStore) to the nearest storage chest with room for it and puts it in (what
+    doesn't fit, it keeps). None if no chest has room."""
+    load = toStore(worker)
     chests = [spot for spot in storageChests(game) if hasRoomFor(game.grid[spot][2], load)]
     if not chests:
         return None
     chestSpot = min(chests, key=lambda spot: dwellers.distance(game, position, spot))
     if chestSpot in game.neighbors(position):
-        worker.materials = putInChest(game.grid[chestSpot][2], load)
+        leftOver = putInChest(game.grid[chestSpot][2], load)
+        drop(worker, {materialId: amount - leftOver.get(materialId, 0) for materialId, amount in load.items()})
         game.change = True
         return position
     return walkTo(game, position, worker, chestSpot)
 
 
 def storeElsewhere(game, position, worker):
-    """Every chest is full (or there are none): it helps build a new storehouse; with no more to build, what it
-    carries goes up to the city (it's gone)."""
+    """Every chest is full (or there are none): it helps build a new storehouse; with nowhere to build one, what it
+    has to store goes up to the city (it's gone)."""
     plan = dwellerbuilding.storehousePlan(game, position, worker)
     if plan is not None:
         worker.job = "build"
         return dwellerbuilding.build(game, position, worker, plan)
     if storageChests(game):
-        worker.materials = {}
+        drop(worker, toStore(worker))
     return None
 
 
@@ -255,78 +267,20 @@ def nearest(game, position, spots):
     return min(spots, key=lambda spot: dwellers.distance(game, position, spot)) if spots else None
 
 
-def farm(game, position, farmer):
-    """A farmer's turn: move a grub, feed, collect Dew, pick or sow, whichever comes first (see the top of this
-    file)."""
-    moved = dewgrubs.herdTurn(game, position, farmer)
-    if moved is not None:
-        return moved
-    grubs = grubsHere(game)
-    if getattr(farmer, "food", None):
-        hungry = nearest(game, position, [spot for spot, grub in grubs if not grub.dewReady])
-        if hungry is not None:
-            if hungry in game.neighbors(position):
-                grub = game.grid[hungry][2]
-                wasGrown = grub.grown
-                feed(grub, farmer)
-                if wasGrown:
-                    dewgrubs.maybeGiveBirth(game, hungry, grub, dewgrubs.pensOf(farmer))
-                return position
-            return walkTo(game, position, farmer, hungry)
-    ready = nearest(game, position, [spot for spot, grub in grubs if grub.dewReady])
-    if ready is not None:
-        if ready in game.neighbors(position):
-            collectDew(game.grid[ready][2], farmer)
-            return position
-        return walkTo(game, position, farmer, ready)
-    fields = getattr(farmer, "fields", {})
-    if not getattr(farmer, "food", None):
-        ripe = nearest(game, position, [spot for spot in fields if isRipeCrop(game.grid[spot])])
-        if ripe is not None:
-            if ripe in game.neighbors(position):
-                pickCrop(game, ripe, farmer)
-                return position
-            return walkTo(game, position, farmer, ripe)
-    bare = nearest(game, position, [spot for spot, kind in fields.items() if plants.canGrow(kind, spot, game.grid, game.rooms)])
-    if bare is not None:
-        if bare in game.neighbors(position):
-            sow(game, bare, fields[bare])
-            return position
-        return walkTo(game, position, farmer, bare)
-    return None
-
-
-def isRipeCrop(tile):
-    """A city crop in one of its ripe stages."""
-    return tile[0] == PLANT and len(tile) > 2 and getattr(tile[2], "cityCrop", False) and tile[2].stage in ("harvest", "seed")
-
-
-def sow(game, spot, kind):
-    """A new sprout of the city's crop on spot."""
-    crop = plants.Plant(kind, planted=True)
-    crop.cityCrop = True
-    game.grid[spot] = [PLANT, game.grid[spot][1], crop]
-    game.change = True
-
-
-def pickCrop(game, spot, farmer):
-    """The farmer picks the ripe crop on spot (its food for the grubs) and sows the tile again."""
-    crop = game.grid[spot][2]
-    farmer.food = plants.PLANTS[crop.kind]["herb"]
-    sow(game, spot, crop.kind)
-
-
 def feed(grub, farmer):
-    """The farmer feeds its food to a Dew Grub: after FEEDINGS_FOR_DEW feedings, a grown grub has made Dew; a young
-    one grows (dewgrubs.FEEDINGS_TO_GROW)."""
-    farmer.food = None
+    """The farmer feeds a herb from its pockets to a Dew Grub (it's no longer hungry): after FEEDINGS_FOR_DEW
+    feedings, a grown grub has made Dew; a young one grows (dewgrubs.FEEDINGS_TO_GROW). False if it had no food."""
+    if not dwellerfarming.takeFood(farmer):
+        return False
+    grub.hunger = 0
     if not grub.grown:
         dewgrubs.growOn(grub)
-        return
+        return True
     grub.feedings += 1
     if grub.feedings >= FEEDINGS_FOR_DEW:
         grub.feedings = 0
         grub.dewReady = True
+    return True
 
 
 def collectDew(grub, farmer):

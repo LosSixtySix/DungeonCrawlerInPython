@@ -63,15 +63,20 @@ def distance(game, spot, other):
 
 # ---------------------------------------------------------------- walking
 
-def pathMap(game, goal):
-    """{tile: steps to goal}, kept for PATH_KEEP_TURNS on this floor."""
+def pathMap(game, goal, throughPlants=False):
+    """{tile: steps to goal}, kept for PATH_KEEP_TURNS on this floor. throughPlants (a farmer): through any plant."""
     cache = game.__dict__.setdefault("dwellerPaths", {})
-    key = (game.level, getattr(game, "sideFloor", None), game.turnCount // PATH_KEEP_TURNS, goal)
+    key = (game.level, getattr(game, "sideFloor", None), game.turnCount // PATH_KEEP_TURNS, goal, throughPlants)
     if key not in cache:
         if len(cache) > PATH_CACHE_LIMIT:
             cache.clear()
-        cache[key] = expansion.walkingDistances(game, goal, PATH_REACH)
+        cache[key] = expansion.walkingDistances(game, goal, PATH_REACH, plantsOpen=throughPlants)
     return cache[key]
+
+
+def canStep(tile, throughPlants=False):
+    """Can a Dweller step onto this tile? (passable, or with throughPlants any plant but Organizer's Demise)"""
+    return expansion.canEnter(tile, throughPlants) if throughPlants else organizers.passable(tile)
 
 
 def nudgeAside(game, spot):
@@ -117,11 +122,12 @@ def swapPast(game, position, spot, force=False):
     return True
 
 
-def stepToward(game, position, goal, pushPast=False, forceSwap=False):
+def stepToward(game, position, goal, pushPast=False, forceSwap=False, throughPlants=False):
     """One step along the path to goal, onto a free tile. Returns where it ends up (where it was if it can't move).
     pushPast (a hunting guard): a citizen, noble or merchant on the next tile of the path is nudged aside.
-    forceSwap: a Dweller in the way swaps past even if it swapped lately (swapPast)."""
-    steps = pathMap(game, goal)
+    forceSwap: a Dweller in the way swaps past even if it swapped lately (swapPast). throughPlants (a farmer, like
+    a goblin farmer): it walks through any plant."""
+    steps = pathMap(game, goal, throughPlants)
     here = steps.get(position, math.inf)
     if pushPast:
         ahead = [spot for spot in game.neighbors(position) if steps.get(spot, math.inf) < here]
@@ -130,7 +136,7 @@ def stepToward(game, position, goal, pushPast=False, forceSwap=False):
             if not organizers.passable(game.grid[nextSpot]) and nudgeAside(game, nextSpot):
                 return organizers.moveTo(game, position, nextSpot)
     nearer = [spot for spot in game.neighbors(position)
-              if organizers.passable(game.grid[spot]) and steps.get(spot, math.inf) < here]
+              if canStep(game.grid[spot], throughPlants) and steps.get(spot, math.inf) < here]
     if not nearer:  # the way is blocked by another Dweller: swap past it
         ahead = [spot for spot in game.neighbors(position) if steps.get(spot, math.inf) < here]
         if ahead:
@@ -139,7 +145,7 @@ def stepToward(game, position, goal, pushPast=False, forceSwap=False):
                 return nextSpot
     if not nearer and position not in steps:  # too far for the path map: just head that way
         nearer = [spot for spot in game.neighbors(position)
-                  if organizers.passable(game.grid[spot]) and distance(game, spot, goal) < distance(game, position, goal)]
+                  if canStep(game.grid[spot], throughPlants) and distance(game, spot, goal) < distance(game, position, goal)]
     if not nearer:
         return position
     best = min(nearer, key=lambda spot: steps.get(spot, distance(game, spot, goal)))
