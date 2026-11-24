@@ -13,12 +13,15 @@ from cruel.world import wall
 The Metropolis: a floor that is one whole city of insectoid Dwellers (design sheet:
 https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
 
-  The city   a ring of City Wall round the floor. Inside it, winding roads: two ring roads round a round plaza in
-             the middle, and roads curving out from the plaza like spokes. Buildings are packed into the land
-             between the roads, each in the shape its theme builds (STYLES: hexagons, round towers, oblong domes,
-             soft rounded cells or sharp squares). The mansions of the noble quarter take the biggest open ground
-             nearest the middle, then come SHOP_COUNT shops (each a different kind), then houses everywhere else. Every building has exactly
-             one door facing the roads, and you can walk to every door from where you arrive. A shop's sign sits in
+  The city   a ring of City Wall round the floor. Inside it, a network of random paths: a small round plaza
+             somewhere near the middle, a path from where you arrive to it, and paths out to targets spread over the
+             floor, each starting from the nearest road so they branch off one another. Each path is either
+             "rounded" (it curves smoothly as it goes) or "square" (straight runs with right-angle corners), picked
+             at random. Buildings are built along the paths, each in the shape its theme builds (STYLES: hexagons,
+             round towers, oblong domes, soft rounded cells or sharp squares), every one with its door facing a road:
+             the noble quarter's mansions nearest the plaza first, then SHOP_COUNT shops (each a different kind),
+             then houses. Every building has exactly one door, and you can walk to every door from where you
+             arrive. A shop's sign sits in
              its wall beside the door. A house has a CHEST_CHANCE of a chest (a CityChest).
   Lights     wall lamps hang on the outside walls along the roads and on the walls inside every building (WallLamp:
              they light round them, and anyone can stand under one without putting it out). Lamp posts stand
@@ -42,11 +45,13 @@ DEFAULT_STYLE = "square"
 BUILDING_STYLES = ("hexagon", "round", "oblong", "rounded", "square")
 
 # The roads
-RING_ROADS = (0.38, 0.72)   # ring roads, as a share of the way from the middle to the city wall
-RING_WOBBLE = 0.07          # how much a ring road bends in and out
-SPOKE_ROADS = (5, 7)        # roads curving out from the plaza
-SPOKE_BEND = 0.5            # how far (in radians) a spoke curves on its way out
-PLAZA_RADIUS = 6
+PATH_TARGETS = (10, 14)     # paths out to this many targets spread over the floor (plus the one from where you arrive)
+PATH_STYLES = ("rounded", "square")  # each path is one or the other, at random
+ROUNDED_TURN = (0.025, 0.05) # a rounded path turns toward its target at most this much (radians) each half tile...
+ROUNDED_SWERVE = 1.3        # ...and sets off this far (radians, at least half of it) off the straight line, so it arcs
+SQUARE_JOGS = (1, 3)        # a square path runs in this many straight legs (with right-angle corners between)
+PLAZA_RADIUS = 5
+PLAZA_AREA = 0.25           # the plaza is within this share of the floor's size of its middle
 
 # The buildings (sizes: the box a building's shape fills, in tiles)
 HOUSE_SIZE = (5, 8)
@@ -108,7 +113,9 @@ class City:
         self.style = style
         self.rooms = {room: set() for room in ("Stone", "Wood", "Sand", "Gold", "Molten", STREET, YARD, HOUSE, SHOP, NOBLE)}
         self.roads = set()
+        self.paths = []             # (style, tiles) for each path laid: "rounded" or "square"
         self.plaza = set()
+        self.plazaCenter = None
         self.buildings = []
         self.posts = []             # guard posts, spread over the roads
         self.wallLamps = {}         # tile: WallLamp
@@ -209,59 +216,112 @@ def stampRoad(city, column, row):
             city.roads.add(city.spot(column + stepColumn, row + stepRow))
 
 
+def roundedPath(city, start, end):
+    """A path that curves from start to end ((column, row) points): it sets off at an angle to the straight line
+    and keeps turning toward end, a little each half tile (more as it gets close), so it sweeps round in an arc.
+    Returns its points."""
+    column, row = start
+    heading = math.atan2(end[1] - row, end[0] - column) + random.choice((-1, 1)) * random.uniform(ROUNDED_SWERVE / 2, ROUNDED_SWERVE)
+    turnRate = random.uniform(*ROUNDED_TURN)
+    points = [(column, row)]
+    for _ in range(4 * (city.rowLength + city.rowCount)):  # (a guard: it always gets there long before this)
+        if math.hypot(end[0] - column, end[1] - row) <= 1:
+            break
+        wanted = math.atan2(end[1] - row, end[0] - column)
+        turn = (wanted - heading + math.pi) % math.tau - math.pi
+        # it turns gently while it's far off and harder as it closes in, so it arrives instead of circling its end
+        mostTurn = max(turnRate, 1.0 / math.hypot(end[0] - column, end[1] - row))
+        heading += max(-mostTurn, min(mostTurn, turn))
+        column = min(city.rowLength - 2, max(1, column + 0.5 * math.cos(heading)))
+        row = min(city.rowCount - 2, max(1, row + 0.5 * math.sin(heading)))
+        points.append((column, row))
+    points.append(end)
+    return points
+
+
+def squarePath(city, start, end):
+    """A path of straight runs with right-angle corners from start to end: a few legs, turning at random points
+    along the way. Returns its points."""
+    corners = [start]
+    column, row = start
+    legs = random.randint(*SQUARE_JOGS)
+    for leg in range(legs):
+        if leg == legs - 1:
+            target = end
+        else:  # partway there, at a random point
+            share = (leg + 1) / legs
+            target = (round(start[0] + (end[0] - start[0]) * share + random.randint(-4, 4)),
+                      round(start[1] + (end[1] - start[1]) * share + random.randint(-4, 4)))
+        if random.random() < 0.5:
+            corners += [(target[0], row), target]
+        else:
+            corners += [(column, target[1]), target]
+        column, row = target
+    points = []
+    for (fromColumn, fromRow), (toColumn, toRow) in zip(corners, corners[1:]):
+        steps = max(abs(toColumn - fromColumn), abs(toRow - fromRow), 1)
+        points += [(fromColumn + (toColumn - fromColumn) * step / steps, fromRow + (toRow - fromRow) * step / steps)
+                   for step in range(steps + 1)]
+    return points
+
+
+def nearestRoad(city, column, row):
+    """The (column, row) of the road tile nearest a point."""
+    nearest = min(city.roads, key=lambda spot: (spot % city.rowLength - column) ** 2 + (spot // city.rowLength - row) ** 2)
+    return nearest % city.rowLength, nearest // city.rowLength
+
+
+def layPath(city, start, end):
+    """Paves one path from start to end, rounded or square at random. Remembers it (city.paths) as its style and
+    the tiles it paved."""
+    style = random.choice(PATH_STYLES)
+    points = roundedPath(city, start, end) if style == "rounded" else squarePath(city, start, end)
+    before = set(city.roads)
+    for column, row in points:
+        stampRoad(city, column, row)
+    city.paths.append((style, city.roads - before))
+
+
 def layRoads(city, playerSpot):
-    """The plaza in the middle, the ring roads round it, the spokes curving out from it, and a road from where you
-    arrive to the nearest of them."""
-    middleColumn, middleRow = (city.rowLength - 1) / 2, (city.rowCount - 1) / 2
-    reachAcross, reachDown = city.rowLength / 2 - 2, city.rowCount / 2 - 2
+    """A small round plaza somewhere near the middle; a path from where you arrive to it; then paths out to targets
+    spread over the floor, each from the nearest road there is (so they branch off one another)."""
+    rowLength, rowCount = city.rowLength, city.rowCount
+    plazaColumn = round(rowLength / 2 + random.uniform(-PLAZA_AREA, PLAZA_AREA) * rowLength)
+    plazaRow = round(rowCount / 2 + random.uniform(-PLAZA_AREA, PLAZA_AREA) * rowCount)
+    city.plazaCenter = city.spot(plazaColumn, plazaRow)
     for spot in city.grid:
-        column, row = spot % city.rowLength, spot // city.rowLength
-        if math.hypot(column - middleColumn, row - middleRow) <= PLAZA_RADIUS:
+        if math.hypot(spot % rowLength - plazaColumn, spot // rowLength - plazaRow) <= PLAZA_RADIUS and city.inside(spot % rowLength, spot // rowLength):
             city.plaza.add(spot)
             city.roads.add(spot)
-    for share in RING_ROADS:
-        bend = random.uniform(0, math.tau)
-        steps = int(math.tau * share * (reachAcross + reachDown))
-        for step in range(steps):
-            angle = math.tau * step / steps
-            wobble = 1 + RING_WOBBLE * math.sin(3 * angle + bend)
-            stampRoad(city, middleColumn + share * wobble * reachAcross * math.cos(angle),
-                      middleRow + share * wobble * reachDown * math.sin(angle))
-    spokeCount = random.randint(*SPOKE_ROADS)
-    start = random.uniform(0, math.tau)
-    for index in range(spokeCount):
-        angle = start + math.tau * index / spokeCount + random.uniform(-0.2, 0.2)
-        bend = random.uniform(-SPOKE_BEND, SPOKE_BEND)
-        distance = PLAZA_RADIUS / max(reachAcross, reachDown)
-        while distance <= 1.0:
-            turning = angle + bend * distance  # the spoke curves more the further out it gets
-            stampRoad(city, middleColumn + distance * reachAcross * math.cos(turning),
-                      middleRow + distance * reachDown * math.sin(turning))
-            distance += 0.5 / max(reachAcross, reachDown)
-    # from where you arrive, straight toward the middle until it meets a road
-    column, row = playerSpot % city.rowLength, playerSpot // city.rowLength
-    length = max(1.0, math.hypot(middleColumn - column, middleRow - row))
-    for step in range(int(length * 2) + 1):
-        stampColumn = column + (middleColumn - column) * step / (length * 2)
-        stampRow = row + (middleRow - row) * step / (length * 2)
-        before = len(city.roads)
-        here = city.spot(round(stampColumn), round(stampRow))
-        if step > 2 and here in city.roads and before == len(city.roads):
-            break
-        stampRoad(city, stampColumn, stampRow)
+    layPath(city, (playerSpot % rowLength, playerSpot // rowLength), (plazaColumn, plazaRow))
+    margin = 6
+    spread = [city.spot(column, row) for row in range(margin, rowCount - margin, 3) for column in range(margin, rowLength - margin, 3)]
+    for target in spreadOutOnMap(spread, random.randint(*PATH_TARGETS), rowLength):
+        targetColumn, targetRow = target % rowLength, target // rowLength
+        if target in city.roads:
+            continue
+        layPath(city, nearestRoad(city, targetColumn, targetRow), (targetColumn, targetRow))
 
 
 # ---------------------------------------------------------------- buildings
 
+@functools.lru_cache(maxsize=None)
+def withMargin(cells, rowLength):
+    """The tiles a building with these cells needs free (itself and a tile all round it), as offsets from its
+    top-left tile on a map rowLength wide. (Worked out once per shape.)"""
+    needed = {(column + stepColumn, row + stepRow) for column, row in cells for stepColumn in (-1, 0, 1) for stepRow in (-1, 0, 1)}
+    return tuple(column + row * rowLength for column, row in needed)
+
+
 def fits(city, cells, left, top, taken):
-    """Can a building with these cells stand at (left, top), with a tile of open ground all round it?"""
-    for column, row in cells:
-        for stepColumn in (-1, 0, 1):
-            for stepRow in (-1, 0, 1):
-                atColumn, atRow = left + column + stepColumn, top + row + stepRow
-                if not city.inside(atColumn, atRow) or city.spot(atColumn, atRow) in taken:
-                    return False
-    return True
+    """Can a building with these cells stand at (left, top), with a tile of open ground all round it, inside the
+    city wall?"""
+    width = max(column for column, _ in cells) + 1
+    height = max(row for _, row in cells) + 1
+    if not (city.inside(left - 1, top - 1) and city.inside(left + width, top + height)):
+        return False
+    corner = city.spot(left, top)
+    return taken.isdisjoint(corner + offset for offset in withMargin(cells, city.rowLength))
 
 
 def doorFor(city, cells, walls, left, top):
@@ -286,6 +346,8 @@ def placeBuilding(city, kind, sizeRange, candidates, taken, nearRoad=True):
     faces a road). Returns the Building, or None."""
     for left, top in candidates:
         width, height = buildingSize(city.style, sizeRange)
+        if city.spot(left + width // 2, top + height // 2) in taken:  # (a quick no before the full check)
+            continue
         cells = shapeCells(city.style, width, height)
         if not fits(city, cells, left, top, taken):
             continue
@@ -345,12 +407,12 @@ def removeUnreachable(city, playerSpot):
 
 
 def placeBuildings(city, playerSpot):
-    """Mansions on the open ground nearest the middle that's big enough, then the shops, then houses wherever
-    there's room."""
+    """Mansions on the open ground nearest the plaza that's big enough, then the shops, then houses wherever there's
+    room along the paths. Every building's door faces a road."""
     taken = set(city.roads)
     for near in [playerSpot] + neighborsOf(city, playerSpot):
         taken.add(near)
-    middleColumn, middleRow = city.rowLength / 2, city.rowCount / 2
+    middleColumn, middleRow = city.plazaCenter % city.rowLength, city.plazaCenter // city.rowLength
     lattice = [(left, top) for top in range(1, city.rowCount - 2, 2) for left in range(1, city.rowLength - 2, 2)]
     nearestThePlaza = sorted(lattice, key=lambda corner: math.hypot(corner[0] - middleColumn, corner[1] - middleRow))
     for _ in range(random.randint(*MANSIONS)):
@@ -362,10 +424,11 @@ def placeBuildings(city, playerSpot):
         shop = placeBuilding(city, "shop", SHOP_SIZE, shuffled, taken)
         if shop is not None:
             shop.shopKind = kind
+    shuffled = [(left, top) for top in range(1, city.rowCount - 2) for left in range(1, city.rowLength - 2)]  # houses: try every spot
     for _ in range(HOUSE_PASSES):  # a few passes, each size tried in turn, so the gaps between buildings fill up
         random.shuffle(shuffled)
-        for corner in shuffled:  # (a house can face an alley between buildings: removeUnreachable keeps every door reachable)
-            placeBuilding(city, "house", HOUSE_SIZE, [corner], taken, nearRoad=False)
+        for corner in shuffled:  # (every door faces a road: the city is built along its paths)
+            placeBuilding(city, "house", HOUSE_SIZE, [corner], taken)
     for building in city.buildings:
         raiseBuilding(city, building)
     removeUnreachable(city, playerSpot)
@@ -447,7 +510,7 @@ def placeLights(city, playerSpot):
         random.shuffle(choices)
         for spot in choices[:wanted]:
             city.wallLamps[spot] = WallLamp(sideOfWall(city, spot, building.walls), ROOM_LAMP_RADIUS)
-    middleColumn, middleRow = (city.rowLength - 1) / 2, (city.rowCount - 1) / 2
+    middleColumn, middleRow = city.plazaCenter % city.rowLength, city.plazaCenter // city.rowLength
     for index in range(PLAZA_LAMPS):
         angle = math.tau * index / PLAZA_LAMPS
         spot = city.spot(round(middleColumn + (PLAZA_RADIUS - 1) * math.cos(angle)), round(middleRow + (PLAZA_RADIUS - 1) * math.sin(angle)))

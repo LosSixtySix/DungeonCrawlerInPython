@@ -142,21 +142,50 @@ class CityLayoutTests(unittest.TestCase):
             for building in city.buildings:
                 self.assertIn(building.door, reached)
 
-    def test_the_roads_are_rounded(self):
-        """The inner ring road goes all the way round the plaza: there's road in every direction from the middle at
-        about the same distance."""
+    def test_paths_are_rounded_or_square_and_both_turn_up(self):
+        styles = set()
+        for seed in range(6):
+            city = newCity(seed)
+            for style, tiles in city.paths:
+                self.assertIn(style, metropolis.PATH_STYLES)
+                styles.add(style)
+        self.assertEqual(styles, set(metropolis.PATH_STYLES))
+
+    def test_a_square_path_runs_straight_with_right_angle_corners(self):
+        random.seed(4)
+        for _ in range(20):
+            end = (random.randint(20, 90), random.randint(20, 60))
+            points = metropolis.squarePath(self.city, (10, 10), end)
+            for (fromColumn, fromRow), (toColumn, toRow) in zip(points, points[1:]):
+                self.assertTrue(fromColumn == toColumn or fromRow == toRow, "every step runs straight across or down")
+            self.assertEqual(points[-1], end)
+
+    def test_a_rounded_path_curves_and_still_arrives(self):
+        random.seed(4)
+        for _ in range(20):
+            end = (random.randint(20, 90), random.randint(20, 60))
+            points = metropolis.roundedPath(self.city, (10, 10), end)
+            self.assertEqual(points[-1], end)
+            headings = [math.atan2(toRow - fromRow, toColumn - fromColumn) for (fromColumn, fromRow), (toColumn, toRow)
+                        in zip(points[:-1], points[1:-1])]
+            self.assertGreater(max(headings) - min(headings), 0.3, "it bends on its way")
+
+    def test_the_roads_are_one_network_from_where_you_arrive(self):
         city = self.city
-        middleColumn, middleRow = (ROW_LENGTH - 1) / 2, (ROW_COUNT - 1) / 2
-        reachAcross, reachDown = ROW_LENGTH / 2 - 2, ROW_COUNT / 2 - 2
-        share = metropolis.RING_ROADS[0]
-        for eighth in range(8):
-            angle = 6.2832 * eighth / 8
-            found = False
-            for wobble in (0.9, 0.95, 1.0, 1.05, 1.1):
-                column = round(middleColumn + share * wobble * reachAcross * math.cos(angle))
-                row = round(middleRow + share * wobble * reachDown * math.sin(angle))
-                found = found or city.spot(column, row) in city.roads
-            self.assertTrue(found, f"no ring road toward {eighth * 45} degrees")
+        reached, frontier = {middleSpot()}, [middleSpot()]
+        while frontier:
+            spot = frontier.pop()
+            for near in metropolis.neighborsOf(city, spot):
+                if near in city.roads and near not in reached:
+                    reached.add(near)
+                    frontier.append(near)
+        self.assertEqual(reached & city.roads, city.roads)
+
+    def test_every_building_is_built_along_a_road(self):
+        for building in self.city.buildings:
+            outside = [near for near in metropolis.neighborsOf(self.city, building.door) if near not in building.inside]
+            self.assertTrue(any(near in self.city.roads or any(far in self.city.roads for far in metropolis.neighborsOf(self.city, near))
+                                for near in outside), "its door faces a road")
 
 
 class DwellerPlacementTests(unittest.TestCase):
