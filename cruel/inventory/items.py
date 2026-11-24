@@ -149,3 +149,8 @@ if __name__ == "__main__":
     print(HealingPotion.effect)
     print(HealingPotion.bonus)
     print(HealingPotion.attributeScaling)
+
+
+class CityChest(list):
+    """A chest that belongs to a Metropolis (a house chest, or a dead merchant's stock): the items in it, like any
+    chest. Taking from it is stealing (dwellers.hostileAct)."""

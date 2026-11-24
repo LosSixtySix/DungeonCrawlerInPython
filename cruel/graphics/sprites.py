@@ -221,6 +221,30 @@ SIGNPOST = [
     "..........",
 ]
 SIGNPOST_COLORS = {"w": (138, 100, 60), "W": (168, 124, 76), "y": (232, 192, 74), "p": (110, 80, 50), "r": (154, 157, 166)}
+# A Metropolis shop's sign, set in the wall beside its door: a hanging board in the shop's color (SHOP_SIGN_COLORS)
+SHOP_SIGN = [
+    "..........",
+    ".kkkkkkkk.",
+    ".kppppppk.",
+    "...k..k...",
+    "..kwwwwk..",
+    ".kwWWWWwk.",
+    ".kwWWWWwk.",
+    ".kwwwwwwk.",
+    "..kkkkkk..",
+    "..........",
+]
+SHOP_SIGN_COLORS = {  # shop kind (cityshops.SHOP_KINDS): its board's color
+    "ore": (200, 122, 58), "gems": (214, 48, 74), "food": (122, 176, 74), "weapons": (184, 188, 198),
+    "tools": (138, 100, 60), "armor": (106, 122, 154), "potions": (106, 208, 192), "builder": (168, 160, 144),
+}
+
+
+def shopSignColors(kind):
+    board = SHOP_SIGN_COLORS[kind]
+    return {"p": (110, 80, 50), "w": tuple(max(0, value - 40) for value in board), "W": board}
+
+
 PEDDLER_STONE_COLOR = (86, 92, 104)  # the Peddler's room walls: cold blue-gray, the same on every floor
 
 # The Metropolis's Dwellers (metropolis.py), drawn on their design sheet: upright insectoids seen from above, a big
@@ -913,6 +937,7 @@ def buildSprites(colors, tileSize):
                      for look in EXPANSION_LOOKS for name, (rows, fixed) in factionPictures(look).items()},
         "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
         "signpost": makeShadowed(SIGNPOST, enemyRoles(colors, SIGNPOST_COLORS), tileSize),
+        "shopSigns": {kind: makeShadowed(SHOP_SIGN, enemyRoles(colors, shopSignColors(kind)), tileSize) for kind in SHOP_SIGN_COLORS},
         "campChests": {look: makeShadowed(CAMP_CHEST, enemyRoles(colors, campChestColors(look)), tileSize) for look in EXPANSION_LOOKS},
         "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],
     }

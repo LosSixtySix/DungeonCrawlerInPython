@@ -85,7 +85,7 @@ class CityLayoutTests(unittest.TestCase):
         buildings = self.city.houses + self.city.mansions + [(shop["inside"], shop["door"]) for shop in self.city.shops]
         self.assertTrue(buildings)
         for inside, door in buildings:
-            gaps = [spot for spot in ringOf(self.city, inside) if self.city.grid[spot][0] != WALL
+            gaps = [spot for spot in ringOf(self.city, inside) if self.city.grid[spot][0] not in (WALL, metropolis.SHOP_SIGN)  # (a shop's sign is set in its wall)
                     and spot % ROW_LENGTH not in (0,) and any(abs(spot - insideSpot) in (1, ROW_LENGTH) for insideSpot in inside)]
             self.assertEqual(gaps, [door])
             outside = [spot for spot in metropolis.neighborsOf(self.city, door) if spot not in inside]

@@ -58,20 +58,25 @@ FLOOR, WALL = 0, 2
 # ---------------------------------------------------------------- his stock
 
 class Ware:
-    """One thing in his stock. kind: "gear", "potion", "relic" (each holds the item you'd get), "station" (unlocks a
-    Crafting tab) or "pouch" (the Leather Pouch upgrade). recipeId: the recipe it comes from (none for a relic)."""
+    """One thing for sale (his, or a city shop's: cityshops.py). kind: "gear", "potion", "relic" (each holds the item
+    you'd get), "station" (unlocks a Crafting tab), "pouch" (the Leather Pouch upgrade) or "material" (amount of a
+    material, for a city shop). recipeId: the recipe it comes from (none for a relic or a material)."""
 
-    def __init__(self, kind, price, item=None, recipeId=None, stationId=None):
+    def __init__(self, kind, price, item=None, recipeId=None, stationId=None, materialId=None, amount=0):
         self.kind = kind
         self.price = price
         self.item = item
         self.recipeId = recipeId
         self.stationId = stationId
+        self.materialId = materialId
+        self.amount = amount
 
     @property
     def name(self):
         if self.item is not None:
             return self.item.name
+        if self.kind == "material":
+            return f"{resources.materialName(self.materialId)} x{self.amount}"
         return recipes.RECIPES_BY_ID[self.recipeId].name
 
     @property
@@ -113,10 +118,11 @@ def offerFor(item):
     return max(1, int((price or 0) * BUY_BACK_SHARE))
 
 
-def offerForMaterial(amount):
-    """(gold he pays, how many he takes) for a pile of one material: only whole lots of MATERIALS_PER_GOLD."""
-    lots = amount // MATERIALS_PER_GOLD
-    return lots, lots * MATERIALS_PER_GOLD
+def offerForMaterial(amount, perGold=MATERIALS_PER_GOLD):
+    """(gold paid, how many taken) for a pile of one material: only whole lots of perGold (his MATERIALS_PER_GOLD,
+    or a city shop's better rate for its own materials)."""
+    lots = amount // perGold
+    return lots, lots * perGold
 
 
 def stockRecipes(player):
@@ -195,6 +201,8 @@ def buy(player, peddler, index):
         return False, f"You need {ware.price - player.gold} more gold"
     if ware.item is not None and player.roomFor(ware.item) < 1:
         return False, "No room in your pack"
+    if ware.kind == "material" and player.pouchLimit - player.materials.get(ware.materialId, 0) < ware.amount:
+        return False, "No room in your pouch"
     player.gold -= ware.price
     peddler.wares.pop(index)
     if ware.kind == "station":
@@ -203,6 +211,9 @@ def buy(player, peddler, index):
     if ware.kind == "pouch":
         player.pouchLimit = resources.BIG_POUCH_LIMIT
         return True, f"Bought the {ware.name}: your pouch holds {player.pouchLimit} of each"
+    if ware.kind == "material":
+        player.addMaterial(ware.materialId, ware.amount)
+        return True, f"Bought {ware.amount} {resources.materialName(ware.materialId)} for {ware.price} gold"
     player.addItemToInventory(ware.item)
     return True, f"Bought {ware.name} for {ware.price} gold"
 
@@ -215,15 +226,15 @@ def sellItem(player, index):
     return f"Sold {item.name} for {gold} gold"
 
 
-def sellMaterial(player, materialId, everything=False):
-    """You sell him one lot of MATERIALS_PER_GOLD of a material, or with everything, every whole lot.
+def sellMaterial(player, materialId, everything=False, perGold=MATERIALS_PER_GOLD):
+    """You sell one lot of perGold of a material for 1 gold, or with everything, every whole lot.
     Returns (sold?, message)."""
     have = player.materials.get(materialId, 0)
-    lots, taken = offerForMaterial(have)
+    lots, taken = offerForMaterial(have, perGold)
     if not lots:
-        return False, f"He only takes {MATERIALS_PER_GOLD} at a time"
+        return False, f"Only {perGold} at a time"
     if not everything:
-        lots, taken = 1, MATERIALS_PER_GOLD
+        lots, taken = 1, perGold
     player.materials[materialId] = have - taken
     if player.materials[materialId] == 0:
         del player.materials[materialId]

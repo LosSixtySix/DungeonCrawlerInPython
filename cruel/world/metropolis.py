@@ -4,6 +4,7 @@ from cruel.entities import enemies
 from cruel.inventory import items
 from cruel.inventory import recipes
 from cruel.inventory import resources
+from cruel.world import cityshops
 from cruel.world import wall
 
 """
@@ -13,9 +14,10 @@ https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
   The city   a ring of City Wall round the floor, then a grid of streets STREET_WIDTH wide with blocks between them.
              One block near the middle is the plaza, NOBLE_BLOCKS are the noble quarter (one or two mansions each),
              SHOP_COUNT blocks are shops (one big room each) and every other block is two rows of houses. Every
-             building has exactly one door, onto a street. A house has a CHEST_CHANCE of a chest (a CityChest).
+             building has exactly one door, onto a street, and a shop's sign sits in its wall beside the door.
+             A house has a CHEST_CHANCE of a chest (a CityChest).
   Dwellers   citizens walk the streets, nobles stay in their quarter, guards stand at posts on street corners,
-             merchants keep a shop each (dwellers.py runs their turns).
+             merchants keep a shop each (dwellers.py runs their turns, cityshops.py stocks their shops).
   Rooms      the floor's tiles are in the Street, House, Shop and Noble rooms (themes.CITY_ROOMS), each drawn in
              its own theme colors.
 
@@ -44,12 +46,11 @@ GUARD_POSTS = (6, 10)
 NOBLES_ON_THE_PLAZA = 2
 
 STREET, HOUSE, SHOP, NOBLE = "Street", "House", "Shop", "Noble"
+SHOP_SIGN = 14              # grid tile type of a shop's sign (its object: the shop kind, cityshops.SHOP_KINDS)
 FLOOR, WALL, CHEST, ENEMY = 0, 2, 3, 5
 
 
-class CityChest(list):
-    """A chest that belongs to the city (a house chest, or a dead merchant's stock): the items in it, like any chest.
-    Taking from it is stealing (dwellers.hostileAct)."""
+CityChest = items.CityChest  # a chest that belongs to the city: taking from it is stealing
 
 
 class City:
@@ -201,11 +202,12 @@ def buildCity(rowLength, rowCount, playerSpot):
         for mansionLeft, mansionRight in halves:
             city.mansions.append(building(city, mansionLeft, top, mansionRight, bottom, NOBLE, wall.NobleWall, "bottom"))
 
-    shopKinds = random.sample(SHOP_KIND_IDS, shopCount)
+    shopKinds = random.sample(list(cityshops.SHOP_KINDS), shopCount)
     for (left, top, right, bottom), kind in zip(shopBlocks, shopKinds):
         inside, door = building(city, left, top, right, bottom, SHOP, wall.ShopWall, random.choice(["top", "bottom"]))
         counter = city.spot((left + right) // 2, (top + bottom) // 2)
-        city.shops.append({"inside": inside, "door": door, "counter": counter, "kind": kind})
+        city.grid[door + 1] = [SHOP_SIGN, 0, kind]  # its sign, in the wall beside the door
+        city.shops.append({"inside": inside, "door": door, "counter": counter, "kind": kind, "sign": door + 1})
 
     for block in houseBlocks:
         buildHouses(city, block)
@@ -254,6 +256,7 @@ def placeDwellers(city, playerSpot):
         merchant = enemies.DwellerMerchant()
         merchant.home = shop["counter"]
         merchant.shopKind = shop["kind"]
+        merchant.wares = cityshops.rollStock(shop["kind"])
         city.dwellers[shop["counter"]] = merchant
         taken.add(shop["counter"])
 
@@ -279,7 +282,3 @@ def placeDwellers(city, playerSpot):
     for spot, dweller in city.dwellers.items():
         city.grid[spot] = [ENEMY, 0, dweller]
 
-
-# ---------------------------------------------------------------- the shops (what each kind sells: see cityshops.py)
-
-SHOP_KIND_IDS = ["ore", "gems", "food", "weapons", "tools", "armor", "potions", "builder"]
