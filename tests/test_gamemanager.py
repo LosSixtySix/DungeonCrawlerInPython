@@ -19,10 +19,10 @@ FLOOR, PLAYER, WALL, CHEST, DOWN_DOOR, ENEMY, UP_DOOR, PILE = 0, 1, 2, 3, 4, 5, 
 LEFT, RIGHT, UP, DOWN = 0, 1, 2, 3
 
 
-def keyDown(game, key, mod=0):
+def keyDown(game, key, modifierKeys=0):
     """Presses and releases a key the way pygame would deliver it."""
-    game.onKeyDown(pygame.event.Event(pygame.KEYDOWN, key=key, mod=mod))
-    game.onKeyUp(pygame.event.Event(pygame.KEYUP, key=key, mod=mod))
+    game.onKeyDown(pygame.event.Event(pygame.KEYDOWN, key=key, mod=modifierKeys))
+    game.onKeyUp(pygame.event.Event(pygame.KEYUP, key=key, mod=modifierKeys))
 
 
 def middleSpot(game):
@@ -34,9 +34,9 @@ def middleSpot(game):
 def clearAround(game, spot):
     """Turns the 5x5 block around spot into plain, visible floor, so nothing nearby gets in the way."""
     rowLength = game.rowLength
-    for dy in range(-2, 3):
-        for dx in range(-2, 3):
-            tile = spot + dx + dy * rowLength
+    for rowOffset in range(-2, 3):
+        for columnOffset in range(-2, 3):
+            tile = spot + columnOffset + rowOffset * rowLength
             game.grid[tile] = [FLOOR, 1]
             game.EnemyPositions.discard(tile)
 

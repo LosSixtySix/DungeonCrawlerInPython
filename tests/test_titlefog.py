@@ -30,8 +30,8 @@ class FogShapeTests(unittest.TestCase):
 
     def test_noise_repeats_across_every_period(self):
         noise = titlefog._Noise(1337)
-        for x in (0.0, 1.25, 3.5, 6.9):
-            self.assertAlmostEqual(noise.at(x, 2.5, 8), noise.at(x + 8, 2.5, 8))
+        for position in (0.0, 1.25, 3.5, 6.9):
+            self.assertAlmostEqual(noise.at(position, 2.5, 8), noise.at(position + 8, 2.5, 8))
 
     def test_noise_stays_between_zero_and_one(self):
         noise = titlefog._Noise(2)
@@ -70,14 +70,14 @@ class FogDrawingTests(unittest.TestCase):
         screen.fill((0, 0, 0))
         self.fog.draw(screen, (255, 255, 255))
         self.assertEqual(tuple(screen.get_at((320, 5)))[:3], (0, 0, 0))
-        bottomRow = {tuple(screen.get_at((x, 470)))[:3] for x in range(0, 640, 8)}
+        bottomRow = {tuple(screen.get_at((pixelX, 470)))[:3] for pixelX in range(0, 640, 8)}
         self.assertNotEqual(bottomRow, {(0, 0, 0)})  # the fog shows near the floor
 
     def test_fog_at_zero_alpha_is_invisible(self):
         screen = self.screen
         screen.fill((0, 0, 0))
         self.fog.draw(screen, (255, 255, 255), alpha=0)
-        bottomRow = {tuple(screen.get_at((x, 470)))[:3] for x in range(0, 640, 8)}
+        bottomRow = {tuple(screen.get_at((pixelX, 470)))[:3] for pixelX in range(0, 640, 8)}
         self.assertEqual(bottomRow, {(0, 0, 0)})
 
 

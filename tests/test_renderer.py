@@ -18,7 +18,7 @@ FLOOR_TYPES = [floorType for floorType in themes.THEMES if floorType != "Scorche
 def distinctColors(surface, step=16):
     """How many different colors a grid of sample points on the surface has."""
     width, height = surface.get_size()
-    return {tuple(surface.get_at((x, y)))[:3] for x in range(0, width, step) for y in range(0, height, step)}
+    return {tuple(surface.get_at((pixelX, pixelY)))[:3] for pixelX in range(0, width, step) for pixelY in range(0, height, step)}
 
 
 class RendererHelperTests(unittest.TestCase):
@@ -201,8 +201,8 @@ class PlayingFrameTests(unittest.TestCase):
         screenWidth, screenHeight = game.win.get_size()
         self.assertLessEqual(abs(playerTile.centerx - screenWidth // 2), game.tileSize)
         self.assertLessEqual(abs(playerTile.centery - screenHeight // 2), game.tileSize)
-        tileColors = {tuple(game.win.get_at((x, y)))[:3] for x in range(playerTile.left, playerTile.right)
-                      for y in range(playerTile.top, playerTile.bottom)}
+        tileColors = {tuple(game.win.get_at((pixelX, pixelY)))[:3] for pixelX in range(playerTile.left, playerTile.right)
+                      for pixelY in range(playerTile.top, playerTile.bottom)}
         self.assertGreater(len(tileColors), 1)  # the player sprite, not a flat floor tile
 
     def test_every_floor_theme_draws(self):

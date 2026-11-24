@@ -105,7 +105,7 @@ class SurfaceTests(unittest.TestCase):
 
     def test_the_player_is_drawn_in_cobalt_blue(self):
         playerPicture = sprites.makePlayer(self.theme.colors, DOWN, 10)
-        colors = {tuple(playerPicture.get_at((x, y)))[:3] for x in range(10) for y in range(10)}
+        colors = {tuple(playerPicture.get_at((pixelX, pixelY)))[:3] for pixelX in range(10) for pixelY in range(10)}
         self.assertIn(sprites.PLAYER_COLOR, colors)
 
     def test_a_big_picture_is_cut_into_one_piece_per_tile(self):
