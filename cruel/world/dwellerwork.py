@@ -94,7 +94,7 @@ def walkTo(game, position, worker, goal):
     for GIVE_UP_TURNS turns forgets its target; one stuck for STUCK_SWAP_TURNS swaps past whoever is in its way. A
     farmer walks through any plant (like a goblin farmer)."""
     stuck = getattr(worker, "stuckTurns", 0) >= STUCK_SWAP_TURNS
-    newPosition = dwellers.stepToward(game, position, goal, forceSwap=stuck, throughPlants=worker.work == "farm")
+    newPosition = dwellers.stepToward(game, position, goal, forceSwap=stuck, throughPlants=worker.work == "farm", unit=worker)
     if newPosition == position:
         worker.stuckTurns = getattr(worker, "stuckTurns", 0) + 1
         if worker.stuckTurns >= GIVE_UP_TURNS:

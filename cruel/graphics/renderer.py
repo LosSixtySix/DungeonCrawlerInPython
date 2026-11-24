@@ -275,7 +275,7 @@ class renderer():
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
              console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None, wallLamps=None,
-             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None, darkSight=None):
+             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None, darkSight=None, sharedTiles=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -290,6 +290,8 @@ class renderer():
         fireLight: {tile: (the fire lighting it, its light radius)} for tiles in reach of a fire's or bonfire's light.
         glowLight: {tile: brightness 0..1} for tiles a Glowrock lights. ownSight: the tiles your own light reaches.
         darkSight: the tiles you see by Darkvision past your light (no light there: drawn dim and dithered).
+        sharedTiles: {space: the second unit on it} (occupancy.py): two small units drawn smaller side by side, or a
+        small unit over a giant's corner.
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill((0, 0, 0))  # past the floor's edges is black
@@ -303,6 +305,7 @@ class renderer():
         self.glowLight = glowLight or {}
         self.ownSight = ownSight or set()
         self.darkSight = darkSight or set()
+        self.sharedTiles = sharedTiles or {}
         self.memoryFade = memoryFade or {}  # remembered tile -> how far it has faded to black, 0..1
         self.memoryFalloff = memoryFalloff  # (radius, curve, door darkest) for drawMemoryFalloff, or None
         self.smokeHere = smoke or {}  # Smoke Bomb smoke: whoever stands in it isn't drawn
@@ -1736,7 +1739,9 @@ class renderer():
             extra = (obj.kind, obj.hp, len(getattr(obj, "brokenPoints", ())),
                      self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"]) if obj.kind == "bonfire" else None)
         elif kind == 5 and not memorized and obj is not None:
+            second = getattr(self, "sharedTiles", {}).get(i)
             extra = (obj.name, getattr(obj, "look", None), i in getattr(self, "smokeHere", {}),
+                     (second.name, getattr(second, "look", None), self.enemyFacing(second)) if second is not None else None,
                      sprites.shardFrameFor(getattr(self, "lightTime", 0.0)) if obj.name == "Unsealed" else None,
                      self.giantQuarter(i, obj) if getattr(obj, "size", 1) > 1 else None, self.enemyFacing(obj))
         lighting = None
@@ -1869,6 +1874,41 @@ class renderer():
         if lamp is not None:  # a wall lamp: on the wall side of the tile, over whoever stands under it
             self.mapSurface.blit(self.sprites["wallLamps"][lamp.side], (x * self.tileSize, y * self.tileSize))
 
+    SHARED_SCALE = 0.65  # a unit sharing its space is drawn this much of its size
+
+    def sharedSize(self):
+        return max(1, round(self.tileSize * self.SHARED_SCALE))
+
+    def unitPicture(self, unit, i):
+        """A unit's picture (its quarter of a giant's), or None if it has none yet."""
+        name = unit.name
+        if name == "Unsealed":
+            return self.sprites["unsealed"][sprites.shardFrameFor(getattr(self, "lightTime", 0.0))]
+        if getattr(unit, "size", 1) > 1 and name in self.sprites["giants"]:  # its quarter of a 2x2 giant
+            return self.sprites["giants"][name][self.enemyFacing(unit)][self.giantQuarter(i, unit)]
+        if (name, getattr(unit, "look", None)) in self.sprites["factions"]:  # an Expansion faction's colors
+            return self.sprites["factions"][(name, unit.look)][self.enemyFacing(unit)]
+        if name in self.sprites["enemies"]:
+            return self.sprites["enemies"][name][self.enemyFacing(unit)]
+        return None
+
+    def drawUnit(self, unit, i, left, top, small=False):
+        """Draws a unit with its top-left at (left, top): full size, or (small) shrunk to share its space."""
+        picture = self.unitPicture(unit, i)
+        if picture is None:  # an enemy with no picture yet: a plain square
+            size = self.sharedSize() if small else self.tileSize
+            self.mapSurface.fill(self.color("enemy"), pygame.Rect(left, top, size, size))
+            return
+        if small:
+            cache = self.__dict__.setdefault("sharedPictures", {})
+            key = (id(picture), self.tileSize)
+            if key not in cache:
+                if len(cache) > 256:
+                    cache.clear()
+                cache[key] = (picture, pygame.transform.scale(picture, (self.sharedSize(), self.sharedSize())))
+            picture = cache[key][1]
+        self.mapSurface.blit(picture, (left, top))
+
     def drawTileContents(self, grid, i, x, y, rooms, playerDirection, memorized):
         ts = self.tileSize
         match grid[i][0]:
@@ -1954,20 +1994,18 @@ class renderer():
                 self.mapSurface.blit(self.sprites["doorUp"], (x * ts, y * ts))
             case 5 if not memorized:  # Enemy (enemies are not remembered)
                 self.floorFill(i, rooms, memorized, x, y)
-                name = grid[i][2].name if len(grid[i]) > 2 else ""
-                if i in getattr(self, "smokeHere", {}):
+                unit = grid[i][2] if len(grid[i]) > 2 else None
+                second = getattr(self, "sharedTiles", {}).get(i)
+                if i in getattr(self, "smokeHere", {}) or unit is None:
                     pass  # hidden in smoke: only the smoke shows
-                elif name == "Unsealed":
-                    frame = sprites.shardFrameFor(getattr(self, "lightTime", 0.0))
-                    self.mapSurface.blit(self.sprites["unsealed"][frame], (x * ts, y * ts))
-                elif getattr(grid[i][2], "size", 1) > 1 and name in self.sprites["giants"]:  # its quarter of a 2x2 giant
-                    quarters = self.sprites["giants"][name][self.enemyFacing(grid[i][2])]
-                    self.mapSurface.blit(quarters[self.giantQuarter(i, grid[i][2])], (x * ts, y * ts))
-                elif (name, getattr(grid[i][2], "look", None)) in self.sprites["factions"]:  # an Expansion faction's colors
-                    self.mapSurface.blit(self.sprites["factions"][(name, grid[i][2].look)][self.enemyFacing(grid[i][2])], (x * ts, y * ts))
-                elif name in self.sprites["enemies"]:
-                    self.mapSurface.blit(self.sprites["enemies"][name][self.enemyFacing(grid[i][2])], (x * ts, y * ts))
-                else:  # an enemy with no picture yet: a plain square
-                    self.fillTile(self.color("enemy"), x, y)
+                elif second is None:
+                    self.drawUnit(unit, i, x * ts, y * ts)
+                elif getattr(unit, "size", 1) > 1:  # a small unit under a giant: over its corner, smaller
+                    self.drawUnit(unit, i, x * ts, y * ts)
+                    self.drawUnit(second, i, x * ts + ts - self.sharedSize(), y * ts + ts - self.sharedSize(), small=True)
+                else:  # two small units: smaller, side by side
+                    offset = ts - self.sharedSize()
+                    self.drawUnit(unit, i, x * ts, y * ts + offset // 2, small=True)
+                    self.drawUnit(second, i, x * ts + offset, y * ts + offset // 2, small=True)
             case _:  # Floor
                 self.floorFill(i, rooms, memorized, x, y)

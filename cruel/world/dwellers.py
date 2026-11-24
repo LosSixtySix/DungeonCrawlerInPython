@@ -4,6 +4,7 @@ import random
 from cruel.world import dwellerwork
 from cruel.world import expansion
 from cruel.world import metropolis
+from cruel.world import occupancy
 from cruel.world import organizers
 
 """
@@ -74,9 +75,13 @@ def pathMap(game, goal, throughPlants=False):
     return cache[key]
 
 
-def canStep(tile, throughPlants=False):
-    """Can a Dweller step onto this tile? (passable, or with throughPlants any plant but Organizer's Demise)"""
-    return expansion.canEnter(tile, throughPlants) if throughPlants else organizers.passable(tile)
+def canStep(game, spot, throughPlants=False, unit=None):
+    """Can a Dweller (unit) step onto spot? Passable (with throughPlants any plant but Organizer's Demise), or a
+    space it can share with the one there (occupancy.canJoin: Dwellers are small)."""
+    tile = game.grid[spot]
+    if expansion.canEnter(tile, throughPlants) if throughPlants else organizers.passable(tile):
+        return True
+    return unit is not None and occupancy.canJoin(game, spot, unit)
 
 
 def nudgeAside(game, spot):
@@ -108,6 +113,8 @@ def swapPast(game, position, spot, force=False):
     movedThisTurn = getattr(game, "movedEnemies", set())
     if tile[0] != 5 or len(tile) < 3 or not isDweller(tile[2]) or spot not in movedThisTurn:
         return False
+    if occupancy.stillOccupied(game, position) or spot in occupancy.sharedTiles(game):
+        return False  # (only two units each alone on their space swap)
     other = tile[2]
     if other.role == "grub" and position not in other.pen and position not in (other.headedTo or ()):
         return False  # (livestock is only swapped into its pen, or the one a farmer is moving it to)
@@ -122,11 +129,11 @@ def swapPast(game, position, spot, force=False):
     return True
 
 
-def stepToward(game, position, goal, pushPast=False, forceSwap=False, throughPlants=False):
-    """One step along the path to goal, onto a free tile. Returns where it ends up (where it was if it can't move).
-    pushPast (a hunting guard): a citizen, noble or merchant on the next tile of the path is nudged aside.
-    forceSwap: a Dweller in the way swaps past even if it swapped lately (swapPast). throughPlants (a farmer, like
-    a goblin farmer): it walks through any plant."""
+def stepToward(game, position, goal, pushPast=False, forceSwap=False, throughPlants=False, unit=None):
+    """One step along the path to goal, onto a free tile (or one unit, the Dweller moving, can share). Returns where
+    it ends up (where it was if it can't move). pushPast (a hunting guard): a citizen, noble or merchant on the next
+    tile of the path is nudged aside. forceSwap: a Dweller in the way swaps past even if it swapped lately
+    (swapPast). throughPlants (a farmer, like a goblin farmer): it walks through any plant."""
     steps = pathMap(game, goal, throughPlants)
     here = steps.get(position, math.inf)
     if pushPast:
@@ -136,7 +143,7 @@ def stepToward(game, position, goal, pushPast=False, forceSwap=False, throughPla
             if not organizers.passable(game.grid[nextSpot]) and nudgeAside(game, nextSpot):
                 return organizers.moveTo(game, position, nextSpot)
     nearer = [spot for spot in game.neighbors(position)
-              if canStep(game.grid[spot], throughPlants) and steps.get(spot, math.inf) < here]
+              if canStep(game, spot, throughPlants, unit) and steps.get(spot, math.inf) < here]
     if not nearer:  # the way is blocked by another Dweller: swap past it
         ahead = [spot for spot in game.neighbors(position) if steps.get(spot, math.inf) < here]
         if ahead:
@@ -145,7 +152,7 @@ def stepToward(game, position, goal, pushPast=False, forceSwap=False, throughPla
                 return nextSpot
     if not nearer and position not in steps:  # too far for the path map: just head that way
         nearer = [spot for spot in game.neighbors(position)
-                  if canStep(game.grid[spot], throughPlants) and distance(game, spot, goal) < distance(game, position, goal)]
+                  if canStep(game, spot, throughPlants, unit) and distance(game, spot, goal) < distance(game, position, goal)]
     if not nearer:
         return position
     best = min(nearer, key=lambda spot: steps.get(spot, distance(game, spot, goal)))
@@ -173,14 +180,9 @@ def pickGoal(game, position, dweller):
 # ---------------------------------------------------------------- seeing what you do
 
 def cityDwellers(game):
-    """(position, Dweller) for every Dweller on the floor. During the enemies' turn it also finds the ones that
-    have already moved (gameManager.movedEnemies), which aren't on EnemyPositions until the turn ends."""
-    found = []
-    for spot in set(game.EnemyPositions) | getattr(game, "movedEnemies", set()):
-        tile = game.grid.get(spot)
-        if tile and tile[0] == 5 and len(tile) > 2 and isDweller(tile[2]):
-            found.append((spot, tile[2]))
-    return found
+    """(position, Dweller) for every Dweller on the floor, two on a space included (occupancy.allUnits: during the
+    enemies' turn it also finds the ones that have already moved)."""
+    return [(spot, unit) for spot, unit in occupancy.allUnits(game) if isDweller(unit)]
 
 
 def canSee(game, dwellerSpot, dweller, spot):
@@ -295,13 +297,13 @@ def guardAgainstEnemies(game, position, guard):
     seen = enemyInSight(game, position, guard)
     if seen is not None:
         guard.enemyAt = None  # it's found it
-        return stepToward(game, position, seen[0], pushPast=True)
+        return stepToward(game, position, seen[0], pushPast=True, unit=guard)
     toldOf = getattr(guard, "enemyAt", None)
     if toldOf is not None:
         if distance(game, position, toldOf) <= 1:
             guard.enemyAt = None  # nothing there now
             return position
-        return stepToward(game, position, toldOf, pushPast=True)
+        return stepToward(game, position, toldOf, pushPast=True, unit=guard)
     return None
 
 
@@ -329,7 +331,7 @@ def raiseTheAlarm(game, position, dweller):
         guard.enemyAt = enemyAt
         dweller.enemyAt = None  # told: back to its day
         return position
-    return stepToward(game, position, guardSpot)
+    return stepToward(game, position, guardSpot, unit=dweller)
 
 
 def dealWithEnemies(game, position, dweller):
@@ -406,7 +408,7 @@ def fleeTurn(game, position, dweller):
         game.hitPlayer(dweller, position)
         return position
     if dweller.toldGuard:
-        return stepToward(game, position, dweller.home) if dweller.home not in (None, position) else position
+        return stepToward(game, position, dweller.home, unit=dweller) if dweller.home not in (None, position) else position
     found = nearestGuard(game, position)
     if found is None:
         return stepAway(game, position)
@@ -415,7 +417,7 @@ def fleeTurn(game, position, dweller):
         tellGuard(game, guardSpot, guard, dweller.sawYouAt)
         dweller.toldGuard = True
         return position
-    return stepToward(game, position, guardSpot)
+    return stepToward(game, position, guardSpot, unit=dweller)
 
 
 def guardTurn(game, position, dweller):
@@ -431,11 +433,11 @@ def guardTurn(game, position, dweller):
             dweller.goal = pickGoal(game, position, dweller)
         if dweller.goal is None:
             return position
-        newPosition = stepToward(game, position, dweller.goal)
+        newPosition = stepToward(game, position, dweller.goal, unit=dweller)
         if newPosition == position:
             dweller.goal = None  # can't get there: somewhere else next turn
         return newPosition
-    newPosition = stepToward(game, position, target, pushPast=True)
+    newPosition = stepToward(game, position, target, pushPast=True, unit=dweller)
     if newPosition != position:
         dweller.blockedTurns = 0
         return newPosition
@@ -459,7 +461,7 @@ def calmTurn(game, position, dweller):
         dweller.goal = pickGoal(game, position, dweller)
     if dweller.goal is None:
         return position
-    newPosition = stepToward(game, position, dweller.goal)
+    newPosition = stepToward(game, position, dweller.goal, unit=dweller)
     if newPosition == position:
         dweller.goal = None  # blocked: somewhere else next time
     return newPosition

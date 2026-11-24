@@ -3,6 +3,7 @@ import random as rand
 
 from cruel.entities import enemies
 from cruel.inventory import loot
+from cruel.world import occupancy
 from cruel.world import organizers
 from cruel.world import plants
 from cruel.inventory import resources
@@ -436,12 +437,9 @@ def beginTurn(gm):
     """Where every enemy is at the start of the enemy turn, bucketed by area so nearby searches are quick."""
     pos, buckets = {}, {}
     R = gm.rowLength
-    for p in gm.EnemyPositions:
-        tile = gm.grid.get(p)
-        if tile and tile[0] == 5 and len(tile) > 2:
-            e = tile[2]
-            pos[id(e)] = p
-            buckets.setdefault((p % R // 8, p // R // 8), []).append((p, e))
+    for p, e in occupancy.allUnits(gm):  # (two on a space included)
+        pos[id(e)] = p
+        buckets.setdefault((p % R // 8, p // R // 8), []).append((p, e))
     updatePeace(gm)
     return {"pos": pos, "buckets": buckets, "squadTargets": {}, "fields": {}}
 
@@ -449,14 +447,12 @@ def beginTurn(gm):
 def find(gm, ctx, enemy):
     """Where an enemy is now, or None if it's gone."""
     p = ctx["pos"].get(id(enemy))
-    if p is not None and gm.grid[p][0] == 5 and len(gm.grid[p]) > 2 and gm.grid[p][2] is enemy:
+    if p is not None and enemy in occupancy.unitsAt(gm, p):
         return p
-    for p in set(gm.EnemyPositions) | getattr(gm, "movedEnemies", set()):
-        tile = gm.grid.get(p)
-        if tile and tile[0] == 5 and len(tile) > 2 and tile[2] is enemy:
-            ctx["pos"][id(enemy)] = p
-            return p
-    return None
+    p = occupancy.positionOf(gm, enemy)
+    if p is not None:
+        ctx["pos"][id(enemy)] = p
+    return p
 
 
 def near(gm, ctx, position, reach):
@@ -587,11 +583,14 @@ def step(gm, i, unit, goal, protected, ctx=None, paths=None):
     at it: onto free floor that gets closer, or (for a unit that digs) through a wall in the way that isn't
     protected, sliding sideways round small obstacles. Returns where it is now."""
     farmer = unit.name == "Goblin Farmer"  # (farmers walk through any plant)
+
+    def enterable(j):  # (or a space it can share: goblins but chieftains are small)
+        return canEnter(gm.grid[j], farmer) or occupancy.canJoin(gm, j, unit)
     if ctx is not None or paths is not None:
         paths = paths if paths is not None else field(gm, ctx, goal, i, farmer)
         if i in paths:
             closer = [j for j in gm.neighbors(i) if paths.get(j, 1e9) < paths[i]]
-            better = [j for j in closer if canEnter(gm.grid[j], farmer)]
+            better = [j for j in closer if enterable(j)]
             if not better and unit.name == "Goblin Builder" and ctx is not None:  # its own goblins in the way: shoo one
                 f = camp(gm)["factions"].get(factionOf(unit))
                 better = [j for j in closer if f is not None and nudge(gm, ctx, j, f)]
@@ -613,7 +612,7 @@ def step(gm, i, unit, goal, protected, ctx=None, paths=None):
                     j = min(diggable, key=lambda j: dist(gm, j, goal))
                     digWall(gm, i, unit, j, BREAK_DAMAGE if unit.name == "Goblin Builder" else unit.wallDamage)
                     return i
-            aside = [j for j in gm.neighbors(i) if canEnter(gm.grid[j], farmer) and j in paths]
+            aside = [j for j in gm.neighbors(i) if enterable(j) and j in paths]
             if aside and rand.random() < 0.3:
                 return organizers.moveTo(gm, i, rand.choice(aside))
             return i
@@ -623,12 +622,12 @@ def step(gm, i, unit, goal, protected, ctx=None, paths=None):
         if dist(gm, j, goal) >= here:
             break
         tile = gm.grid[j]
-        if canEnter(tile, farmer):
+        if enterable(j):
             return organizers.moveTo(gm, i, j)
         if tile[0] == 2 and unit.wallDamage > 0 and j not in protected:
             digWall(gm, i, unit, j, BREAK_DAMAGE if unit.name == "Goblin Builder" else unit.wallDamage)
             return i
-    sideways = [j for j in options if canEnter(gm.grid[j], farmer) and dist(gm, j, goal) <= here + 0.5]
+    sideways = [j for j in options if enterable(j) and dist(gm, j, goal) <= here + 0.5]
     if sideways and rand.random() < 0.5:
         return organizers.moveTo(gm, i, rand.choice(sideways))
     if ctx is not None:  # its own goblins in the way: swap places with one that's closer
@@ -1586,10 +1585,9 @@ def newHutSite(gm, f, i, kind, claimed):
     return min(sites, key=lambda s: s[0])[1] if sites else None
 
 def builders(gm):
-    for p in set(gm.EnemyPositions) | getattr(gm, "movedEnemies", set()):
-        tile = gm.grid.get(p)
-        if tile and tile[0] == 5 and len(tile) > 2 and tile[2].name == "Goblin Builder":
-            yield tile[2]
+    for _, unit in occupancy.allUnits(gm):
+        if unit.name == "Goblin Builder":
+            yield unit
 
 
 def roomForHut(gm, bonfire, claimed):
@@ -2364,12 +2362,7 @@ def atPeace(a, b):
 
 def factionUnits(gm, f):
     """(position, unit) for f's goblins on the map."""
-    out = []
-    for p in gm.EnemyPositions:
-        tile = gm.grid.get(p)
-        if tile and tile[0] == 5 and len(tile) > 2 and factionOf(tile[2]) == f.id:
-            out.append((p, tile[2]))
-    return out
+    return [(p, unit) for p, unit in occupancy.allUnits(gm) if factionOf(unit) == f.id]
 
 
 def schism(gameManager, goblinFaction, units):
