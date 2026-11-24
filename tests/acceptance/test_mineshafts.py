@@ -1,0 +1,288 @@
+"""A city's works (mineshafts.py): its mine and its farm, the mineshafts down to them, and the works floors below,
+which sit beside the city's floor while you're on them.
+
+Acceptance tests; the rest are in tests/integration/test_mineshafts.py."""
+import os
+import random
+import tempfile
+import unittest
+from unittest import mock
+from cruel.core import gamemanager
+from cruel.inventory import items
+from cruel.world import dwellers
+from cruel.world import events
+from cruel.world import expansion
+from cruel.world import metropolis
+from cruel.world import mineshafts
+from cruel.world import wall
+from tests import support
+from tests.helpers.metropolis import cityGame, newCity
+from tests.helpers.mineshafts import CHEST, ENEMY, FLOOR, PLANT, WALL, climbDown, dwellersHere, shaftSpot
+
+
+class ClimbingTests(unittest.TestCase):
+    """Down a shaft and back up."""
+
+    def test_down_the_mine_shaft_is_a_motherlode_ore_floor(self):
+        game = cityGame()
+        level = game.level
+        climbDown(game, "mine")
+        self.assertEqual(game.level, level, "the same depth")
+        self.assertIn(game.proportion, wall.ORE_FLOORS)
+        self.assertIn(game.level, game.motherlodes)
+        self.assertEqual(game.sideFloor[0], "mine")
+        self.assertTrue(game.floorTypeName().startswith("Dweller Mine: Motherlode"))
+
+    def test_down_the_farm_shaft_is_a_mixed_cave_floor(self):
+        game = cityGame()
+        climbDown(game, "farm")
+        self.assertEqual(game.proportion, "Mixed")
+        self.assertNotIn(game.level, game.motherlodes)
+
+    def test_you_arrive_on_the_shaft_back_up(self):
+        game = cityGame()
+        spot = shaftSpot(game, "mine")
+        climbDown(game, "mine")
+        self.assertEqual(game.playerPositionFlat, spot)
+        self.assertEqual(game.currentLocation[0], metropolis.MINESHAFT)
+        self.assertFalse(game.currentLocation[2].down)
+
+    def test_back_up_you_are_on_the_citys_shaft_and_the_city_is_as_you_left_it(self):
+        game = cityGame()
+        city = game.grid
+        dwellerCount = len(dwellersHere(game))
+        city[support.openTile(game)] = [9, 0, []]  # something to find again
+        piles = sum(1 for tile in city.values() if tile[0] == 9)
+        spot = shaftSpot(game, "farm")
+        climbDown(game, "farm")
+        game.onEnter()
+        self.assertIsNone(game.sideFloor)
+        self.assertEqual(game.proportion, metropolis.METROPOLIS)
+        self.assertEqual(game.playerPositionFlat, spot)
+        self.assertEqual(game.currentLocation[0], metropolis.MINESHAFT)
+        self.assertEqual(sum(1 for tile in game.grid.values() if tile[0] == 9), piles)
+        self.assertEqual(len(dwellersHere(game)), dwellerCount)
+
+    def test_going_down_again_finds_the_same_works_floor(self):
+        game = cityGame()
+        climbDown(game, "mine")
+        marked = support.openTile(game)
+        game.grid[marked] = [9, 0, []]
+        game.onEnter()
+        game.onEnter()
+        self.assertEqual(game.grid[marked][0], 9)
+
+    def test_the_mine_and_the_farm_are_two_different_floors(self):
+        game = cityGame()
+        climbDown(game, "mine")
+        mine = game.proportion
+        game.onEnter()
+        climbDown(game, "farm")
+        self.assertNotEqual(game.proportion, mine)
+        self.assertEqual(len(game.floorsAside), 1, "the mine waits aside")
+
+    def test_a_works_floor_has_no_doors(self):
+        game = cityGame()
+        cityDoor = game.doorPositions[game.level]
+        climbDown(game, "mine")
+        game.updateDoors()
+        self.assertNotIn(game.grid[cityDoor][0], (4, 6))
+        support.placePlayer(game, support.openTile(game))
+        game.playerPositionFlat = cityDoor  # standing where the city's door down is: nothing happens
+        game.currentLocation = [FLOOR, 1]
+        game.onEnter()
+        self.assertEqual(game.sideFloor[0], "mine")
+
+    def test_a_bomb_can_break_a_works_floor(self):
+        game = cityGame()
+        climbDown(game, "mine")
+        landing = support.openTile(game)
+        with mock.patch.object(gamemanager, "FLOOR_BREAK_CHANCE", 1):
+            game.land({"landing": landing, "effect": "Explosive", "power": 3})
+        self.assertEqual(game.grid[landing][0], expansion.HOLE)
+
+    def test_falling_through_a_works_floor_lands_on_the_floor_below_its_city(self):
+        game = cityGame()
+        level = game.level
+        cityTiles = len(game.grid)
+        spot = shaftSpot(game, "mine")
+        climbDown(game, "mine")
+        game.currentLocation = [expansion.HOLE, 1]
+        game.fall()
+        self.assertEqual(game.level, level + 1)
+        self.assertIsNone(game.sideFloor)
+        self.assertIsNone(game.cityAside)
+        self.assertNotEqual(game.proportion, metropolis.METROPOLIS)
+        self.assertIn((level, spot), game.floorsAside, "the works floor waits aside")
+        self.assertEqual(game.levelGrids[level][2], metropolis.METROPOLIS, "the city is back at its number")
+        self.assertEqual(len(game.levelGrids[level][0]), cityTiles)
+
+    def test_after_the_fall_the_city_and_its_works_floor_are_still_there(self):
+        game = cityGame()
+        level = game.level
+        spot = shaftSpot(game, "mine")
+        climbDown(game, "mine")
+        hole = support.openTile(game)
+        game.grid[hole] = [expansion.HOLE, 1]
+        game.currentLocation = [expansion.HOLE, 1]
+        game.fall()
+        game.changeLevel(level)
+        self.assertEqual(game.proportion, metropolis.METROPOLIS)
+        self.assertEqual(game.grid[spot][0], metropolis.MINESHAFT, "the city's shaft is untouched")
+        support.placePlayer(game, spot)
+        game.onEnter()
+        self.assertEqual(game.sideFloor[0], "mine")
+        self.assertEqual(game.grid[hole][0], expansion.HOLE, "the works floor kept its hole")
+
+    def test_floor_keys_and_labels(self):
+        game = cityGame()
+        self.assertEqual(mineshafts.floorKey(game), game.level)
+        spot = shaftSpot(game, "mine")
+        climbDown(game, "mine")
+        self.assertEqual(mineshafts.floorKey(game), (game.level, spot))
+        self.assertEqual(mineshafts.floorNumber((game.level, spot)), game.level)
+        self.assertEqual(mineshafts.floorLabel(game.level), str(game.level))
+        self.assertEqual(mineshafts.floorLabel((game.level, spot), "mine"), f"{game.level} (Dweller Mine)")
+
+
+class WorksFloorTests(unittest.TestCase):
+    """What's on a works floor."""
+
+    def setUp(self):
+        self.game = cityGame()
+        climbDown(self.game, "mine")
+
+    def test_storehouses_with_empty_storage_chests_by_the_shaft(self):
+        chests = [(spot, tile[2]) for spot, tile in self.game.grid.items() if tile[0] == CHEST and isinstance(tile[2], items.StorageChest)]
+        self.assertEqual(len(chests), mineshafts.STOREHOUSES * mineshafts.STOREHOUSE_CHESTS)
+        for spot, chest in chests:
+            self.assertEqual(list(chest), [])
+            self.assertLess(dwellers.distance(self.game, spot, self.game.playerPositionFlat), 12)
+
+    def test_storehouses_and_pens_have_two_doors_both_reachable_from_the_shaft(self):
+        for seed in range(4):
+            random.seed(seed)
+            game = support.newGame()
+            grid, rowLength = game.grid, game.rowLength
+            shaft = (len(grid) // rowLength // 2) * rowLength + rowLength // 2
+            works = mineshafts.layOutWorks(grid, rowLength, shaft, "farm", game.rooms)
+            self.assertTrue(works.storehouses and works.pens)
+            buildings = [(storehouse["inside"], storehouse["walls"], (storehouse["door"], storehouse["backDoor"])) for storehouse in works.storehouses] +                         [(pen["inside"], pen["fence"], (pen["gate"], pen["backGate"])) for pen in works.pens]
+            for inside, walls, doors in buildings:
+                self.assertNotEqual(*doors)
+                # (the building shut: only its outside counts; anyone standing about doesn't, and the farm's crops
+                # are walked through)
+                outsideOnly = {spot: ([FLOOR, 0] if tile[0] in (ENEMY, PLANT) else tile) for spot, tile in grid.items()}
+                for spot in set(inside) | set(walls) | set(doors):
+                    outsideOnly[spot] = [2, 0]
+                reached = mineshafts.walkable(outsideOnly, rowLength, shaft) | {shaft}
+                for door in doors:
+                    self.assertEqual(grid[door][0], FLOOR)
+                    outside = [near for near in game.neighbors(door) if near not in inside and near not in walls]
+                    self.assertTrue(any(near in reached for near in outside), "each door opens onto ground you can walk to from the shaft")
+
+    def test_a_storage_chest_belongs_to_the_city(self):
+        self.assertIsInstance(items.StorageChest(), items.CityChest)
+
+    def test_workers_and_guards_and_nobody_else(self):
+        found = [self.game.grid[spot][2] for spot in self.game.EnemyPositions]
+        self.assertTrue(all(dwellers.isDweller(unit) for unit in found))
+        roles = [unit.role for unit in found]
+        self.assertGreaterEqual(roles.count("guard"), mineshafts.GUARDS[0])
+        workers = [unit for unit in found if unit.role == "citizen"]
+        self.assertGreaterEqual(len(workers), mineshafts.WORKERS["mine"][0])
+        self.assertTrue(all(worker.work == "mine" for worker in workers))
+
+    def test_wall_lamps_light_it(self):
+        lamps = metropolis.wallLampsHere(self.game)
+        self.assertGreater(len(lamps), 2)
+        self.game.updateFireLight()
+        spot = next(iter(lamps))
+        self.assertIn(spot, self.game.fireLight)
+
+    def test_the_shaft_is_reachable_from_every_storehouse_door(self):
+        reach = dwellers.pathMap(self.game, self.game.playerPositionFlat)
+        doors = [spot for spot, tile in self.game.grid.items() if tile[0] == CHEST and isinstance(tile[2], items.StorageChest)]
+        for chestSpot in doors:
+            self.assertTrue(any(near in reach for near in self.game.neighbors(chestSpot)), "you can walk to every chest")
+
+    def test_a_floor_event_can_happen_there_and_the_citys_own_is_kept(self):
+        game = cityGame()
+        game.floorEvents[game.level] = {"id": "expansion", "turnsLeft": 50, "active": False}
+        with mock.patch.object(events, "roll", return_value={"id": "overgrowth", "turnsLeft": 5, "active": False}):
+            climbDown(game, "farm")
+        self.assertEqual(game.floorEvents[game.level]["id"], "overgrowth")
+        game.onEnter()
+        self.assertEqual(game.floorEvents[game.level]["id"], "expansion")
+
+
+class RulesTests(unittest.TestCase):
+    """The city's rules hold on its works floors."""
+
+    def test_hurting_a_worker_turns_those_who_see_it_hostile(self):
+        game = cityGame()
+        climbDown(game, "mine")
+        self.assertTrue(dwellers.onDwellerFloor(game))
+        spot, worker = next((spot, game.grid[spot][2]) for spot in game.EnemyPositions if game.grid[spot][2].role == "citizen")
+        game.playerHurtEnemy(worker, spot)
+        self.assertTrue(worker.hostile)
+
+    def test_breaking_the_citys_rock_is_not_hostile_but_breaking_a_building_is(self):
+        game = cityGame()
+        rock = next(spot for spot in game.rooms[metropolis.YARD] if game.grid[spot][0] == WALL)
+        with mock.patch.object(dwellers, "hostileAct") as hostileAct:
+            game.breakWall(rock)
+            hostileAct.assert_not_called()
+            buildingWall = next(spot for spot, tile in game.grid.items() if tile[0] == WALL and isinstance(tile[2], wall.HouseWall))
+            game.breakWall(buildingWall)
+            hostileAct.assert_called_once()
+
+    def test_an_emptied_storage_chest_stays(self):
+        game = cityGame()
+        climbDown(game, "mine")
+        chestSpot = next(spot for spot, tile in game.grid.items() if tile[0] == CHEST and isinstance(tile[2], items.StorageChest))
+        game.PlayerLookPosition = chestSpot
+        game.roomItems = game.groundAt(chestSpot)[2]  # (empty: you've just taken the last thing)
+        with mock.patch.object(game, "pickUpItem", lambda: None):
+            game.onPickUpItem()
+        self.assertEqual(game.grid[chestSpot][0], CHEST)
+
+
+class KeepingTests(unittest.TestCase):
+    """Saving, and floors that go away."""
+
+    def test_saving_and_loading_on_a_works_floor(self):
+        game = cityGame()
+        spot = shaftSpot(game, "mine")
+        climbDown(game, "mine")
+        mineType = game.proportion
+        path = os.path.join(tempfile.mkdtemp(), "save.pkl")
+        gamemanager.gameManager.saveGame(game, path)  # (cityGame turns saving off)
+        loaded = support.newGame()
+        self.assertTrue(loaded.loadGame(path))
+        self.assertEqual(loaded.sideFloor, ("mine", spot))
+        self.assertEqual(loaded.proportion, mineType)
+        loaded.onEnter()  # still on the shaft: up to the city
+        self.assertEqual(loaded.proportion, metropolis.METROPOLIS)
+
+    def test_a_station_set_up_on_a_works_floor_is_elsewhere_in_the_city(self):
+        game = cityGame()
+        climbDown(game, "mine")
+        game.player.stations.add("smelter")
+        game.player.stationPlaced["smelter"] = (mineshafts.floorKey(game), support.openTile(game))
+        game.onEnter()
+        self.assertEqual(game.stationState("smelter"), "elsewhere")
+        game.onEnter()
+        self.assertNotEqual(game.stationState("smelter"), "elsewhere")
+
+    def test_works_floors_below_a_dropped_floor_go_too(self):
+        game = cityGame()
+        climbDown(game, "mine")
+        game.onEnter()
+        self.assertTrue(game.floorsAside)
+        game.dropFloorsBelow(game.level - 1)
+        self.assertEqual(game.floorsAside, {})
+
+
+if __name__ == "__main__":
+    unittest.main()

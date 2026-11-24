@@ -1,9 +1,17 @@
 """
-CRUEL's tests. Run them all from the repo root with:
+CRUEL's tests, in three kinds:
+
+    unit/         one function or class on its own, with what it works on built by hand (no game)
+    integration/  a real game, its parts working together, driven from code
+    acceptance/   the game played the way you play it: keys, Enter, menus, walking down shafts, what's drawn
+
+helpers/ holds what the tests of one subject share across the kinds (support.py, what all the tests share).
+Run them all from the repo root with:
 
     python -m unittest discover tests
 
-or one file with:   python -m unittest tests.test_plants
+one kind with:      python -m unittest discover -s tests/unit -t .
+or one file with:   python -m unittest tests.unit.test_plants
 
 This file runs before any test module: it points pygame at dummy video/audio drivers (no window, no sound)
 and points the save folder at a temporary one, so tests never touch your real saves in %APPDATA%/CRUEL.
