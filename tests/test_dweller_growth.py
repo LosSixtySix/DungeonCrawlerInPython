@@ -241,6 +241,23 @@ class NewPenTests(PenTest):
         for spot in newPen["walls"]:
             self.assertIsInstance(self.game.grid[spot][2], wall.PenFence)
         self.assertEqual(self.game.grid[newPen["door"]][0], FLOOR, "a gate")
+        self.assertEqual(self.game.grid[newPen["backDoor"]][0], FLOOR, "and a back gate")
+        self.assertEqual(self.pens[-1]["backGate"], newPen["backDoor"])
+
+    def test_a_planned_building_has_a_back_door_opposite_its_door_with_a_way_out(self):
+        farmer = self.farmer(50, 40)
+        for row in range(0, 80):  # a wall of rock behind where it'll go
+            if self.spot(30, row) in self.game.grid:
+                self.wallAt(30, row)
+        site = dwellerbuilding.findSite(self.game, self.spot(50, 40), farmer, 7, 6)
+        rowLength = self.game.rowLength
+        door, backDoor = site["door"], site["backDoor"]
+        self.assertNotIn(backDoor, site["walls"])
+        self.assertTrue(door % rowLength == backDoor % rowLength or door // rowLength == backDoor // rowLength, "on opposite sides")
+        self.assertGreater(dwellers.distance(self.game, door, backDoor), 4)
+        for spot in site["backWay"]:
+            tile = self.game.grid[spot]
+            self.assertTrue(tile[0] == FLOOR or dwellerwork.mineable(tile))
 
 
 # ---------------------------------------------------------------- building
@@ -303,7 +320,7 @@ class StorehouseTests(PenTest):
         for miner in miners:
             miner.materials = {"iron_ore": 3}
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0):
-            self.assertTrue(self.runTurns(400, until=lambda: not any(dwellerwork.carrying(miner) for miner in miners)))
+            self.assertTrue(self.runTurns(500, until=lambda: not self.plans and not any(dwellerwork.carrying(miner) for miner in miners)))
         self.assertEqual(len(dwellerwork.storageChests(self.game)), 1 + mineshafts.STOREHOUSE_CHESTS)
         stored = sum(stack.amount for spot in dwellerwork.storageChests(self.game) for stack in self.game.grid[spot][2]
                      if stack.materialId == "iron_ore")

@@ -21,8 +21,9 @@ https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
              at random. Buildings are built along the paths, each in the shape its theme builds (STYLES: hexagons,
              round towers, oblong domes, soft rounded cells or sharp squares), every one with its door facing a road:
              the noble quarter's mansions nearest the plaza first, then the city's works (a mine and a farm, WORKS),
-             then SHOP_COUNT shops (each a different kind), then houses. Every building has exactly one door, with a doorstep carved from it to the road, and you
-             can walk to every door from where you arrive. A shop's sign sits in
+             then SHOP_COUNT shops (each a different kind), then houses. Every building has two doors (its door, facing a
+             road, and its back door, as far from it as can be: so a crowd at one door can go round to the other), each
+             with a doorstep carved from it to the road, and you can walk to every door from where you arrive. A shop's sign sits in
              its wall beside the door. A house has a CHEST_CHANCE of a chest (a CityChest).
   Works      a mine and a farm: buildings with a mineshaft (MINESHAFT) in the middle and a sign by the door. The
              shaft goes down to the floor the city works (mineshafts.py): stand on it and press Enter.
@@ -116,18 +117,23 @@ def signName(kind):
 
 class Building:
     """A building of the city: its kind ("house", "shop", "mansion", or a works kind: "mine" or "farm"), the tiles
-    of its walls and inside, and its door."""
+    of its walls and inside, its door and its back door."""
 
-    def __init__(self, kind, walls, inside, door):
+    def __init__(self, kind, walls, inside, door, backDoor=None):
         self.kind = kind
         self.walls = walls
         self.inside = inside
         self.door = door
+        self.backDoor = backDoor
+
+    @property
+    def doors(self):
+        return [self.door] + ([self.backDoor] if self.backDoor is not None else [])
 
     @property
     def tiles(self):
-        """Every tile of the building: its walls, its inside and its door."""
-        return self.walls | self.inside | {self.door}
+        """Every tile of the building: its walls, its inside and its doors."""
+        return self.walls | self.inside | set(self.doors)
         self.center = None      # the inside tile nearest its middle (a shop's counter)
         self.shopKind = None    # a shop: cityshops.SHOP_KINDS
         self.sign = None        # a shop or works: where its sign is (in its wall beside the door)
@@ -360,10 +366,10 @@ def fits(city, cells, left, top, taken):
     return taken.isdisjoint(corner + offset for offset in withMargin(cells, city.rowLength))
 
 
-def doorFor(city, cells, walls, left, top):
-    """The wall cell that makes the best door: its outside faces a road (or failing that, open ground near one)
-    and its inside faces the building's inside. None if no wall cell can be a door."""
-    best = None
+def doorCells(city, cells, walls, left, top):
+    """[(how well it faces a road: 0 onto one, 1 a step from one, 2 not, (column, row))] for every wall cell that
+    can be a door: its outside is outside the building and its inside faces the building's inside."""
+    found = {}
     for column, row in walls:
         for stepColumn, stepRow in SIDES.values():
             outsideCell = (column + stepColumn, row + stepRow)
@@ -372,8 +378,30 @@ def doorFor(city, cells, walls, left, top):
                 continue
             outside = city.spot(left + outsideCell[0], top + outsideCell[1])
             facesRoad = 0 if outside in city.roads else 1 if any(near in city.roads for near in neighborsOf(city, outside)) else 2
-            if best is None or facesRoad < best[0]:
-                best = (facesRoad, (column, row))
+            found[(column, row)] = min(facesRoad, found.get((column, row), 2))
+    return [(facesRoad, cell) for cell, facesRoad in found.items()]
+
+
+def doorFor(city, cells, walls, left, top):
+    """The wall cell that makes the best door: its outside faces a road (or failing that, open ground near one)
+    and its inside faces the building's inside. None if no wall cell can be a door."""
+    best = None
+    for facesRoad, cell in doorCells(city, cells, walls, left, top):
+        if best is None or facesRoad < best[0]:
+            best = (facesRoad, cell)
+    return best[1] if best else None
+
+
+def backDoorFor(city, cells, walls, left, top, doorCell):
+    """The wall cell for a building's back door: one that can be a door, not beside its door, as far from it as can
+    be (and, between those, the one facing a road best). None if there's none."""
+    best = None
+    for facesRoad, cell in doorCells(city, cells, walls, left, top):
+        if max(abs(cell[0] - doorCell[0]), abs(cell[1] - doorCell[1])) <= 1:
+            continue
+        score = (-(abs(cell[0] - doorCell[0]) + abs(cell[1] - doorCell[1])), facesRoad)
+        if best is None or score < best[0]:
+            best = (score, cell)
     return best[1] if best else None
 
 
@@ -393,12 +421,16 @@ def placeBuilding(city, kind, sizeRange, candidates, taken, nearRoad=True):
         doorCell = doorFor(city, cells, walls, left, top)
         if doorCell is None:
             continue
+        backDoorCell = backDoorFor(city, cells, walls, left, top, doorCell)
+        if backDoorCell is None:  # (every building has two doors)
+            continue
         door = city.spot(left + doorCell[0], top + doorCell[1])
         outsideDoor = [near for near in neighborsOf(city, door) if near not in {city.spot(left + column, top + row) for column, row in cells}]
         if nearRoad and not any(near in city.roads or any(far in city.roads for far in neighborsOf(city, near)) for near in outsideDoor):
             continue
-        building = Building(kind, {city.spot(left + column, top + row) for column, row in walls - {doorCell}},
-                            {city.spot(left + column, top + row) for column, row in cells - walls}, door)
+        building = Building(kind, {city.spot(left + column, top + row) for column, row in walls - {doorCell, backDoorCell}},
+                            {city.spot(left + column, top + row) for column, row in cells - walls}, door,
+                            city.spot(left + backDoorCell[0], top + backDoorCell[1]))
         for column, row in cells:  # (the next building's own margin keeps a one-tile alley between them)
             taken.add(city.spot(left + column, top + row))
         middle = (left + width / 2, top + height / 2)
@@ -410,21 +442,22 @@ def placeBuilding(city, kind, sizeRange, candidates, taken, nearRoad=True):
 
 
 def raiseBuilding(city, building):
-    """Puts a placed building on the grid: its walls, its inside floor, its door, its room."""
+    """Puts a placed building on the grid: its walls, its inside floor, its doors, its room."""
     room, wallKind = {"house": (HOUSE, wall.HouseWall), "shop": (SHOP, wall.ShopWall), "mansion": (NOBLE, wall.NobleWall),
                       "mine": (SHOP, wall.ShopWall), "farm": (SHOP, wall.ShopWall)}[building.kind]
     for spot in building.walls:
         city.grid[spot] = [WALL, 0, wallKind()]
-    for spot in building.inside | {building.door}:
+    for spot in building.inside | set(building.doors):
         city.grid[spot] = [FLOOR, 0]
-    for spot in building.walls | building.inside | {building.door}:
+    for spot in building.tiles:
         city.rooms[room].add(spot)
 
 
-def carveDoorstep(city, building, builtOn):
+def carveDoorstep(city, door, builtOn):
     """Carves the way from a building's door out to the nearest road through the rock (the shortest way round the
-    other buildings, builtOn), and makes it part of the roads. (Its door always faces a road a step or two away.)"""
-    cameFrom, frontier = {building.door: None}, [building.door]
+    other buildings, builtOn), and makes it part of the roads. (A door always faces a road a step or two away; a
+    back door may be further.)"""
+    cameFrom, frontier = {door: None}, [door]
     while frontier:
         nextFrontier = []
         for spot in frontier:
@@ -434,7 +467,7 @@ def carveDoorstep(city, building, builtOn):
                 cameFrom[near] = spot
                 if near in city.roads:
                     step = spot
-                    while step != building.door:
+                    while step != door:
                         city.roads.add(step)
                         step = cameFrom[step]
                     return
@@ -454,7 +487,7 @@ def fillWithRock(city):
 
 
 def removeUnreachable(city, playerSpot):
-    """Takes down any building whose door you couldn't walk to from where you arrive (a pocket the packing closed
+    """Takes down any building with a door you couldn't walk to from where you arrive (a pocket the packing closed
     in), until every door is reachable. Where it stood turns back to rock."""
     while True:
         reached, frontier = {playerSpot}, [playerSpot]
@@ -464,7 +497,7 @@ def removeUnreachable(city, playerSpot):
                 if near not in reached and city.grid[near][0] == FLOOR:
                     reached.add(near)
                     frontier.append(near)
-        cutOff = [building for building in city.buildings if building.door not in reached]
+        cutOff = [building for building in city.buildings if any(door not in reached for door in building.doors)]
         if not cutOff:
             return
         for building in cutOff:
@@ -506,7 +539,8 @@ def placeBuildings(city, playerSpot):
         raiseBuilding(city, building)
         builtOn |= building.tiles
     for building in city.buildings:
-        carveDoorstep(city, building, builtOn)
+        for door in building.doors:
+            carveDoorstep(city, door, builtOn)
     fillWithRock(city)
     removeUnreachable(city, playerSpot)
     for building in city.buildings:  # a shop's or works' sign: in its wall beside the door
@@ -539,8 +573,8 @@ def houseChest():
 
 
 def chestSpotIn(city, building):
-    """A tile inside a building for a chest: not just inside its door (the way in stays open) and not its middle."""
-    doorway = set(neighborsOf(city, building.door))
+    """A tile inside a building for a chest: not just inside a door (the ways in stay open) and not its middle."""
+    doorway = {near for door in building.doors for near in neighborsOf(city, door)}
     choices = [spot for spot in building.inside if spot not in doorway and spot != building.center and city.grid[spot][0] == FLOOR]
     return random.choice(choices) if choices else None
 
@@ -580,7 +614,8 @@ def placeLights(city, playerSpot):
     posts round the plaza."""
     doorways = set()
     for building in city.buildings:
-        doorways |= {building.door, *neighborsOf(city, building.door)}
+        for door in building.doors:
+            doorways |= {door, *neighborsOf(city, door)}
     walls = {spot for spot, tile in city.grid.items() if tile[0] == WALL}
     outsideLamps = []
     for spot in sorted(city.roads):

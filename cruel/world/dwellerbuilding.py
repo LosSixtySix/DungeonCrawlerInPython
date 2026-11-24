@@ -17,8 +17,9 @@ A building is planned on a site (findSite; a worker that finds none waits SEARCH
 clearing) of open floor or rock the miners could break, clear of the fields, the shaft, the lamps and other
 buildings, with a step of ground outside its door that you can walk to from the shaft. Of the sites that fit, the
 one nearest the shaft with the least rock to dig wins. The box's edge is its walls (a storehouse's or a pen fence)
-but for the door in the middle of the side facing the shaft; a storehouse has STOREHOUSE_CHESTS chests along its
-back wall.
+but for its two doors: one in the middle of the side facing the shaft, one in the middle of the far side (a back
+door, with a way dug from it to ground you can walk to, BACK_WAY_MOST long at most); a storehouse has
+STOREHOUSE_CHESTS chests along its back wall.
 
 The plan is shared by the floor's workers (worker.plans). Up to BUILDERS of them (never a farm's keepers) build it at once (and any worker
 with something to store and no chest with room for it), one piece a turn, standing beside it (a wall or chest is
@@ -33,6 +34,7 @@ is crossed off.
 
 BUILDERS = 2                # workers putting up a building at once
 SITE_REACH = 18             # how far from the shaft a new building's middle can be
+BACK_WAY_MOST = 12          # a back door's way out to open ground is dug this far at most
 SEARCH_AGAIN_TURNS = 200    # a worker that found no site for a building doesn't look again for this long
 WALLS = {"storehouse": wall.ShopWall, "pen": wall.PenFence}
 
@@ -47,7 +49,8 @@ def shaftOf(game, position):
 
 def shape(rowLength, left, top, width, height, toward):
     """A building's box with its top-left corner at (left, top): its walls, inside, door (in the middle of the side
-    facing toward, a (column, row)), the tile outside the door, and the inside tiles along its back wall."""
+    facing toward, a (column, row)), the tile outside the door, its back door (in the middle of the far side) and
+    the tile outside that, and the inside tiles along its back wall."""
     box = {column + row * rowLength for row in range(top, top + height) for column in range(left, left + width)}
     walls = {spot for spot in box if spot % rowLength in (left, left + width - 1) or spot // rowLength in (top, top + height - 1)}
     middleColumn, middleRow = left + width // 2, top + height // 2
@@ -55,21 +58,23 @@ def shape(rowLength, left, top, width, height, toward):
     if abs(towardColumn - middleColumn) > abs(towardRow - middleRow):
         step = -1 if towardColumn < middleColumn else 1
         door = (left if step < 0 else left + width - 1) + middleRow * rowLength
+        backDoor = (left + width - 1 if step < 0 else left) + middleRow * rowLength
         backColumn = left + width - 2 if step < 0 else left + 1
         back = [backColumn + (middleRow + offset) * rowLength for offset in (-1, 1)]
     else:
         step = -rowLength if towardRow < middleRow else rowLength
         door = middleColumn + (top if step < 0 else top + height - 1) * rowLength
+        backDoor = middleColumn + (top + height - 1 if step < 0 else top) * rowLength
         backRow = top + height - 2 if step < 0 else top + 1
         back = [middleColumn + offset + backRow * rowLength for offset in (-1, 1)]
-    return {"box": box, "walls": walls - {door}, "inside": frozenset(box - walls), "door": door,
-            "outside": door + step, "back": back}
+    return {"box": box, "walls": walls - {door, backDoor}, "inside": frozenset(box - walls), "door": door,
+            "outside": door + step, "backDoor": backDoor, "backOutside": backDoor - step, "back": back}
 
 
 def plannedTiles(plans):
     tiles = set()
     for plan in plans:
-        tiles |= plan["box"] | plan["margin"]
+        tiles |= plan["box"] | plan["margin"] | set(plan.get("backWay", ()))
     return tiles
 
 
@@ -108,11 +113,43 @@ def findSite(game, position, worker, width, height):
                       for column in range(left - 1, left + width + 1)} - site["box"]
             if not marginFits(game, margin, keepOff - set(getattr(worker, "fields", {}))):
                 continue
+            backWay = wayOut(game, site["backOutside"], reach, keepOff | site["box"])
+            if backWay is None:
+                continue
+            site["backWay"] = backWay
+            rock |= {spot for spot in backWay if dwellerwork.mineable(game.grid[spot])}
             score = away + 3 * len(rock)
             if best is None or score < best[0]:
                 site["margin"], site["rock"] = margin, rock
                 best = (score, site)
     return best[1] if best else None
+
+
+def wayOut(game, start, reach, keepOff):
+    """The tiles from start (outside a back door) to ground in reach (that you can walk to from the shaft), through
+    floor or rock a miner could break, round keepOff: start's included, BACK_WAY_MOST long at most. [] if start is
+    already in reach; None if there's no way."""
+    if start in reach:
+        return []
+    cameFrom, frontier = {start: None}, [start]
+    for _ in range(BACK_WAY_MOST):
+        nextFrontier = []
+        for spot in frontier:
+            for near in game.neighbors(spot):
+                if near in cameFrom or near in keepOff:
+                    continue
+                if near in reach:
+                    way, step = [], spot
+                    while step is not None:
+                        way.append(step)
+                        step = cameFrom[step]
+                    return way
+                tile = game.grid[near]
+                if tile[0] == dwellerwork.FLOOR or dwellerwork.mineable(tile):
+                    cameFrom[near] = spot
+                    nextFrontier.append(near)
+        frontier = nextFrontier
+    return None
 
 
 def siteRock(game, site, keepOff):
@@ -212,7 +249,7 @@ def isBuilt(game, plan, spot):
 
 def pieces(game, plan):
     """What's left to do, in order: ("dig", spot)s, then ("wall", spot)s, then ("chest", spot)s."""
-    toDig = sorted((spot for spot in plan["box"] if dwellerwork.mineable(game.grid[spot])),
+    toDig = sorted((spot for spot in plan["box"] | set(plan.get("backWay", ())) if dwellerwork.mineable(game.grid[spot])),
                    key=lambda spot: dwellers.distance(game, plan["outside"], spot))
     if toDig:
         return [("dig", spot) for spot in toDig]
@@ -279,5 +316,6 @@ def finish(game, worker, plan):
     if plan in plans:
         plans.remove(plan)
     if plan["kind"] == "pen" and getattr(worker, "pens", None) is not None:
-        worker.pens.append({"fence": set(plan["walls"]), "inside": plan["inside"], "gate": plan["door"]})
+        worker.pens.append({"fence": set(plan["walls"]) | {plan["door"], plan["backDoor"]}, "inside": plan["inside"],
+                            "gate": plan["door"], "backGate": plan["backDoor"]})
     worker.job = None

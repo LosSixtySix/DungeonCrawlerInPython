@@ -87,15 +87,19 @@ class CityLayoutTests(unittest.TestCase):
             self.assertIn(playerSpot, city.rooms[metropolis.STREET])
             self.assertEqual(city.grid[playerSpot][0], FLOOR)
 
-    def test_every_building_has_exactly_one_door_onto_a_street(self):
-        buildings = self.city.houses + self.city.mansions + [(shop["inside"], shop["door"]) for shop in self.city.shops]
-        self.assertTrue(buildings)
-        for inside, door in buildings:
-            gaps = [spot for spot in ringOf(self.city, inside) if self.city.grid[spot][0] not in (WALL, metropolis.SHOP_SIGN)  # (a shop's sign is set in its wall)
+    def test_every_building_has_two_doors_onto_streets_apart_from_each_other(self):
+        self.assertTrue(self.city.buildings)
+        for building in self.city.buildings:
+            inside = building.inside
+            gaps = [spot for spot in ringOf(self.city, inside) if self.city.grid[spot][0] not in (WALL, metropolis.SHOP_SIGN, metropolis.MINESHAFT)
                     and spot % ROW_LENGTH not in (0,) and any(abs(spot - insideSpot) in (1, ROW_LENGTH) for insideSpot in inside)]
-            self.assertEqual(gaps, [door])
-            outside = [spot for spot in metropolis.neighborsOf(self.city, door) if spot not in inside]
-            self.assertTrue(any(spot in self.city.rooms[metropolis.STREET] for spot in outside), "the door opens onto a street")
+            self.assertEqual(sorted(gaps), sorted(building.doors))
+            self.assertEqual(len(building.doors), 2)
+            door, backDoor = building.doors
+            self.assertGreater(max(abs(door % ROW_LENGTH - backDoor % ROW_LENGTH), abs(door // ROW_LENGTH - backDoor // ROW_LENGTH)), 1, "not side by side")
+            for each in building.doors:
+                outside = [spot for spot in metropolis.neighborsOf(self.city, each) if spot not in inside]
+                self.assertTrue(any(spot in self.city.rooms[metropolis.STREET] for spot in outside), "each door opens onto a street")
 
     def test_three_to_five_shops_each_a_different_kind(self):
         for seed in range(15):
@@ -132,8 +136,9 @@ class CityLayoutTests(unittest.TestCase):
         for seed in range(6):
             city = newCity(seed)
             for building in city.buildings:
-                outside = [near for near in metropolis.neighborsOf(city, building.door) if near not in building.tiles]
-                self.assertTrue(any(near in city.roads for near in outside), "the step outside the door is road")
+                for door in building.doors:
+                    outside = [near for near in metropolis.neighborsOf(city, door) if near not in building.tiles]
+                    self.assertTrue(any(near in city.roads for near in outside), "the step outside each door is road")
 
     def test_digging_out_the_rock_leaves_yard_ground(self):
         game = cityGame()
@@ -170,7 +175,8 @@ class CityLayoutTests(unittest.TestCase):
                         reached.add(near)
                         frontier.append(near)
             for building in city.buildings:
-                self.assertIn(building.door, reached)
+                for door in building.doors:
+                    self.assertIn(door, reached)
 
     def test_paths_are_rounded_or_square_and_both_turn_up(self):
         styles = set()

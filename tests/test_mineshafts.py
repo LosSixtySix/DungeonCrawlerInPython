@@ -1,6 +1,7 @@
 """A city's works (mineshafts.py): its mine and its farm, the mineshafts down to them, and the works floors below,
 which sit beside the city's floor while you're on them."""
 import os
+import random
 import tempfile
 import unittest
 from unittest import mock
@@ -16,7 +17,7 @@ from cruel.world import wall
 from tests import support
 from tests.test_metropolis import cityGame, newCity
 
-FLOOR, WALL, CHEST, ENEMY = 0, 2, 3, 5
+FLOOR, WALL, CHEST, ENEMY, PLANT = 0, 2, 3, 5, 8
 
 
 def shaftSpot(game, kind):
@@ -201,6 +202,28 @@ class WorksFloorTests(unittest.TestCase):
         for spot, chest in chests:
             self.assertEqual(list(chest), [])
             self.assertLess(dwellers.distance(self.game, spot, self.game.playerPositionFlat), 12)
+
+    def test_storehouses_and_pens_have_two_doors_both_reachable_from_the_shaft(self):
+        for seed in range(4):
+            random.seed(seed)
+            game = support.newGame()
+            grid, rowLength = game.grid, game.rowLength
+            shaft = (len(grid) // rowLength // 2) * rowLength + rowLength // 2
+            works = mineshafts.layOutWorks(grid, rowLength, shaft, "farm", game.rooms)
+            self.assertTrue(works.storehouses and works.pens)
+            buildings = [(storehouse["inside"], storehouse["walls"], (storehouse["door"], storehouse["backDoor"])) for storehouse in works.storehouses] +                         [(pen["inside"], pen["fence"], (pen["gate"], pen["backGate"])) for pen in works.pens]
+            for inside, walls, doors in buildings:
+                self.assertNotEqual(*doors)
+                # (the building shut: only its outside counts; anyone standing about doesn't, and the farm's crops
+                # are walked through)
+                outsideOnly = {spot: ([FLOOR, 0] if tile[0] in (ENEMY, PLANT) else tile) for spot, tile in grid.items()}
+                for spot in set(inside) | set(walls) | set(doors):
+                    outsideOnly[spot] = [2, 0]
+                reached = mineshafts.walkable(outsideOnly, rowLength, shaft) | {shaft}
+                for door in doors:
+                    self.assertEqual(grid[door][0], FLOOR)
+                    outside = [near for near in game.neighbors(door) if near not in inside and near not in walls]
+                    self.assertTrue(any(near in reached for near in outside), "each door opens onto ground you can walk to from the shaft")
 
     def test_a_storage_chest_belongs_to_the_city(self):
         self.assertIsInstance(items.StorageChest(), items.CityChest)
