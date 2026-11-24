@@ -182,6 +182,7 @@ POTION_BELT_STACK = 5  # how many of the same potion share an inventory slot whi
 FIRE_FLASK_DAMAGE = 5
 SMOKE_TURNS = 12  # a Smoke Bomb's cloud lingers this long (it thins out over its last SMOKE_THIN_TURNS)
 DEMISE_FLASK_DAMAGE = 5
+DARKVISION_TURNS = 150  # a Potion Of Darkvision lasts this long
 BOMB_FLASK_DAMAGE = 10
 BOMB_WALL_DAMAGE = 20
 
@@ -321,6 +322,11 @@ RECIPES = [
            "Crushed thorns that hum with magic. Organizers caught in it take root.",
            f"Thrown: {DEMISE_FLASK_DAMAGE} magic damage where it lands; Organizers become Plant Organizers",
            makeItem=potion("Demise Flask", "Magic", DEMISE_FLASK_DAMAGE)),
+
+    Recipe("darkvision", "Potion Of Darkvision", "alchemist", 3, {"glass": 1, "dew": 2, "shadowfern": 1}, "potion",
+           "Dweller Dew with a shadowfern leaf in it. It tastes like a cold cave.",
+           f"Drink: see {relics.DARKVISION_RANGE} tiles in the dark for {DARKVISION_TURNS} turns, by no light enemies can see",
+           makeItem=potion("Potion Of Darkvision", "Darkvision", DARKVISION_TURNS)),
 
     Recipe("smoke_bomb", "Smoke Bomb", "alchemist", 3, {"glass": 1, "shadowfern": 2, "coal": 1}, "potion",
            "Burning fern and a lot of smoke.", f"Thrown: a smoke cloud for {SMOKE_TURNS} turns", makeItem=potion("Smoke Bomb", "Smoke", SMOKE_TURNS)),

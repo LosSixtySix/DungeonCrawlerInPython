@@ -79,6 +79,7 @@ class PlayerClass():
         self.wardReady = True    # Warded Chainmail: the first hit on each floor does nothing
         self.burnTurns = 0       # turns of burning left (fire can set you alight; see gameManager.applyFire)
         self.buffs = {}          # effects from the meal you last ate: effect tag -> turns left (see eat and stepBuffs)
+        self.potionEffects = {}  # effects from potions you drank: effect tag -> turns left (meals don't replace these)
         self.meal = None         # that meal's name, while any of its buffs last
         self.actionPool = 0.0    # leftover fraction of speed, carried into the next turn (see startRound)
         self.startRound()
@@ -149,6 +150,10 @@ class PlayerClass():
                     self.takeOne(inventorySlot)
                     self.actionMade = True
                     self.seeDoor = True
+                case "Darkvision":  # (another one tops the turns back up, it doesn't add them)
+                    self.takeOne(inventorySlot)
+                    self.actionMade = True
+                    self.drinkEffect("darkvision", item.bonus)
     
     def equipItem(self,inventoryIndex):
         item = self.inventory[inventoryIndex]
@@ -326,15 +331,31 @@ class PlayerClass():
         """The meal drawbacks still on you: [(effect tag, turns left)]."""
         return [(tag, turns) for tag, turns in getattr(self, "buffs", {}).items() if tag in relics.DRAWBACKS]
 
+    def drinkEffect(self, tag, turns):
+        """A potion's effect lasts turns (drinking another of the same sets it back to turns)."""
+        if not hasattr(self, "potionEffects"):
+            self.potionEffects = {}
+        self.potionEffects[tag] = max(self.potionEffects.get(tag, 0), turns)
+
+    def potionTurns(self):
+        """[(effect tag, turns left)] for the potions you drank that still last."""
+        return list(getattr(self, "potionEffects", {}).items())
+
     def stepBuffs(self):
-        """One turn off every meal buff. Returns the tags that wore off. Losing Hearty's +2 max health can't
-        kill you: you're left on at least 1."""
+        """One turn off every meal buff and drunk potion. Returns the tags that wore off. Losing Hearty's +2 max
+        health can't kill you: you're left on at least 1."""
         buffs = getattr(self, "buffs", {})
         ended = [tag for tag in buffs if buffs[tag] <= 1]
         for tag in list(buffs):
             buffs[tag] -= 1
             if buffs[tag] <= 0:
                 del buffs[tag]
+        potions = getattr(self, "potionEffects", {})
+        ended += [tag for tag in potions if potions[tag] <= 1]
+        for tag in list(potions):
+            potions[tag] -= 1
+            if potions[tag] <= 0:
+                del potions[tag]
         if ended:
             self.damageTaken = min(self.damageTaken, self.getMaxHealth() - 1)
         if not self.mealTurns():
@@ -342,16 +363,16 @@ class PlayerClass():
         return ended
 
     def gearEffects(self):
-        """Effect tags from what's equipped only (effects() adds the meal buffs)."""
+        """Effect tags from what's equipped only (effects() adds the meal buffs and drunk potions)."""
         tags = self.effects()
-        for tag in getattr(self, "buffs", {}):
+        for tag in list(getattr(self, "buffs", {})) + list(getattr(self, "potionEffects", {})):
             tags.remove(tag)
         return tags
 
     def effects(self):
         """Every effect tag on what's equipped (relic powers and enchantments, see relics.EFFECTS), plus the
-        buffs from a meal."""
-        tags = list(getattr(self, "buffs", {}))
+        buffs from a meal and the potions you drank."""
+        tags = list(getattr(self, "buffs", {})) + list(getattr(self, "potionEffects", {}))
         for item in self.equipment.values():
             if item == "None":
                 continue

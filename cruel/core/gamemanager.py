@@ -2888,11 +2888,15 @@ class gameManager():
         # torchlight: with a torch in hand, the tiles you see by your own light are lit, and enemies can spot them
         self.torchLight = set(visiblePositions) if self.player.holdingTorch() and not self.peaceful else set()
         self.ownSight = set(visiblePositions)  # lit by your own light (Glowrock light adds to it, see renderer.tileLighting)
+        # Darkvision (a potion): you see further, by no light, so none of it is torchlight or lit
+        self.darkSight = self.darkvisionSight(visiblePositions)
+        for position in self.darkSight:
+            self.grid[position][1] = 1
         if getattr(self, "revealMap", False):  # developer console /reveal: the whole floor is in view
             for tile in self.grid.values():
                 tile[1] = 1
         self.visibleGrid = self.grid  # (see the top of this function)
-        self.visibleTiles = list(self.grid) if getattr(self, "revealMap", False) else             [i for i in set(visiblePositions) | set(self.fireLight) | set(self.glowLight) | set(self.EnemyPositions)
+        self.visibleTiles = list(self.grid) if getattr(self, "revealMap", False) else             [i for i in set(visiblePositions) | set(self.fireLight) | set(self.glowLight) | set(self.EnemyPositions) | self.darkSight
              if self.grid.get(i, (None, 0))[1] == 1]
         door = None if mineshafts.onSideFloor(self) else self.doorPositions[self.level]  # (a works floor has none)
         if self.player.seeDoor:
@@ -2904,6 +2908,13 @@ class gameManager():
             if (door % R - self.playerPositionFlat % R) ** 2 + (door // R - self.playerPositionFlat // R) ** 2 <= radius * radius:
                 self.grid[door][1] = 2
                 self.addPopup("You sense a door", door)
+
+    def darkvisionSight(self, lightSight):
+        """The tiles Darkvision shows you past your own light (lightSight): out to relics.DARKVISION_RANGE,
+        stopped by walls like any sight (and by smoke, standing in it). Empty without the potion."""
+        if not self.player.hasEffect("darkvision") or self.playerPositionFlat in self.smoke:
+            return set()
+        return self.rayCircleVision(self.playerPositionFlat, relics.DARKVISION_RANGE, 1) - set(lightSight)
 
     def levelUpPreview(self, attribute):
         """What one more point in this attribute would change: [(what, now, after)] for the Level Up window."""
@@ -4102,6 +4113,8 @@ class gameManager():
                 self.player.wardReady = True
             if not hasattr(self.player, "buffs"):
                 self.player.buffs = {}
+            if not hasattr(self.player, "potionEffects"):
+                self.player.potionEffects = {}
             if not hasattr(self.player, "meal"):
                 self.player.meal = None
             self.player.syncSlots()  # saves from before the Back slot
@@ -4209,7 +4222,8 @@ class gameManager():
                             ("Facing", self.getDirectionName()), ("Wall Damage", player.getWallDamage()),
                             ("Damage", f"{minDamage} - {maxDamage}"), ("Vision", player.getVisionRange()),
                             ("Effects", ", ".join(relics.effectName(t) for t in player.gearEffects()) or "None"),
-                            ("Meal", f"{player.meal} ({player.mealTurns()})" if getattr(player, "meal", None) and player.mealTurns() else "None")]
+                            ("Meal", f"{player.meal} ({player.mealTurns()})" if getattr(player, "meal", None) and player.mealTurns() else "None"),
+                            ("Potions", ", ".join(f"{relics.effectName(t)} ({n})" for t, n in player.potionTurns()) or "None")]
         elif windowId == "room":
             spec["rows"] = [("Floor Type", self.floorTypeName()), ("Theme", self.theme.name),
                             ("Room Type", self.getRoomType(self.playerPositionFlat, self.rooms) or "-"),
@@ -4491,6 +4505,8 @@ class gameManager():
             bonus = player.attributeBonuses.get(item.attributeScaling, 0)
             effect = {"Heal": f"Heals {item.bonus}" + (f" (+{bonus} from WIS)" if bonus else ""),
                       "DoorLocate": "Shows the way to the next floor",
+                      "Darkvision": f"Drink: see {relics.DARKVISION_RANGE} tiles in the dark for {item.bonus} turns. "
+                                    "It's not light: enemies aren't drawn to it, and you still can't see through walls",
                       "Fire": f"Thrown: {item.bonus} damage to everything where it lands, you included. Can set the ground and plants alight",
                       "Smoke": f"Thrown: a smoke cloud for {item.bonus} turns. Everything in it is hidden, and no one sees into or out of it",
                       "Magic": f"Thrown: {item.bonus} magic damage to everything where it lands, you included. "
@@ -4598,6 +4614,7 @@ class gameManager():
             message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly, overlayOnly=overlayOnly,
             fireLight=getattr(self, "fireLight", {}), glowLight=getattr(self, "glowLight", {}), ownSight=getattr(self, "ownSight", set()),
+            darkSight=getattr(self, "darkSight", set()),
             wallLamps=metropolis.wallLampsHere(self),
             memoryFade=self.memoryShades(), memoryFalloff=(FORGET_DISTANCE, FORGET_CURVE, DOOR_SHADE_MOST),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),

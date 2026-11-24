@@ -32,6 +32,7 @@ FIRE_TINT_ALPHA = 82          # the tint's strength on the fire's own tile (0-25
 LEVEL_BRIGHTNESS = {None: 1.0, 0: 0.75, 1: 0.5}  # your light's steps (see lightLevel) as brightness
 GLOW_DARK_MOST = 210          # how dark (0-255 over the dimmest dither) a tile at the very edge of a glow gets
 GLOW_TINT = (232, 220, 130)
+DARKVISION_DARK = 120         # how dark (0-255 over the heavy dither) a tile you see only by Darkvision is
 GLOW_TINT_ALPHA = 60          # the pale tint at full brightness; a Glowrock's tiles get a share of it
 
 # Corrupted walls (Overgrowth): vines creeping over the top of the wall, in the corrupting plant's colors.
@@ -274,7 +275,7 @@ class renderer():
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
              console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None, wallLamps=None,
-             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None):
+             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None, darkSight=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -288,6 +289,7 @@ class renderer():
         zoom: the camera keeps the player in the middle of the screen; zoom (1 and up) scales the map up around them.
         fireLight: {tile: (the fire lighting it, its light radius)} for tiles in reach of a fire's or bonfire's light.
         glowLight: {tile: brightness 0..1} for tiles a Glowrock lights. ownSight: the tiles your own light reaches.
+        darkSight: the tiles you see by Darkvision past your light (no light there: drawn dim and dithered).
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill((0, 0, 0))  # past the floor's edges is black
@@ -300,6 +302,7 @@ class renderer():
         self.wallLamps = wallLamps or {}  # {tile: metropolis.WallLamp}: drawn on their wall, over whatever stands there
         self.glowLight = glowLight or {}
         self.ownSight = ownSight or set()
+        self.darkSight = darkSight or set()
         self.memoryFade = memoryFade or {}  # remembered tile -> how far it has faded to black, 0..1
         self.memoryFalloff = memoryFalloff  # (radius, curve, door darkest) for drawMemoryFalloff, or None
         self.smokeHere = smoke or {}  # Smoke Bomb smoke: whoever stands in it isn't drawn
@@ -1682,6 +1685,8 @@ class renderer():
             level = None if level is None or fireLevel is None else min(level, fireLevel)
             alpha = int(FIRE_TINT_ALPHA * max(0.0, 1 - distance / (fire[1] + 1)))
         glow = getattr(self, "glowLight", {}).get(i)
+        if not glow and fire is None and i in getattr(self, "darkSight", ()):  # Darkvision: seen, but unlit
+            return 1, 0, 0, DARKVISION_DARK
         if not glow:
             return level, alpha, 0, 0
         # Glowrock light adds to whatever light is already here (yours, or a fire's), as brightness 0..1
