@@ -173,6 +173,7 @@ class DewGrub(Dweller):
         self.grown = True         # a young one makes no Dew and has no young of its own
         self.growth = 0           # a young one: plants eaten so far (dewgrubs.FEEDINGS_TO_GROW and it's grown)
         self.headedTo = None      # the pen (its inside tiles) a farmer is moving it to
+        self.hunger = 0           # turns since it was last fed (dwellerfarming.STARVE_TURNS and it starves)
         if not grown:
             self.grown = False
             self.name = self.YOUNG_NAME
