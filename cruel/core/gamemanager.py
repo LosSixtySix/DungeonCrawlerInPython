@@ -1185,9 +1185,9 @@ class gameManager():
             look = self.PlayerLookPosition
             if look not in self.grid or self.grid[look][0] != 0:
                 return "face an empty floor tile"
-            floors = plants.PLANTS[recipe.makes]["floors"]
-            if plants.floorOf(look, self.rooms) not in floors:
-                return f"it only grows on {floors[0]} or {floors[1]} floors"
+            if not plants.growsOn(recipe.makes, plants.floorOf(look, self.rooms)):
+                floors = plants.PLANTS[recipe.makes]["cityFloors" if self.proportion == metropolis.METROPOLIS else "floors"]
+                return f"it only grows on {' or '.join(floors)} floors"
         if recipe.kind == "potion" and player.roomFor(recipe.makeItem(0, 0)) < recipe.amount:
             return "not enough room in your inventory"
         return None

@@ -13,23 +13,25 @@ from cruel.world import wall
 The Metropolis: a floor that is one whole city of insectoid Dwellers (design sheet:
 https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
 
-  The city   a ring of City Wall round the floor. Inside it, a network of random paths: a small round plaza
+  The city   a ring of City Wall round the floor. Inside it, solid rock (Stone Wall, like any other floor's) with
+             the roads carved out of it and the buildings set into it. The roads are a network of random paths: a small round plaza
              somewhere near the middle, a path from where you arrive to it, and paths out to targets spread over the
              floor, each starting from the nearest road so they branch off one another. Each path is either
              "rounded" (it curves smoothly as it goes) or "square" (straight runs with right-angle corners), picked
              at random. Buildings are built along the paths, each in the shape its theme builds (STYLES: hexagons,
              round towers, oblong domes, soft rounded cells or sharp squares), every one with its door facing a road:
              the noble quarter's mansions nearest the plaza first, then SHOP_COUNT shops (each a different kind),
-             then houses. Every building has exactly one door, and you can walk to every door from where you
-             arrive. A shop's sign sits in
+             then houses. Every building has exactly one door, with a doorstep carved from it to the road, and you
+             can walk to every door from where you arrive. A shop's sign sits in
              its wall beside the door. A house has a CHEST_CHANCE of a chest (a CityChest).
-  Lights     wall lamps hang on the outside walls along the roads and on the walls inside every building (WallLamp:
+  Lights     wall lamps hang on the walls along the roads (the rock's or a building's) and on the walls inside every building (WallLamp:
              they light round them, and anyone can stand under one without putting it out). Lamp posts stand
              round the plaza.
   Dwellers   citizens walk the roads, nobles stay near their mansions, guards stand at posts spread over the roads,
              merchants keep a shop each (dwellers.py runs their turns, cityshops.py stocks their shops).
-  Rooms      the floor's tiles are in the Street (roads and plaza), Yard (open ground between buildings), House,
-             Shop and Noble rooms (themes.CITY_ROOMS), each drawn in its own theme colors.
+  Rooms      the floor's tiles are in the Street (roads, plaza and doorsteps), Yard (the rock between them: dig it
+             out and it's Yard ground), House, Shop and Noble rooms (themes.CITY_ROOMS), each drawn in its own theme
+             colors. Each is its own floor type for plants (plants.CITY_FLOORS), so they grow in a city too.
 
 You always arrive on a road: one runs from where you stand to the rest of the city.
 """
@@ -79,8 +81,8 @@ ROOM_LAMP_RADIUS = 3        # how far a lamp inside a building lights
 PLAZA_LAMPS = 6             # lamp posts round the plaza
 STREET_LIGHT_RADIUS = 5     # how far a lamp post lights
 
-STREET, YARD, HOUSE, SHOP, NOBLE = "Street", "Yard", "House", "Shop", "Noble"  # Street: the roads and the plaza.
-# Yard: the rest of the open ground, between the buildings.
+STREET, YARD, HOUSE, SHOP, NOBLE = "Street", "Yard", "House", "Shop", "Noble"  # Street: the roads, the plaza and
+# the doorsteps. Yard: the rock between the roads and the buildings (and the ground left where it's dug out).
 SHOP_SIGN = 14              # grid tile type of a shop's sign (its object: the shop kind, cityshops.SHOP_KINDS)
 STREET_LIGHT = 15           # grid tile type of a lamp post: it lights round it and blocks the way
 FLOOR, WALL, CHEST, ENEMY = 0, 2, 3, 5
@@ -98,6 +100,11 @@ class Building:
         self.walls = walls
         self.inside = inside
         self.door = door
+
+    @property
+    def tiles(self):
+        """Every tile of the building: its walls, its inside and its door."""
+        return self.walls | self.inside | {self.door}
         self.center = None      # the inside tile nearest its middle (a shop's counter)
         self.shopKind = None    # a shop: cityshops.SHOP_KINDS
         self.sign = None        # a shop: where its sign is (in its wall beside the door)
@@ -384,9 +391,41 @@ def raiseBuilding(city, building):
         city.rooms[room].add(spot)
 
 
+def carveDoorstep(city, building, builtOn):
+    """Carves the way from a building's door out to the nearest road through the rock (the shortest way round the
+    other buildings, builtOn), and makes it part of the roads. (Its door always faces a road a step or two away.)"""
+    cameFrom, frontier = {building.door: None}, [building.door]
+    while frontier:
+        nextFrontier = []
+        for spot in frontier:
+            for near in neighborsOf(city, spot):
+                if near in cameFrom or near in builtOn or not city.inside(near % city.rowLength, near // city.rowLength):
+                    continue
+                cameFrom[near] = spot
+                if near in city.roads:
+                    step = spot
+                    while step != building.door:
+                        city.roads.add(step)
+                        step = cameFrom[step]
+                    return
+                nextFrontier.append(near)
+        frontier = nextFrontier
+
+
+def fillWithRock(city):
+    """Every tile inside the city wall that isn't a road or part of a building becomes rock (a Stone Wall, like any
+    other floor's walls): the roads are carved out of it."""
+    builtOn = set()
+    for building in city.buildings:
+        builtOn |= building.tiles
+    for spot in city.grid:
+        if city.inside(spot % city.rowLength, spot // city.rowLength) and spot not in city.roads and spot not in builtOn:
+            city.grid[spot] = [WALL, 0, wall.StoneWall()]
+
+
 def removeUnreachable(city, playerSpot):
     """Takes down any building whose door you couldn't walk to from where you arrive (a pocket the packing closed
-    in), until every door is reachable."""
+    in), until every door is reachable. Where it stood turns back to rock."""
     while True:
         reached, frontier = {playerSpot}, [playerSpot]
         while frontier:
@@ -400,15 +439,16 @@ def removeUnreachable(city, playerSpot):
             return
         for building in cutOff:
             city.buildings.remove(building)
-            for spot in building.walls | building.inside | {building.door}:
-                city.grid[spot] = [FLOOR, 0]
+            for spot in building.tiles:
+                city.grid[spot] = [WALL, 0, wall.StoneWall()]
                 for room in (HOUSE, SHOP, NOBLE):
                     city.rooms[room].discard(spot)
 
 
 def placeBuildings(city, playerSpot):
     """Mansions on the open ground nearest the plaza that's big enough, then the shops, then houses wherever there's
-    room along the paths. Every building's door faces a road."""
+    room along the paths. Every building's door faces a road, with a doorstep carved to it; everything else inside
+    the city wall is rock."""
     taken = set(city.roads)
     for near in [playerSpot] + neighborsOf(city, playerSpot):
         taken.add(near)
@@ -429,8 +469,13 @@ def placeBuildings(city, playerSpot):
         random.shuffle(shuffled)
         for corner in shuffled:  # (every door faces a road: the city is built along its paths)
             placeBuilding(city, "house", HOUSE_SIZE, [corner], taken)
+    builtOn = set()
     for building in city.buildings:
         raiseBuilding(city, building)
+        builtOn |= building.tiles
+    for building in city.buildings:
+        carveDoorstep(city, building, builtOn)
+    fillWithRock(city)
     removeUnreachable(city, playerSpot)
     for building in city.buildings:  # a shop's sign: in its wall beside the door
         if building.kind == "shop":
@@ -485,24 +530,33 @@ def sideOfWall(city, spot, walls):
     return None
 
 
+def inOpenGround(city, spot):
+    """Is spot open road with open road all round it (all 8 tiles)? A lamp post only stands on one of those, so it
+    never blocks the way anywhere (a doorstep, or a narrow bit of road)."""
+    column, row = spot % city.rowLength, spot // city.rowLength
+    return all(city.spot(column + stepColumn, row + stepRow) in city.roads
+               and city.grid[city.spot(column + stepColumn, row + stepRow)][0] == FLOOR
+               for stepColumn in (-1, 0, 1) for stepRow in (-1, 0, 1))
+
+
 def placeLights(city, playerSpot):
-    """Wall lamps outside along the roads, at least WALL_LAMP_SPACING apart; wall lamps inside every building (one
-    in a house, two in a shop or mansion); and lamp posts round the plaza."""
+    """Wall lamps along the roads, on the walls that line them (the rock's or a building's), at least
+    WALL_LAMP_SPACING apart; wall lamps inside every building (one in a house, two in a shop or mansion); and lamp
+    posts round the plaza."""
     doorways = set()
     for building in city.buildings:
         doorways |= {building.door, *neighborsOf(city, building.door)}
+    walls = {spot for spot, tile in city.grid.items() if tile[0] == WALL}
     outsideLamps = []
-    for building in city.buildings:
-        for wallSpot in sorted(building.walls):
-            for near in neighborsOf(city, wallSpot):
-                if near in building.inside or near in doorways or city.grid[near][0] != FLOOR or near not in city.rooms[STREET] | city.rooms[YARD]:
-                    continue
-                nearRoad = near in city.roads or any(far in city.roads for far in neighborsOf(city, near))
-                spacedOut = all(abs(near % city.rowLength - lamp % city.rowLength) + abs(near // city.rowLength - lamp // city.rowLength)
-                                >= WALL_LAMP_SPACING for lamp in outsideLamps)
-                if nearRoad and spacedOut:
-                    city.wallLamps[near] = WallLamp(sideOfWall(city, near, building.walls), WALL_LAMP_RADIUS)
-                    outsideLamps.append(near)
+    for spot in sorted(city.roads):
+        if spot in doorways or spot == playerSpot or city.grid[spot][0] != FLOOR:
+            continue
+        side = sideOfWall(city, spot, walls)
+        spacedOut = all(abs(spot % city.rowLength - lamp % city.rowLength) + abs(spot // city.rowLength - lamp // city.rowLength)
+                        >= WALL_LAMP_SPACING for lamp in outsideLamps)
+        if side is not None and spacedOut:
+            city.wallLamps[spot] = WallLamp(side, WALL_LAMP_RADIUS)
+            outsideLamps.append(spot)
     for building in city.buildings:
         wanted = 1 if building.kind == "house" else 2
         choices = [spot for spot in building.inside if spot not in doorways and spot != building.center
@@ -514,7 +568,7 @@ def placeLights(city, playerSpot):
     for index in range(PLAZA_LAMPS):
         angle = math.tau * index / PLAZA_LAMPS
         spot = city.spot(round(middleColumn + (PLAZA_RADIUS - 1) * math.cos(angle)), round(middleRow + (PLAZA_RADIUS - 1) * math.sin(angle)))
-        if spot != playerSpot and spot not in neighborsOf(city, playerSpot) and city.grid[spot][0] == FLOOR:
+        if spot != playerSpot and spot not in neighborsOf(city, playerSpot) and inOpenGround(city, spot):
             city.grid[spot] = [STREET_LIGHT, 0]
 
 
@@ -549,7 +603,7 @@ def buildCity(rowLength, rowCount, playerSpot, style=DEFAULT_STYLE):
             grid[spot] = [WALL, 0, wall.CityWall()]
     layRoads(city, playerSpot)
     placeBuildings(city, playerSpot)
-    for spot in grid:
+    for spot in grid:  # the roads are Street; the rock round them is Yard
         if city.inside(spot % rowLength, spot // rowLength) and not any(spot in city.rooms[room] for room in (HOUSE, SHOP, NOBLE)):
             city.rooms[STREET if spot in city.roads else YARD].add(spot)
     placeChests(city)

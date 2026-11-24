@@ -153,6 +153,24 @@ class FloorHelperTests(unittest.TestCase):
         self.assertEqual(plants.floorOf(CENTER, rooms), "Wood")
         self.assertEqual(plants.floorOf(CENTER, {"Stone": set()}), "Sand")
 
+    def test_every_wild_kind_grows_on_two_city_floors_and_each_city_floor_grows_something(self):
+        for kind in plants.wildKinds():
+            self.assertEqual(len(plants.PLANTS[kind]["cityFloors"]), 2, kind)
+            for floor in plants.PLANTS[kind]["cityFloors"]:
+                self.assertIn(floor, plants.CITY_FLOORS)
+        for floor in plants.CITY_FLOORS:
+            self.assertTrue(plants.wildKinds(floor), floor)
+
+    def test_a_city_floor_is_its_own_floor_type(self):
+        grid, rooms = smallFloor()
+        rooms = {"Street": set(grid)}
+        self.assertEqual(plants.floorOf(CENTER, rooms), "Street")
+        self.assertTrue(plants.canGrow("bloodcap", CENTER, grid, rooms))
+        self.assertFalse(plants.canGrow("hearthmoss", CENTER, grid, rooms), "Hearthmoss grows on Yard and House, not Street")
+
+    def test_a_plants_description_names_its_city_floors(self):
+        self.assertIn("in a city, on Street and House floors", plants.plantDescription("bloodcap"))
+
     def test_plants_only_grow_on_open_floor_of_their_types(self):
         grid, rooms = smallFloor("Stone")
         self.assertTrue(plants.canGrow("bloodcap", CENTER, grid, rooms))
