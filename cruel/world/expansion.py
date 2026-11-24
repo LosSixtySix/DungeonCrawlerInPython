@@ -677,6 +677,7 @@ def attack(gm, i, unit, target, targetPosition):
     if target == "player":
         gm.hitPlayer(unit, i)
         return
+    target = occupancy.victimAt(gm, targetPosition, target)  # (two on the space: the weaker one is hit)
     target.hp -= gm.enemyDodge(target, unit.damage, targetPosition)
     gm.bleed(targetPosition)
     gm.change = True
@@ -687,7 +688,7 @@ def attack(gm, i, unit, target, targetPosition):
     elif factionOf(target) is None:
         target.foe = unit
     if target.hp <= 0:
-        gm.killEnemy(targetPosition, killer=unit)
+        gm.killEnemy(targetPosition, killer=unit, unit=target)
         if factionOf(unit) is not None:  # food for the camp
             meat = min(rand.randint(*KILL_MEAT), fitAmount(unit, "meat"))
             if meat > 0:
