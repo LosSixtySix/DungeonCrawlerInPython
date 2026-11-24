@@ -246,20 +246,23 @@ def shopSignColors(kind):
     return {"p": (110, 80, 50), "w": tuple(max(0, value - 40) for value in board), "W": board}
 
 
-# A mineshaft, seen from above: a dark hole in a timber frame, a ladder going down it
+# A mineshaft, seen from above: a pit with a rocky lip, its sides falling away into the dark, and a ladder going
+# down it from the top edge, its rails and rungs dimmer the deeper they go until the dark swallows them
 MINESHAFT = [
-    "pppppppppp",
-    "pPPPPPPPPp",
-    "pPddddddPp",
-    "pPdlLLldPp",
-    "pPddddddPp",
-    "pPdlLLldPp",
-    "pPddddddPp",
-    "pPdlLLldPp",
-    "pPPPPPPPPp",
-    "pppppppppp",
+    ".rrrrrrrr.",
+    "rRRRRRRRRr",
+    "rReLWWLeRr",
+    "rRdLddLdRr",
+    "rRdlwwldRr",
+    "rRDlDDlDRr",
+    "rRDmvvmDRr",
+    "rRDDDDDDRr",
+    "rRRRRRRRRr",
+    ".rrrrrrrr.",
 ]
-MINESHAFT_COLORS = {"p": (92, 64, 40), "P": (132, 94, 58), "d": (14, 12, 12), "l": (110, 80, 50), "L": (150, 112, 70)}
+MINESHAFT_COLORS = {"r": (46, 38, 32), "R": (104, 88, 70), "e": (58, 46, 36), "d": (30, 24, 20), "D": (10, 8, 8),
+                    "L": (176, 132, 82), "W": (150, 110, 66), "l": (122, 90, 56), "w": (100, 74, 46),
+                    "m": (70, 52, 34), "v": (58, 44, 30)}
 
 
 # A Metropolis street light, seen from above: the round glass of a lamp on its post, lit

@@ -127,6 +127,18 @@ def climbUp(game):
     game.afterLevelChange()
 
 
+def fallOff(game):
+    """You're falling through a hole in a works floor: the works floor is put aside and the city is put back (with
+    you where you fell), so the fall goes on from the city's floor to the one below it."""
+    shaftSpot = game.sideFloor[1]
+    game.saveLevel()
+    game.floorsAside[(game.level, shaftSpot)] = putAside(game)
+    putBack(game, game.cityAside)
+    game.cityAside = None
+    game.sideFloor = None
+    game.currentLocation = copy.copy(game.grid[game.playerPositionFlat])  # (saving the city leaves its tile as it was)
+
+
 def climb(game):
     """You pressed Enter on a mineshaft: down it from the city, or up it back to the city."""
     shaft = game.currentLocation[2]

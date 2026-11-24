@@ -3199,7 +3199,7 @@ class gameManager():
                 blastedWall.hp -= recipes.BOMB_WALL_DAMAGE
                 if blastedWall.hp <= 0: 
                     self.breakWall(position)
-            if rand.random() < FLOOR_BREAK_CHANCE and not mineshafts.onSideFloor(self):  # (a works floor's holds)
+            if rand.random() < FLOOR_BREAK_CHANCE:
                 hit += 1
                 self.collapseFloor(landing, radius)
             if not hit:
@@ -3267,6 +3267,8 @@ class gameManager():
         """You fell through a hole: FALL_DAMAGE, and you land on the floor below, where you fell (or on the nearest
         open floor to it there)."""
         self.player.damageTaken += FALL_DAMAGE
+        if mineshafts.onSideFloor(self):  # from a works floor you fall to the floor below its city
+            mineshafts.fallOff(self)
         if self.proportion == SCORCHED:  # the floor below the Scorched Depths is a new one, like its door
             self.leaveScorched(falling=True)
         elif self.level < len(self.doorPositions) - 1:
