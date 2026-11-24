@@ -317,22 +317,23 @@ class RoomTests(unittest.TestCase):
             self.grid[spot] = [WALL, 0, wall.StoneWall()]
         self.assertEqual(peddler.placeSignpost(self.grid, besideYou), 101)
 
-    def test_peddlers_stone_takes_about_150_hits_even_from_bombs(self):
+    def test_peddlers_stone_takes_about_150_swings_or_15_bombs(self):
         stone = wall.PeddlerWall()
         swings = 0
         while stone.hp > 0:
-            stone.takeDamage(recipes.BOMB_WALL_DAMAGE, 10)  # a Bomb, like a huge swing, only takes off its hardness
+            stone.takeDamage(50, 10)  # a huge swing still only takes off its hardness
             swings += 1
         self.assertEqual(swings, 150)
+        self.assertEqual(-(-wall.PeddlerWall().hp // recipes.BOMB_WALL_DAMAGE), 15)
 
-    def test_a_bomb_takes_off_no_more_than_a_walls_hardness(self):
+    def test_a_bomb_ignores_hardness(self):
         game = support.newGame()
         landing = support.openTile(game)
         stone = wall.PeddlerWall()
         game.grid[landing + 1] = [WALL, 1, stone]
         with mock.patch.object(gamemanager, "FLOOR_BREAK_CHANCE", 0):
             game.land({"landing": landing, "effect": "Explosive", "power": 3})
-        self.assertEqual(stone.hp, wall.PeddlerWall().hp - stone.hardness)
+        self.assertEqual(stone.hp, wall.PeddlerWall().hp - recipes.BOMB_WALL_DAMAGE)
 
 
 class AppearingTests(unittest.TestCase):

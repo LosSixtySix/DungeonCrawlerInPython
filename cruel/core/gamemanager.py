@@ -3198,7 +3198,7 @@ class gameManager():
                 blastedWall = self.grid[position][2]
                 self.chip(position,landing)
                 blastedWall.brokenPoints |= wall.getRandomPoints((1,self.tileSize -1), (1,self.tileSize -1), self.tileSize ** 2//3)
-                blastedWall.takeDamage(recipes.BOMB_WALL_DAMAGE, self.tileSize)  # (no more than its hardness)
+                blastedWall.hp -= recipes.BOMB_WALL_DAMAGE  # (a Bomb is the one thing that ignores hardness)
                 if blastedWall.hp <= 0: 
                     self.breakWall(position)
             if rand.random() < FLOOR_BREAK_CHANCE:
