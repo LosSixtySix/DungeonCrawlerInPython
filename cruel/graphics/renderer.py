@@ -1571,7 +1571,7 @@ class renderer():
         """The wall color of the room a tile is in (veins are drawn in their room's wall color)."""
         return self.colorDict[self.COLOR_NAMES[("wall", memorized)][self.roomOf(i, rooms)]]
 
-    WALL_ROOMS = {"Pen Fence": "Wood"}  # wall name -> its room ("Stone Wall" -> "Stone"), filled in as walls are seen
+    WALL_ROOMS = {"Pen Fence": "Wood", "Farmhouse Wall": "Wood"}  # wall name -> its room ("Stone Wall" -> "Stone"), filled in as walls are seen
 
     def wallColor(self, name, memorized):
         # wall names are "Stone Wall", "Wood Wall", "Sand Wall", "Gold Wall"

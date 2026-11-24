@@ -13,7 +13,8 @@ The Dew Grubs of a city's farm floor (enemies.DewGrub, mineshafts.py) and how th
 
 Young. Each time a grown grub is fed there's a BIRTH_CHANCE it gives birth to a young one, on a free tile of its pen
 (or beside it, with no free tile; a farmer then takes it in), as long as the storehouses have food put by for it (BIRTH_FOOD herbs a grub, like a goblin
-spawner needs food: so the herd only grows as fast as the fields). A grub that isn't fed starves (dwellerfarming.STARVE_TURNS). A young grub eats like any other, but its feedings make it grow: after FEEDINGS_TO_GROW
+spawner needs food: so the herd only grows as fast as the fields), and the herd is smaller than KEEPER_HERD grubs
+for each keeper on the floor (so it never grows past what they can feed in time). A grub that isn't fed starves (dwellerfarming.STARVE_TURNS). A young grub eats like any other, but its feedings make it grow: after FEEDINGS_TO_GROW
 it's grown, and only then does it make Dew.
 
 Pens. There's no hard limit on a pen, but the farmers want every pen to hold PEN_FEWEST to PEN_MOST grubs (the farm's pens are shared by its farmers:
@@ -35,7 +36,8 @@ farmer killed while carrying one drops it (dropHeld).
 """
 
 BIRTH_CHANCE = 0.2          # a grown grub gives birth when it's fed this often...
-BIRTH_FOOD = 5              # ...if the storehouses hold this many herbs a grub (with the young one)
+BIRTH_FOOD = 5              # ...if the storehouses hold this many herbs a grub (with the young one)...
+KEEPER_HERD = 5             # ...and the herd is smaller than this many grubs a keeper (what they can feed in time)
 FEEDINGS_TO_GROW = 4        # plants a young grub eats to grow up
 PEN_FEWEST = 2              # the farmers want at least this many grubs in a pen...
 PEN_MOST = 6                # ...and no more than this
@@ -53,14 +55,19 @@ def growOn(grub):
         grub.growUp()
 
 
-def maybeGiveBirth(game, spot, grub, pens):
+def maybeGiveBirth(game, spot, grub, pens, feeder=None):
     """A grown grub on spot was just fed: now and then (BIRTH_CHANCE) it gives birth to a young one, if the farm's
-    pens have room for it. Returns where the young one is, or None."""
+    pens have room for it. feeder: the farmer feeding it (off the map for its turn, so counted here). Returns where
+    the young one is, or None."""
     if not getattr(grub, "grown", True) or random.random() >= BIRTH_CHANCE:
         return None
     grubs = dwellerwork.grubsHere(game)
     housed = sum(headcounts(grubs, pens, [held for _, held in heldGrubs(game)]).values())
     if sum(dwellerfarming.stockOf(game, dwellerfarming.FOODS).values()) < BIRTH_FOOD * (housed + 1):
+        return None
+    keepers = {id(dweller) for _, dweller in dwellers.cityDwellers(game) + ([(None, feeder)] if feeder is not None else [])
+               if dwellerfarming.roleOf(dweller) in ("keeper", None) and getattr(dweller, "work", None) == "farm"}
+    if housed >= KEEPER_HERD * len(keepers):
         return None
     free = [tile for tile in grub.pen if tile in game.grid and organizers.passable(game.grid[tile])]
     if not free:

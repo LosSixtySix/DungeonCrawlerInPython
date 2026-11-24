@@ -139,6 +139,7 @@ FLOOR_BREAK_CHANCE = 0.25  # a Bomb's chance to break the floor in its whole bla
 # back up; its door down starts a new track at the next floor number, with no way back up from there either.
 SCORCHED = "Scorched Depths"
 SCORCHED_DOOR = 12          # grid tile type for the Scorched door
+GROWTH_STAGGER = 3          # floors one apart grow plants this many turns apart (gameManager.growthOffset)
 SCORCHED_THEME = "Molten Vault"  # the only All Gold theme whose Seal opens a Scorched door
 SCORCHED_WALL_SHARE = 0.18  # share of a Scorched Depths floor that's wall, in blobs so the ground stays open
 MOLTEN_FLOOR_DAMAGE = 1     # fire damage each turn you stand on Molten floor
@@ -3863,11 +3864,20 @@ class gameManager():
                 self.addUnsealed = False
         livingfloors.simulate(self)  # the floors near you take their turn too
 
+    def growthOffset(self, growTurns):
+        """Which turn of every growTurns this floor's plants grow on: each floor its own (by its number, and a works
+        floor's shaft), so the floors near you that keep going (livingfloors.py) don't all grow on the same turn."""
+        key = mineshafts.floorKey(self)
+        level, extra = (key, 0) if not isinstance(key, tuple) else (key[0], key[1] + 1)
+        return (level * GROWTH_STAGGER + extra) % growTurns
+
     def stepPlants(self):
-        """Every GROW_TURNS (an event may change it) the floor's plants take a growth step. During Overgrowth plants
-        can sprout on you: your tile takes part in the step as the floor under you (not on a floor you're not on)."""
+        """Every GROW_TURNS (an event may change it) the floor's plants take a growth step, on its own turn of them
+        (growthOffset). During Overgrowth plants can sprout on you: your tile takes part in the step as the floor
+        under you (not on a floor you're not on)."""
         growth = events.plantRules(self.activeEvent())
-        if self.turnCount % growth.get("growTurns", plants.GROW_TURNS) != 0:
+        growTurns = growth.get("growTurns", plants.GROW_TURNS)
+        if (self.turnCount + self.growthOffset(growTurns)) % growTurns != 0:
             return
         away = getattr(self, "simulatingAway", False)
         here = self.playerPositionFlat

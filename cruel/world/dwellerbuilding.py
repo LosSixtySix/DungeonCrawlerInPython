@@ -4,6 +4,7 @@ from cruel.inventory import items
 from cruel.world import dwellers
 from cruel.world import dwellerwork
 from cruel.world import expansion
+from cruel.world import farmhouses
 from cruel.world import metropolis
 from cruel.world import mineshafts
 from cruel.world import organizers
@@ -11,7 +12,8 @@ from cruel.world import wall
 
 """
 The Dwellers building on their city's works floors (mineshafts.py): a new storehouse when every storage chest is full
-and on a farm a new pen when the pens are full (dewgrubs.py), wherever there's room for them.
+and on a farm a new pen when the pens are full (dewgrubs.py) or a new farmhouse (farmhouses.py) when the farm needs
+more crops (dwellerfarming.py), wherever there's room for them.
 
 A building is planned on a site (findSite; a worker that finds none waits SEARCH_AGAIN_TURNS to look again): a box near the shaft (its middle within SITE_REACH, outside the
 clearing) of open floor or rock the miners could break, clear of the fields, the shaft, the lamps and other
@@ -33,10 +35,10 @@ is crossed off.
 """
 
 BUILDERS = 2                # workers putting up a building at once
-SITE_REACH = 18             # how far from the shaft a new building's middle can be
+SITE_REACH = 24             # how far from the shaft a new building's middle can be
 BACK_WAY_MOST = 12          # a back door's way out to open ground is dug this far at most
 SEARCH_AGAIN_TURNS = 200    # a worker that found no site for a building doesn't look again for this long
-WALLS = {"storehouse": wall.ShopWall, "pen": wall.PenFence}
+WALLS = {"storehouse": wall.ShopWall, "pen": wall.PenFence, "farmhouse": wall.FarmhouseWall}
 
 
 def shaftOf(game, position):
@@ -83,9 +85,9 @@ def lampTiles(game):
     return set(metropolis.wallLampsHere(game)) | dwellerwork.lampWalls(game)
 
 
-def findSite(game, position, worker, width, height):
-    """The best site for a width x height building (see the top of this file): its shape plus "margin" (the ring
-    round it) and "rock" (its tiles to dig out). None if nothing fits."""
+def findSite(game, position, worker, width, height, round_=False):
+    """The best site for a width x height building (see the top of this file; round_: a farmhouse, its box width
+    across): its shape plus "margin" (the ring round it) and "rock" (its tiles to dig out). None if nothing fits."""
     rowLength = game.rowLength
     rowCount = len(game.grid) // rowLength
     shaft = shaftOf(game, position)
@@ -103,7 +105,8 @@ def findSite(game, position, worker, width, height):
             left, top = middleColumn - width // 2, middleRow - height // 2
             if left < 2 or top < 2 or left + width > rowLength - 2 or top + height > rowCount - 2:
                 continue
-            site = shape(rowLength, left, top, width, height, (shaftColumn, shaftRow))
+            site = farmhouses.shape(rowLength, middleColumn, middleRow, (shaftColumn, shaftRow)) if round_ else \
+                shape(rowLength, left, top, width, height, (shaftColumn, shaftRow))
             if site["outside"] not in reach:
                 continue
             rock = siteRock(game, site, keepOff)
@@ -188,12 +191,14 @@ def newPlan(game, position, worker, kind, width, height):
     plans = plansOf(worker)
     if game.turnCount < getattr(worker, "searchAgainAt", 0):
         return None
-    site = findSite(game, position, worker, width, height)
+    site = findSite(game, position, worker, width, height, round_=kind == "farmhouse")
     if site is None:
         worker.searchAgainAt = game.turnCount + SEARCH_AGAIN_TURNS
         return None
     site["kind"] = kind
-    site["chests"] = site["back"] if kind == "storehouse" else []
+    site["chests"] = {"storehouse": site.get("back"), "farmhouse": [site.get("chest")]}.get(kind) or []
+    if kind == "farmhouse":
+        site["crop"] = farmhouses.pickCrop(getattr(worker, "fields", None))
     plans.append(site)
     return site
 
@@ -219,6 +224,18 @@ def penPlan(game, position, worker):
     if planned is not None:
         return planned
     return newPlan(game, position, worker, "pen", mineshafts.PEN_WIDTH, mineshafts.PEN_HEIGHT)
+
+
+def farmhousePlan(game, position, worker):
+    """The farmhouse being built, or a new one planned."""
+    plans = plansOf(worker)
+    if plans is None:
+        return None
+    planned = next((plan for plan in plans if plan["kind"] == "farmhouse"), None)
+    if planned is not None:
+        return planned
+    across = 2 * farmhouses.HALF + 1
+    return newPlan(game, position, worker, "farmhouse", across, across)
 
 
 def planFor(game, worker):
@@ -315,6 +332,12 @@ def finish(game, worker, plan):
     plans = plansOf(worker)
     if plan in plans:
         plans.remove(plan)
+    if plan["kind"] == "farmhouse" and getattr(worker, "fields", None) is not None:  # its floor laid, its plots the farm's
+        farmhouses.layFloor(game.rooms, plan["inside"], plan["crop"])
+        for bed in plan["beds"]:
+            worker.fields[bed] = plan["crop"]
+        if getattr(worker, "farmhouses", None) is not None:
+            worker.farmhouses.append({key: plan[key] for key in ("box", "walls", "inside", "door", "backDoor", "beds", "chest", "crop")})
     if plan["kind"] == "pen" and getattr(worker, "pens", None) is not None:
         worker.pens.append({"fence": set(plan["walls"]) | {plan["door"], plan["backDoor"]}, "inside": plan["inside"],
                             "gate": plan["door"], "backGate": plan["backDoor"]})

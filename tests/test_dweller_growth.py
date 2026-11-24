@@ -67,7 +67,10 @@ class PenTest(WorkTest):
         return farmer
 
     def foodPutBy(self, amount=100):
-        """A storage chest with herbs in it (a grub only gives birth with food put by)."""
+        """A storage chest with herbs in it (a grub only gives birth with food put by), and a keeper (and only while
+        the herd is smaller than the keepers can feed)."""
+        if not any(getattr(unit, "work", None) == "farm" for _, unit in dwellers.cityDwellers(self.game)):
+            self.farmer(70, 70)
         chest = self.storageChest(10, 60)
         chest.append(resources.MaterialStack("bloodcap", amount))
         return chest
@@ -105,6 +108,7 @@ class YoungGrubTests(PenTest):
 
     def test_a_full_pen_still_has_young_and_the_farmers_then_move_grubs_out(self):
         self.foodPutBy()
+        self.farmer(72, 70)  # (two keepers: enough for the herd to grow past one's)
         pen = self.pen(40, 30)
         grubs = self.fill(pen, dewgrubs.PEN_MOST)
         other = self.pen(60, 30)
@@ -157,6 +161,19 @@ class YoungGrubTests(PenTest):
 
 
 # ---------------------------------------------------------------- pens
+
+class HerdSizeTests(PenTest):
+    def test_no_young_once_the_herd_is_as_big_as_its_keepers_can_feed(self):
+        pen = self.pen(40, 30)
+        grubs = self.fill(pen, dewgrubs.KEEPER_HERD)
+        self.foodPutBy()  # (one keeper)
+        with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
+            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
+            feeder = enemies.DwellerCitizen()
+            feeder.work = "farm"
+            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens, feeder=feeder),
+                                 "the keeper feeding it counts too")
+
 
 class GrubMovingTests(PenTest):
     def test_from_a_crowded_pen_to_one_with_room(self):

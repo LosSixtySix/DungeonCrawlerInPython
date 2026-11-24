@@ -3,26 +3,25 @@ from cruel.world import dewgrubs
 from cruel.world import dwellerbuilding
 from cruel.world import dwellers
 from cruel.world import dwellerwork
-from cruel.world import metropolis
 from cruel.world import plants
-from cruel.world import wall
 
 """
 The farmers of a city's farm floor (mineshafts.py): growers, who farm like the goblin farmers (expansion.py), and
 keepers, who feed what they grow to the Dew Grubs (dewgrubs.py). A farm has both (farmer.farmRole); a farmer from
 before the roles does both, the keeper's work first.
 
-The fields. The farm's fields ({tile: crop kind}, shared by its farmers: farmer.fields) are sown with seeds: a
+The fields. The farm's fields ({tile: crop kind}, shared by its farmers: farmer.fields) are the plots of its
+farmhouses (farmhouses.py: round buildings, each growing one crop in four triangular plots). They're sown with seeds: a
 sprout of the city's crop (plants.Plant, planted: it never withers) grows through its stages, and picking it when
 it's ripe gives what any planted plant gives (loot.rollPick): its herb ready to harvest, its seeds gone to seed.
-Nothing wild sprouts on them (fieldTiles, like a goblin farming hut). A grower tends its own fields (myFields: the
+Nothing wild sprouts in a farmhouse (fieldTiles, like a goblin farming hut). A grower tends its own fields (myFields: the
 farm's crops dealt out among the growers there are, so every crop has one; growers that share a crop split its
 fields between them): it picks each ripe crop in the stage it wants (gone to seed while the farm is short of seeds of it:
 fewer than its bare tiles need plus SEEDS_KEPT, on the grower and in the storehouse chests; else ready to harvest; in
 its last stage, whatever it gives), sows the bare tiles (fetching seeds from the chests when it has none), and pulls
 up anything else growing there. It keeps SEEDS_KEPT seeds and takes the rest, and every herb, to the chests once it
 has FARMER_HAUL. While the fields have fewer than FIELD_TILES_PER_GRUB tiles a grub (and FIELD_TILES_PER_GROWER a
-grower), a free tile beside one of its fields that its crop grows on joins them.
+grower), the growers build another farmhouse (dwellerbuilding.farmhousePlan), growing the crop the farm has least of.
 
 The grubs. Each keeper looks after its own pens (keeperPens: the farm's pens dealt out among the keepers there are,
 so a keeper's death hands its pens to the others). It keeps FOOD_KEPT herbs (any herb is food for a grub), fetching
@@ -47,11 +46,11 @@ STARVE_TURNS = 100          # a Dew Grub that goes this long without food starve
 HUNGRY_TURNS = STARVE_TURNS // 2  # ...and is fed once it has gone this long...
 STARVING_TURNS = STARVE_TURNS * 3 // 4  # ...and before any other once it has gone this long
 SKIP_TURNS = 20             # a keeper that couldn't get to a grub leaves it for this long
-FIELD_TILES_PER_GRUB = 3    # the growers lay out more field while there's less than this a grub...
-FIELD_TILES_PER_GROWER = 15  # ...and less than this a grower (what they can tend)
+FIELD_TILES_PER_GRUB = 3    # the growers build another farmhouse while there's less field than this a grub...
+FIELD_TILES_PER_GROWER = 20  # ...and less than this a grower (what they can tend: a farmhouse's plots each)
 FOODS = {info["herb"] for info in plants.PLANTS.values()}
 SEEDS = {info["seed"] for info in plants.PLANTS.values()}
-FLOOR, CHEST, PLANT = 0, 3, 8
+FLOOR, PLANT = 0, 8
 
 
 def roleOf(farmer):
@@ -161,7 +160,8 @@ def farmTurn(game, position, farmer):
             moved = feedTurn(game, position, farmer, grubs, onlyStarving=True)
             if moved is not None:
                 return moved
-        layOutField(game, farmer, len(grubs))
+        if needsMoreField(game, farmer, len(grubs)):
+            dwellerbuilding.farmhousePlan(game, position, farmer)
         return fieldTurn(game, position, farmer)
     return None
 
@@ -263,17 +263,20 @@ def feedTurn(game, position, farmer, grubs, onlyStarving=False):
     dwellerwork.feed(grub, farmer)
     farmer.grubTarget = None
     if wasGrown:
-        dewgrubs.maybeGiveBirth(game, spot, grub, dewgrubs.pensOf(farmer))
+        dewgrubs.maybeGiveBirth(game, spot, grub, dewgrubs.pensOf(farmer), feeder=farmer)
     return position
 
 
 # ---------------------------------------------------------------- the fields
 
 def fieldTiles(game):
-    """Every field tile of the farms on this floor (nothing wild sprouts there: plants.step's noBirth)."""
+    """Every field tile of the farms on this floor and the rest of their farmhouses (nothing wild sprouts there:
+    plants.step's noBirth)."""
     tiles = set()
     for _, dweller in dwellers.cityDwellers(game):
         tiles |= set(getattr(dweller, "fields", ()))
+        for farmhouse in getattr(dweller, "farmhouses", ()):
+            tiles |= set(farmhouse["inside"])
     return tiles
 
 
@@ -380,36 +383,14 @@ def fieldTurn(game, position, farmer):
     return position
 
 
-def layOutField(game, farmer, grubCount):
-    """While the fields have fewer than FIELD_TILES_PER_GRUB tiles a grub, one more joins this grower's fields: a
-    free floor tile beside one of them, that its crop grows on, away from the city's buildings, pens and plans.
-    True if one did."""
+def needsMoreField(game, farmer, grubCount):
+    """Has the farm fewer field tiles than FIELD_TILES_PER_GRUB a grub (and FIELD_TILES_PER_GROWER a grower)?"""
     fields = getattr(farmer, "fields", None)
-    growers = sum(1 for _, dweller in dwellers.cityDwellers(game) if roleOf(dweller) in ("grower", None) and getattr(dweller, "fields", None) is fields)
-    if fields is None or len(fields) >= min(FIELD_TILES_PER_GRUB * grubCount, FIELD_TILES_PER_GROWER * max(1, growers)):
+    if fields is None:
         return False
-    keepOff = dwellerbuilding.plannedTiles(getattr(farmer, "plans", []))
-    for pen in dewgrubs.pensOf(farmer):
-        keepOff |= set(pen["inside"]) | set(pen["fence"]) | {pen["gate"], pen.get("backGate")}
-    shaft = dwellerbuilding.shaftOf(game, None)
-    for spot, kind in sorted(myFields(game, farmer).items()):
-        for near in game.neighbors(spot):
-            if near in fields or near in keepOff or near == shaft or game.grid[near][0] != FLOOR or \
-                    not plants.canGrow(kind, near, game.grid, game.rooms) or nearBuilding(game, near):
-                continue
-            fields[near] = kind
-            return True
-    return False
-
-
-def nearBuilding(game, spot):
-    """Is a city wall, chest or the shaft on spot or round it?"""
-    for near in dwellerbuilding.around(game, spot) + [spot]:
-        tile = game.grid[near]
-        if tile[0] in (CHEST, metropolis.MINESHAFT) or (tile[0] == dwellerwork.WALL and len(tile) > 2
-                                                        and isinstance(tile[2], wall.CityBuildingWall)):
-            return True
-    return False
+    growers = sum(1 for _, dweller in dwellers.cityDwellers(game)
+                  if roleOf(dweller) in ("grower", None) and getattr(dweller, "fields", None) is fields)
+    return len(fields) < min(FIELD_TILES_PER_GRUB * grubCount, FIELD_TILES_PER_GROWER * max(1, growers))
 
 
 # ---------------------------------------------------------------- starving
