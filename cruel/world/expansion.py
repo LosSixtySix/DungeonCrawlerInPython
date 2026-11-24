@@ -492,19 +492,19 @@ def nudge(gm, ctx, t, f):
     free = [n for n in gm.neighbors(t) if organizers.passable(gm.grid[n], demise=False) and n not in clear]
     if not free:
         return False
-    n, unit = rand.choice(free), tile[2]
+    n, unit = rand.choice(free), tile.pop()
     if gm.grid[n][0] != 0:  # a pile or a plant: it stays underneath
         gm.enemyOccupiedItemSpaces[n] = gm.grid[n]
     gm.grid[n] = [5, gm.grid[n][1], unit]
-    gm.grid[t] = gm.enemyOccupiedItemSpaces.pop(t) if t in gm.enemyOccupiedItemSpaces else [0, tile[1]]
     # it's at n now, both for the rest of this turn and for next turn (if it hadn't moved yet this turn, it misses
     # this turn's move, but it stays in the game)
     for positions in (gm.EnemyPositions, getattr(gm, "movedEnemies", set())):
         positions.discard(t)
         positions.add(n)
+    occupancy.leave(gm, t)  # (what lies there comes back; a goblin sharing t takes its place)
     moved(ctx, unit, n)
     gm.change = True
-    return gm.grid[t][0] == 0
+    return gm.grid[t][0] == 0 and t not in occupancy.sharedTiles(gm)
 
 
 # ---------------------------------------------------------------- moving and fighting
@@ -646,7 +646,7 @@ def swapWith(gm, ctx, i, unit, tiles):
     goblin that swapped can't swap again for SWAP_COOLDOWN turns, either way round, so no pair can ping-pong."""
     mine = factionOf(unit)
     cooling = lambda u: gm.turnCount - getattr(u, "swappedAt", -SWAP_COOLDOWN) < SWAP_COOLDOWN
-    if mine is None or cooling(unit):
+    if mine is None or cooling(unit) or occupancy.stillOccupied(gm, i):  # (a second unit on a space doesn't swap)
         return None
     for j in tiles:
         tile = gm.grid[j]

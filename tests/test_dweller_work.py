@@ -394,13 +394,15 @@ class FarmRoleTests(FarmTest):
                 game.enemyTurn()
         self.assertNotEqual(game.grid[self.spot(31, 20)][0], PLANT)
 
-    def test_the_fields_grow_while_they_are_small_for_the_herd(self):
+    def test_more_field_is_wanted_while_it_is_small_for_the_herd_and_the_growers(self):
         farmer = self.farmer(30, 20)
         farmer.farmRole = "grower"
         self.fields[self.spot(20, 10)] = "bloodcap"
-        self.assertTrue(dwellerfarming.layOutField(self.game, farmer, grubCount=5))
-        self.assertEqual(len(self.fields), 2)
-        self.assertFalse(dwellerfarming.layOutField(self.game, farmer, grubCount=0))
+        self.assertTrue(dwellerfarming.needsMoreField(self.game, farmer, grubCount=5))
+        self.assertFalse(dwellerfarming.needsMoreField(self.game, farmer, grubCount=0), "no grubs to feed")
+        for column in range(dwellerfarming.FIELD_TILES_PER_GROWER):
+            self.fields[self.spot(column, 12)] = "bloodcap"
+        self.assertFalse(dwellerfarming.needsMoreField(self.game, farmer, grubCount=100), "all one grower can tend")
 
 
 class GrubTests(FarmTest):

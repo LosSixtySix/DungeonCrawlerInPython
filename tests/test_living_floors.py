@@ -2,12 +2,14 @@
 dropped."""
 import random
 import unittest
+from unittest import mock
 
 from cruel.entities import enemies
 from cruel.world import livingfloors
 from cruel.world import metropolis
 from cruel.world import mineshafts
 from cruel.world import occupancy
+from cruel.world import plants
 from tests import support
 from tests.test_mineshafts import cityGame, climbDown, shaftSpot
 
@@ -35,6 +37,26 @@ class ReachTests(unittest.TestCase):
         self.assertEqual(livingfloors.floorsInReach(game), [4, 3], "nothing below the deepest floor yet")
         game.changeLevel(0)
         self.assertEqual(livingfloors.floorsInReach(game), [1, 2])
+
+
+class StaggeredGrowthTests(unittest.TestCase):
+    def test_the_floors_near_you_grow_their_plants_on_different_turns(self):
+        random.seed(2)
+        game = support.newGame(level=4)
+        game.changeLevel(2)
+        grown = []  # (turn, the floor that grew)
+        realStep = plants.step
+
+        def step(grid, *args, **kwargs):
+            grown.append((game.turnCount, game.level))
+            return realStep(grid, *args, **kwargs)
+        with mock.patch.object(plants, "step", step):
+            for _ in range(plants.GROW_TURNS):
+                game.enemyTurn()
+        floors = sorted(level for _, level in grown)
+        self.assertEqual(floors, [0, 1, 2, 3, 4], "each floor grew once")
+        turns = [turn for turn, _ in grown]
+        self.assertEqual(len(set(turns)), len(turns), "never two on the same turn")
 
 
 class AwayTurnTests(unittest.TestCase):

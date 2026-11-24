@@ -162,13 +162,16 @@ def promote(game, spot):
 
 def leave(game, spot):
     """A unit (already lifted) leaves spot: if another unit is still there, the space stays as it is; if not, what
-    it stood on comes back, and the second unit there (if any) takes its place."""
+    it stood on comes back, and the second unit there (if any) takes its place. (Only the space a unit was lifted
+    off, [enemy, visibility], is changed: anything else there is left as it is.)"""
     if stillOccupied(game, spot):
         return
-    if spot in game.enemyOccupiedItemSpaces:
-        game.grid[spot] = game.enemyOccupiedItemSpaces.pop(spot)
-    else:
-        game.grid[spot][0] = FLOOR
+    tile = game.grid[spot]
+    if tile[0] == ENEMY:
+        if spot in game.enemyOccupiedItemSpaces:
+            game.grid[spot] = game.enemyOccupiedItemSpaces.pop(spot)
+        else:
+            tile[0] = FLOOR
     promote(game, spot)
 
 

@@ -11,9 +11,12 @@ from cruel.world import organizers
 """
 The Dew Grubs of a city's farm floor (enemies.DewGrub, mineshafts.py) and how the farmers keep them.
 
-Young. Each time a grown grub is fed there's a BIRTH_CHANCE it gives birth to a young one, on a free tile of its pen
-(or beside it, with no free tile; a farmer then takes it in), as long as the storehouses have food put by for it (BIRTH_FOOD herbs a grub, like a goblin
-spawner needs food: so the herd only grows as fast as the fields). A grub that isn't fed starves (dwellerfarming.STARVE_TURNS). A young grub eats like any other, but its feedings make it grow: after FEEDINGS_TO_GROW
+Young. Each time a grown grub is fed, if another grown grub that's been fed (not yet hungry:
+dwellerfarming.HUNGRY_TURNS) is within MATE_RANGE of it, there's a BIRTH_CHANCE it gives birth to a young one, on a
+free tile of its pen (or beside it, with no free tile; a farmer then takes it in). Nothing else holds the herd back:
+it can grow past what its keepers can feed, and they look after dwellerfarming.KEEPER_HERD grubs each and let the
+rest starve (dwellerfarming.caredFor), so the herd settles at what the keepers can feed. A grub that
+isn't fed starves (dwellerfarming.STARVE_TURNS). A young grub eats like any other, but its feedings make it grow: after FEEDINGS_TO_GROW
 it's grown, and only then does it make Dew.
 
 Pens. There's no hard limit on a pen, but the farmers want every pen to hold PEN_FEWEST to PEN_MOST grubs (the farm's pens are shared by its farmers:
@@ -35,11 +38,10 @@ farmer killed while carrying one drops it (dropHeld).
 """
 
 BIRTH_CHANCE = 0.2          # a grown grub gives birth when it's fed this often...
-BIRTH_FOOD = 5              # ...if the storehouses hold this many herbs a grub (with the young one)
+MATE_RANGE = 3              # ...if another fed grown grub is this close to it
 FEEDINGS_TO_GROW = 4        # plants a young grub eats to grow up
 PEN_FEWEST = 2              # the farmers want at least this many grubs in a pen...
 PEN_MOST = 6                # ...and no more than this
-BIRTH_NOTICE_RANGE = 8      # you see "A young Dew Grub" when one is born this close to you
 CARRY_GIVE_UP = 12          # turns a farmer moving a grub can be stuck before it gives up
 REACH = 3                   # how far (across or diagonally) a farmer reaches to lift a grub out or set it down
 
@@ -53,14 +55,18 @@ def growOn(grub):
         grub.growUp()
 
 
-def maybeGiveBirth(game, spot, grub, pens):
-    """A grown grub on spot was just fed: now and then (BIRTH_CHANCE) it gives birth to a young one, if the farm's
-    pens have room for it. Returns where the young one is, or None."""
-    if not getattr(grub, "grown", True) or random.random() >= BIRTH_CHANCE:
-        return None
-    grubs = dwellerwork.grubsHere(game)
-    housed = sum(headcounts(grubs, pens, [held for _, held in heldGrubs(game)]).values())
-    if sum(dwellerfarming.stockOf(game, dwellerfarming.FOODS).values()) < BIRTH_FOOD * (housed + 1):
+def hasMate(game, spot, grub):
+    """Is another grown grub that's been fed (not yet hungry) within MATE_RANGE of the grub on spot?"""
+    return any(other is not grub and getattr(other, "grown", True)
+               and dwellerfarming.hunger(other) < dwellerfarming.HUNGRY_TURNS
+               and dwellers.distance(game, spot, otherSpot) <= MATE_RANGE
+               for otherSpot, other in dwellerwork.grubsHere(game))
+
+
+def maybeGiveBirth(game, spot, grub):
+    """A grown grub on spot was just fed: now and then (BIRTH_CHANCE) it gives birth to a young one, if a fed grown
+    grub is near it (hasMate). Returns where the young one is, or None."""
+    if not getattr(grub, "grown", True) or not hasMate(game, spot, grub) or random.random() >= BIRTH_CHANCE:
         return None
     free = [tile for tile in grub.pen if tile in game.grid and organizers.passable(game.grid[tile])]
     if not free:
@@ -72,8 +78,6 @@ def maybeGiveBirth(game, spot, grub, pens):
     young.pen = grub.pen
     young.home = birthSpot
     placeUnit(game, birthSpot, young)
-    if dwellers.distance(game, birthSpot, game.playerPositionFlat) < BIRTH_NOTICE_RANGE:
-        game.addPopup("A young Dew Grub", birthSpot)
     game.change = True
     return birthSpot
 

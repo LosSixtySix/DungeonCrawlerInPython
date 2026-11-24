@@ -9,11 +9,12 @@ from cruel.graphics import renderer
 from cruel.world import dwellers
 from cruel.world import expansion
 from cruel.world import occupancy
+from cruel.world import plants
 from cruel.world import wall
 from tests import support
 from tests.test_expansion import blankFloor, middleOf
 
-FLOOR, ENEMY, PILE = 0, 5, 9
+FLOOR, ENEMY, PLANT, PILE = 0, 5, 8, 9
 
 
 class OccupancyTest(unittest.TestCase):
@@ -164,6 +165,33 @@ class MovingTests(OccupancyTest):
         game.putGiant(game.grid, self.middle + 2 * game.rowLength, giant)
         self.assertEqual(self.at(self.middle + 2), [rat])
         self.assertIn(self.middle + 2, game.EnemyPositions)
+
+
+class KeepingTilesWholeTests(OccupancyTest):
+    def test_leaving_never_spoils_a_tile_no_unit_was_lifted_off(self):
+        game = self.game
+        plant = plants.Plant.grown("glowcap")
+        game.grid[self.middle] = [PLANT, 1, plant]  # (the first unit there went by some other way: the plant is back)
+        second = enemies.Goblin()
+        occupancy.sharedTiles(game)[self.middle] = second
+        occupancy.leave(game, self.middle)
+        self.assertIs(occupancy.primaryAt(game, self.middle), second, "the second takes the space")
+        self.assertIs(game.enemyOccupiedItemSpaces[self.middle][2], plant, "the plant stays under it")
+        occupancy.lift(game, self.middle, second)
+        occupancy.leave(game, self.middle)
+        self.assertEqual(game.grid[self.middle][0], PLANT)
+        self.assertIs(game.grid[self.middle][2], plant)
+
+    def test_a_second_unit_on_a_space_never_swaps(self):
+        game = self.game
+        first, second = self.put(self.middle, enemies.Goblin()), self.put(self.middle, enemies.Goblin())
+        other = self.put(self.middle + 1, enemies.Goblin())
+        for goblin in (first, second, other):
+            goblin.faction = 1
+        game.movedEnemies = {self.middle + 1}
+        occupancy.lift(game, self.middle, second)
+        self.assertIsNone(expansion.swapWith(game, expansion.beginTurn(game), self.middle, second, [self.middle + 1]))
+        self.assertEqual(self.at(self.middle + 1), [other])
 
 
 class EverythingElseTests(OccupancyTest):

@@ -6,6 +6,7 @@ from cruel.entities import enemies
 from cruel.inventory import items
 from cruel.inventory import resources
 from cruel.world import events
+from cruel.world import farmhouses
 from cruel.world import metropolis
 from cruel.world import plants
 from cruel.world import wall
@@ -16,7 +17,7 @@ the middle (a metropolis.MINESHAFT tile). Stand on it and press Enter to climb d
 shaft you arrive on to go back up.
 
   Mine   a Motherlode ore floor (a random ore floor for this depth, wall.ORE_FLOORS, with most of its walls ore).
-  Farm   a Mixed cave floor with PENS pens of Dew Grubs (fenced, with a gate toward the shaft and another on the far side) and FIELDS fields of
+  Farm   a Mixed cave floor with PENS pens of Dew Grubs (fenced, with a gate toward the shaft and another on the far side) and FARMHOUSES farmhouses (farmhouses.py: round, with plots of
          the city's crops (plants.Plant with cityCrop: picking one is stealing), which its farmers tend.
 
 Both have, round the shaft: a clearing (CLEARING_RADIUS), tunnels out of it to the caves, and STOREHOUSES
@@ -50,9 +51,8 @@ GRUBS_PER_PEN = (2, 3)
 FARMER_START_FOOD = 3       # herbs of each crop a keeper starts with (so the grubs don't starve before the first harvest)
 FARMER_START_SEEDS = 2      # seeds of its crop a grower starts with
 CHEST_START_FOOD = 8        # herbs of each crop in a farm's storehouse chests to begin with
-FIELDS = 3
-FIELD_RADIUS = 2            # a field is the crops within this of its middle...
-FIELD_REACH = (6, 14)       # ...which is this far from the shaft, on ground you can walk to
+FARMHOUSES = 2
+FARMHOUSE_REACH = (10, 17)  # how far from the shaft a farmhouse's middle is
 FLOOR, WALL, CHEST, ENEMY, PLANT = 0, 2, 3, 5, 8
 
 # What's kept per floor number besides the saved grid (gameManager attributes): dicts of floor -> value, and sets of
@@ -207,6 +207,7 @@ class Works:
         self.tunnels = set()
         self.storehouses = []
         self.pens = []
+        self.farmhouses = []  # each {"walls", "inside", "door", "backDoor", "beds", "chest", "crop"}
         self.fields = {}
         self.lamps = {}
         self.ways = set()   # the ways dug from the buildings' doors out to open ground (kept clear)
@@ -220,6 +221,8 @@ class Works:
             tiles |= storehouse["walls"] | storehouse["inside"]
         for pen in self.pens:
             tiles |= pen["fence"] | pen["inside"]
+        for farmhouse in self.farmhouses:
+            tiles |= farmhouse["box"]
         return tiles
 
 
@@ -251,7 +254,7 @@ def layOutWorks(grid, rowLength, shaftSpot, kind, rooms=None):
     grid[shaftSpot] = [metropolis.MINESHAFT, 1, metropolis.Mineshaft(kind, down=False)]
     if kind == "farm":
         buildPens(grid, rowLength, rowCount, shaftSpot, works)
-        sowFields(grid, rowLength, shaftSpot, works, rooms or {})
+        buildFarmhouses(grid, rowLength, rowCount, shaftSpot, works, rooms if rooms is not None else {})
         for storehouse in works.storehouses:  # some food put by
             for materialId, amount in startingStock(works, CHEST_START_FOOD, 0).items():
                 if amount:
@@ -425,35 +428,42 @@ def buildPens(grid, rowLength, rowCount, shaftSpot, works):
             works.dwellers[spot] = grub
 
 
-def sowFields(grid, rowLength, shaftSpot, works, rooms):
-    """FIELDS fields of the city's crops on open ground you can walk to from the shaft: each one kind (one that
-    grows on its floor), already growing (wild patches' stages), within FIELD_RADIUS of its middle."""
-    connected = walkable(grid, rowLength, shaftSpot)
-    keepOff = works.builtOn() | {gate for pen in works.pens for gate in tilesBeside(rowLength, pen["gate"])} |         {near for spot in works.ways for near in tilesBeside(rowLength, spot)}  # (the ways out stay clear, and where they join)
-    choices = [spot for spot in connected if spot not in keepOff and
-               FIELD_REACH[0] <= math.hypot(spot % rowLength - shaftSpot % rowLength, spot // rowLength - shaftSpot // rowLength) <= FIELD_REACH[1]]
-    random.shuffle(choices)
-    middles = []
-    for middle in choices:
-        if len(middles) >= FIELDS:
+def buildFarmhouses(grid, rowLength, rowCount, shaftSpot, works, rooms):
+    """FARMHOUSES farmhouses (farmhouses.py) round the clearing, clear of everything else, each with its two doors
+    (each with a way from it to ground you can walk to from the shaft), a storage chest in the middle, its floor laid
+    for its crop and its plots already growing (wild patches' stages)."""
+    shaftColumn, shaftRow = shaftSpot % rowLength, shaftSpot // rowLength
+    tries = [(math.tau * index / 16, reach) for index in range(16) for reach in range(FARMHOUSE_REACH[0], FARMHOUSE_REACH[1] + 1)]
+    random.shuffle(tries)
+    for angle, reach in tries:
+        if len(works.farmhouses) >= FARMHOUSES:
             break
-        if any(math.hypot(middle % rowLength - other % rowLength, middle // rowLength - other // rowLength) < 2 * FIELD_RADIUS + 2
-               for other in middles):
+        middleColumn, middleRow = round(shaftColumn + reach * math.cos(angle)), round(shaftRow + reach * math.sin(angle))
+        half = farmhouses.HALF
+        if not (inBounds(rowLength, rowCount, middleColumn - half - 1, middleRow - half - 1) and
+                inBounds(rowLength, rowCount, middleColumn + half + 1, middleRow + half + 1)):
             continue
-        kinds = plants.wildKinds(plants.floorOf(middle, rooms))
-        if not kinds:
+        farmhouse = farmhouses.shape(rowLength, middleColumn, middleRow, (shaftColumn, shaftRow))
+        withMargin = {middleColumn + column + (middleRow + row) * rowLength
+                      for row in range(-half - 1, half + 2) for column in range(-half - 1, half + 2)}
+        if withMargin & works.builtOn():
             continue
-        kind = random.choice(kinds)
-        middles.append(middle)
-        for spot in connected:
-            if spot not in keepOff and spot != shaftSpot and \
-                    math.hypot(middle % rowLength - spot % rowLength, middle // rowLength - spot // rowLength) <= FIELD_RADIUS \
-                    and plants.canGrow(kind, spot, grid, rooms):
-                crop = plants.Plant.grown(kind)
-                crop.planted = True
-                crop.cityCrop = True
-                grid[spot] = [PLANT, 0, crop]
-                works.fields[spot] = kind
+        crop = farmhouses.pickCrop(works.fields)
+        for spot in farmhouse["walls"]:
+            grid[spot] = [WALL, 0, wall.FarmhouseWall()]
+        for spot in farmhouse["inside"] | {farmhouse["door"], farmhouse["backDoor"]}:
+            openUp(grid, spot)
+        grid[farmhouse["chest"]] = [CHEST, 0, items.StorageChest()]
+        farmhouses.layFloor(rooms, farmhouse["inside"], crop)
+        for bed in farmhouse["beds"]:
+            sprout = plants.Plant.grown(crop)
+            sprout.planted = sprout.cityCrop = True
+            grid[bed] = [PLANT, 0, sprout]
+            works.fields[bed] = crop
+        farmhouse["crop"] = crop
+        works.farmhouses.append(farmhouse)
+        for outside in (farmhouse["outside"], farmhouse["backOutside"]):
+            works.ways |= digWayOut(grid, rowLength, outside, shaftSpot, works.builtOn(), farmhouse["box"])
 
 
 def sideOfWall(grid, rowLength, spot):
@@ -521,6 +531,7 @@ def placeDwellers(grid, rowLength, shaftSpot, kind, works):
         if kind == "farm":
             worker.fields = works.fields  # (one dict, shared by every farmer)
             worker.pens = works.pens      # (and the pens, the same way)
+            worker.farmhouses = works.farmhouses
             farmers = sum(1 for dweller in works.dwellers.values() if getattr(dweller, "work", None) == "farm")
             crops = sorted(set(works.fields.values()))
             if farmers % 2 == 0 or not crops:  # every other farmer keeps the grubs; the others grow a crop each

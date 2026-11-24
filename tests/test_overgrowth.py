@@ -6,6 +6,7 @@ import pygame
 
 from tests import support
 from cruel.core import gamemanager
+from cruel.world import events
 from cruel.world import plants
 
 FLOOR, PLAYER, PLANT = 0, 1, 8
@@ -41,7 +42,8 @@ def growPlantOnPlayer(game, plantKind):
         return True
 
     plants.step = sproutOnThePlayer
-    game.turnCount = -1  # the next enemy turn is turn 0, which is a growth turn
+    growTurns = events.plantRules(game.activeEvent()).get("growTurns", plants.GROW_TURNS)
+    game.turnCount = (-game.growthOffset(growTurns) - 1) % growTurns  # the next enemy turn is this floor's growth turn
     try:
         game.enemyTurn()
     finally:

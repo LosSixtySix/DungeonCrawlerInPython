@@ -66,12 +66,6 @@ class PenTest(WorkTest):
         farmer.plans = self.plans
         return farmer
 
-    def foodPutBy(self, amount=100):
-        """A storage chest with herbs in it (a grub only gives birth with food put by)."""
-        chest = self.storageChest(10, 60)
-        chest.append(resources.MaterialStack("bloodcap", amount))
-        return chest
-
     def grubsIn(self, pen):
         return [grub for spot, grub in dwellerwork.grubsHere(self.game) if spot in pen["inside"] and grub.pen == pen["inside"]]
 
@@ -79,13 +73,12 @@ class PenTest(WorkTest):
 # ---------------------------------------------------------------- young
 
 class YoungGrubTests(PenTest):
-    def test_a_fed_grown_grub_can_give_birth_to_a_young_one_in_its_pen(self):
-        self.foodPutBy()
+    def test_two_fed_grown_grubs_together_can_have_a_young_one_in_their_pen(self):
         pen = self.pen(40, 30)
-        mother = self.fill(pen, 1)[0]
+        mother, _ = self.fill(pen, 2)
         motherSpot = self.positionOf(mother)
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
-            youngSpot = dewgrubs.maybeGiveBirth(self.game, motherSpot, mother, self.pens)
+            youngSpot = dewgrubs.maybeGiveBirth(self.game, motherSpot, mother)
         self.assertIn(youngSpot, pen["inside"])
         young = self.game.grid[youngSpot][2]
         self.assertFalse(young.grown)
@@ -93,23 +86,33 @@ class YoungGrubTests(PenTest):
         self.assertEqual(young.pen, pen["inside"])
         self.assertIn(youngSpot, self.game.EnemyPositions)
 
-    def test_no_young_without_food_put_by_for_it(self):
+    def test_no_young_without_a_fed_grown_grub_near(self):
         pen = self.pen(40, 30)
-        grubs = self.fill(pen, 2)
-        chest = self.foodPutBy(14)  # (2 grubs and the young one need 5 herbs each)
+        mother = self.fill(pen, 1)[0]
+        motherSpot = self.positionOf(mother)
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
-            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
-        chest[0].amount += 1
-        with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
-            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
+            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, motherSpot, mother), "alone")
+            farSpot = motherSpot + (dewgrubs.MATE_RANGE + 1) * self.game.rowLength * 3
+            self.grub(farSpot, pen)
+            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, motherSpot, mother), "too far away")
+            self.game.grid[farSpot] = [0, 1]
+            self.game.EnemyPositions.discard(farSpot)
+            free = [tile for tile in pen["inside"] if self.game.grid[tile][0] == 0]
+            mate = self.grub(min(free, key=lambda tile: dwellers.distance(self.game, motherSpot, tile)), pen)
+            mate.hunger = dwellerfarming.HUNGRY_TURNS
+            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, motherSpot, mother), "hungry")
+            mate.grown = False
+            mate.hunger = 0
+            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, motherSpot, mother), "young")
+            mate.grown = True
+            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, motherSpot, mother))
 
     def test_a_full_pen_still_has_young_and_the_farmers_then_move_grubs_out(self):
-        self.foodPutBy()
         pen = self.pen(40, 30)
         grubs = self.fill(pen, dewgrubs.PEN_MOST)
         other = self.pen(60, 30)
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
-            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0], self.pens))
+            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0]))
         self.assertEqual(len(self.grubsIn(pen)), dewgrubs.PEN_MOST + 1, "no hard limit")
         grub, target = dewgrubs.grubToMove(self.game, self.farmer(52, 25))
         self.assertEqual((grub.pen, target), (pen["inside"], other["inside"]))
@@ -118,7 +121,7 @@ class YoungGrubTests(PenTest):
         pen = self.pen(40, 30)
         young = self.fill(pen, 1, grown=False)[0]
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
-            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(young), young, self.pens))
+            self.assertIsNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(young), young))
 
     def test_a_young_grub_makes_no_dew_until_it_grows_up_after_enough_feedings(self):
         young = enemies.DewGrub(grown=False)
@@ -138,10 +141,9 @@ class YoungGrubTests(PenTest):
         self.assertTrue(young.dewReady)
 
     def test_a_farmer_feeding_a_grown_grub_can_bring_a_birth(self):
-        self.foodPutBy()
         pen = self.pen(40, 30)
-        for grub in self.fill(pen, 2):
-            grub.hunger = dwellerfarming.HUNGRY_TURNS
+        hungry, _ = self.fill(pen, 2)  # (the other one has been fed: a mate)
+        hungry.hunger = dwellerfarming.HUNGRY_TURNS
         farmer = self.farmer(43, 29)
         farmer.materials = {"bloodcap": 1}
         with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1), mock.patch.object(dwellers, "IDLE_CHANCE", 0), \
@@ -157,6 +159,74 @@ class YoungGrubTests(PenTest):
 
 
 # ---------------------------------------------------------------- pens
+
+class HerdSizeTests(PenTest):
+    def setUp(self):
+        super().setUp()
+        self.keepers = []
+
+    def keeper(self):
+        keeper = self.farmer(50 + 2 * len(self.keepers), 25)
+        self.keepers.append(keeper)
+        keeper.farmRole = "keeper"
+        return keeper
+
+    def test_young_are_born_however_big_the_herd(self):
+        pen = self.pen(40, 30)
+        grubs = self.fill(pen, dwellerfarming.KEEPER_HERD + 1)
+        with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
+            self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(grubs[0]), grubs[0]))
+
+    def test_the_keepers_look_after_as_many_as_they_can_feed_grown_and_least_hungry_first(self):
+        pen = self.pen(40, 30)
+        grubs = self.fill(pen, dwellerfarming.KEEPER_HERD + 2)
+        self.keeper()
+        for index, grub in enumerate(grubs):
+            grub.hunger = 60 + index
+        young = grubs[0]
+        young.grown = False
+        cared = dwellerfarming.caredFor(self.game, dwellerwork.grubsHere(self.game))
+        self.assertEqual(len(cared), dwellerfarming.KEEPER_HERD)
+        self.assertNotIn(id(young), cared, "the young one goes first")
+        self.assertNotIn(id(grubs[-1]), cared, "then the hungriest")
+        self.keeper()
+        self.assertEqual(len(dwellerfarming.caredFor(self.game, dwellerwork.grubsHere(self.game))), len(grubs),
+                         "a second keeper can feed them all")
+
+    def test_a_keeper_lets_a_grub_it_cant_look_after_starve(self):
+        pen = self.pen(40, 30)
+        grubs = self.fill(pen, dwellerfarming.KEEPER_HERD + 1)
+        keeper = self.keeper()
+        keeper.materials = {"bloodcap": 10}
+        for grub in grubs:
+            grub.hunger = dwellerfarming.HUNGRY_TURNS
+        letGo = grubs[-1]
+        letGo.hunger = dwellerfarming.STARVING_TURNS
+        cared = dwellerfarming.caredFor(self.game, dwellerwork.grubsHere(self.game))
+        self.assertNotIn(id(letGo), cared)
+        with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 0), mock.patch.object(dwellers, "IDLE_CHANCE", 0):
+            for _ in range(dwellerfarming.STARVE_TURNS):
+                self.game.enemyTurn()
+                dwellerfarming.starveTurn(self.game)
+        self.assertNotIn(letGo, self.grubsIn(pen), "it starved")
+        self.assertEqual(len(self.grubsIn(pen)), dwellerfarming.KEEPER_HERD, "the rest were fed")
+
+
+class NoPopupTests(PenTest):
+    def test_no_message_pops_up_over_a_grub_born_or_starved_near_you(self):
+        pen = self.pen(40, 30)
+        mother, other = self.fill(pen, 2)
+        self.game.playerPositionFlat = self.positionOf(mother) + 1
+        for spot in pen["inside"]:
+            self.game.grid[spot][1] = 1
+        with mock.patch.object(self.game, "addPopup") as addPopup:
+            with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
+                self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(mother), mother))
+            other.hunger = dwellerfarming.STARVE_TURNS - 1
+            dwellerfarming.starveTurn(self.game)
+            self.assertNotIn(other, self.grubsIn(pen))
+        addPopup.assert_not_called()
+
 
 class GrubMovingTests(PenTest):
     def test_from_a_crowded_pen_to_one_with_room(self):
