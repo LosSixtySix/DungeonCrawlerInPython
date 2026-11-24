@@ -164,7 +164,7 @@ HIT_SPECK = 0.04           # every hit leaves a faint speck on the floor
 BLOOD_DRY = 1 / 150       # blood dries away by this much a turn (a full puddle lasts 150 turns)
 
 
-SEE_THROUGH = (0, 9, expansion.CAMP, peddler.SIGNPOST)  # tile types sight passes over (plants depend on the plant)
+SEE_THROUGH = (0, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.STREET_LIGHT)  # tile types sight passes over (plants depend on the plant)
 _RAYS = {}
 
 
@@ -558,6 +558,9 @@ class gameManager():
                 return self.shopEnter(everything=bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT)))
             return self.onEnter()
         if self.isAction(key, "interact"):
+            if self.focus == "shop" and "shop" in self.openWindows and not self.pickerActive():
+                # in a shop, interact buys or sells (Ctrl + interact sells every whole lot of a material)
+                return self.shopEnter(everything=bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT)))
             if not self.pickerActive():
                 if event.mod & pygame.KMOD_CTRL:
                     self.interactHere()
@@ -1711,7 +1714,8 @@ class gameManager():
             if self.playerHidden() and not hidden:
                 self.addPopup("Hidden", newPosition)
             return
-        if targetLocation not in (7, 8, expansion.CAMP, peddler.SIGNPOST, metropolis.SHOP_SIGN) and self.player.checkValidMoveLocation(targetLocation):  # stations, other plants and camp pieces block
+        if targetLocation not in (7, 8, expansion.CAMP, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT) \
+                and self.player.checkValidMoveLocation(targetLocation):  # stations, other plants and camp pieces block
             self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
             self.currentLocation = copy.copy(self.grid[newPosition])
             self.playerPositionFlat = newPosition
@@ -2730,9 +2734,10 @@ class gameManager():
         return positions
 
     def seeThroughForPlayer(self, position):
-        """The same rule your vision uses: open floor, item piles and short plants don't block it."""
+        """The same rule your vision uses: open floor, item piles, short plants and thin posts (the Peddler's
+        signpost, a city's street lights) don't block it."""
         tile = self.grid[position]
-        return tile[0] in (0, 1, 9, expansion.CAMP) or (tile[0] == 8 and not tile[2].blocksSight)
+        return tile[0] in (0, 1, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.STREET_LIGHT) or             (tile[0] == 8 and not tile[2].blocksSight)
 
     def lightAround(self, fire, radius=FIRE_LIGHT_RADIUS):
         """The tiles a fire lights: rays out to radius, stopping at (and lighting) the first thing that blocks
@@ -2779,12 +2784,14 @@ class gameManager():
         return position in self.smoke
 
     def updateFireLight(self):
-        """Which tiles the fires and bonfires light, as {tile: (the nearest fire lighting it, its light radius)}."""
+        """Which tiles the fires, bonfires and street lights light, as {tile: (the nearest one lighting it, its light
+        radius)}."""
         R = self.rowLength
         self.fireLight = {}
         best = {}
         sources = [(fire, FIRE_LIGHT_RADIUS) for fire in self.fires] + \
-                  [(bonfire, expansion.BONFIRE_LIGHT_RADIUS) for bonfire in expansion.bonfires(self)]
+                  [(bonfire, expansion.BONFIRE_LIGHT_RADIUS) for bonfire in expansion.bonfires(self)] + \
+                  [(lamp, metropolis.STREET_LIGHT_RADIUS) for lamp in metropolis.streetLights(self)]
         for fire, radius in sources:
             for p in self.lightAround(fire, radius):
                 d = (p % R - fire % R) ** 2 + (p // R - fire // R) ** 2
@@ -3202,7 +3209,7 @@ class gameManager():
                 if kind == 2:
                     tile[2].holeBelow = True  # it stands over a hole now
                     continue
-                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST, metropolis.SHOP_SIGN):
+                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT):
                     continue
                 if kind == 5 and len(tile) > 2 and self.isBig(tile[2]):
                     continue  # a giant is too big to fall: the floor under it holds
@@ -4109,6 +4116,8 @@ class gameManager():
         if tile[0] == 7:
             station = tile[2]
             return f"{station.name} ({station.hp}/{station.maxHp})" if station.claimed else f"{station.name} (unclaimed)"
+        if tile[0] == metropolis.STREET_LIGHT:
+            return "Street light"
         if tile[0] == metropolis.SHOP_SIGN:
             return f"Sign: {cityshops.shopName(tile[2])}"
         if tile[0] == peddler.SIGNPOST:
@@ -4241,9 +4250,10 @@ class gameManager():
         return spec
 
     # ------------------------------------------------------------- the Gray Peddler's shop (peddler.py)
-    # Face him and press interact: his shop opens. It's built like the Inventory window (the same slot grid and
-    # details panel) with a Buy and a Sell tab: Tab switches, Enter buys or sells, Ctrl+Enter sells every whole
-    # lot of a material. Walking away (or hurting him) closes it.
+    # Face a trader (the Gray Peddler or a city merchant) and press interact: its shop opens. It's built like the
+    # Inventory window (the same slot grid and details panel) with a Buy and a Sell tab: Tab switches, interact (or
+    # Enter) buys or sells, Ctrl + interact (or Ctrl+Enter) sells every whole lot of a material. Walking away (or
+    # hurting the trader) closes it.
 
     def shopTrader(self):
         """Who you're trading with (the Gray Peddler or a city merchant), while they're beside you and still willing
@@ -4347,12 +4357,12 @@ class gameManager():
             else:
                 lines = [("title", ware.name, ""), ("muted", ware.recipe.description, ""), ("label", "MAKES", ware.recipe.result)]
             lines += [("price", "PRICE", f"{ware.price} gold"), ("label", "YOU HAVE", f"{player.gold} gold")]
-            hint = "Enter  buy      Tab  sell"
+            hint = f"{self.interactKeyName()}  buy      Tab  sell"
         elif kind == "item":
             item = player.inventory[which]
             lines = [line for line in self.itemDetail(item) if line[0] != "hint"]
             lines.append(("price", "HE PAYS", f"{peddler.offerFor(item)} gold"))
-            hint = "Enter  sell      Tab  buy"
+            hint = f"{self.interactKeyName()}  sell      Tab  buy"
         else:
             have = player.materials.get(which, 0)
             perGold = cityshops.materialsPerGold(trader)
@@ -4361,7 +4371,7 @@ class gameManager():
                      ("price", "HE PAYS", f"1 gold for {perGold}")]
             if gold:
                 lines.append(("label", "SELL ALL", f"{gold} gold, keeps {have - taken}"))
-                hint = f"Enter  sell {perGold}   Ctrl+Enter  all"
+                hint = f"{self.interactKeyName()}  sell {perGold}   Ctrl+{self.interactKeyName()}  all"
             else:
                 lines.append(("muted", f"You need {perGold} to sell any", ""))
                 hint = "Tab  buy"

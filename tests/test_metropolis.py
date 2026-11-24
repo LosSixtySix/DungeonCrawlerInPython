@@ -304,6 +304,57 @@ class LookTests(unittest.TestCase):
         self.assertTrue(all(drop and drop[0][0] == "stone" for drop in drops))
 
 
+class StreetLightTests(unittest.TestCase):
+    """The lamp posts along the streets."""
+
+    def setUp(self):
+        self.city = newCity(5)
+
+    def test_there_is_a_light_at_most_street_crossings(self):
+        columns, rows = self.city.streetLines
+        crossings = [self.city.spot(column + 1, row + 1) for column in columns for row in rows]
+        lit = sum(1 for spot in crossings if spot in self.city.streetLights)
+        self.assertGreater(lit, len(crossings) * 0.7)
+
+    def test_lights_stand_on_streets_and_never_by_a_door_or_where_you_arrive(self):
+        doors = {door for _, door in self.city.houses + self.city.mansions} | {shop["door"] for shop in self.city.shops}
+        playerSpot = middleSpot()
+        for lamp in self.city.streetLights:
+            self.assertEqual(self.city.grid[lamp][0], metropolis.STREET_LIGHT)
+            self.assertIn(lamp, self.city.rooms[metropolis.STREET])
+            self.assertNotEqual(lamp, playerSpot)
+            for beside in metropolis.neighborsOf(self.city, lamp):
+                self.assertNotIn(beside, doors)
+                for besideDoor in metropolis.neighborsOf(self.city, beside):
+                    if besideDoor in doors:  # the tile in front of a door stays free
+                        self.assertNotIn(lamp, metropolis.neighborsOf(self.city, besideDoor) + [beside])
+
+    def test_they_light_the_street_round_them(self):
+        game = cityGame()
+        lamp = metropolis.streetLights(game)[0]
+        game.updateFireLight()
+        self.assertEqual(game.fireLight[lamp], (lamp, metropolis.STREET_LIGHT_RADIUS))
+        litNearby = [spot for spot, (source, _) in game.fireLight.items() if source == lamp]
+        self.assertGreater(len(litNearby), 10)
+
+    def test_they_block_the_way_but_not_the_view(self):
+        game = cityGame()
+        lamp = metropolis.streetLights(game)[0]
+        besideLamp = next(spot for spot in game.neighbors(lamp) if game.grid[spot][0] == FLOOR)
+        support.placePlayer(game, besideLamp)
+        game.movePlayer(lamp)
+        self.assertEqual(game.playerPositionFlat, besideLamp)
+        beyond = lamp + (lamp - besideLamp)
+        self.assertTrue(game.lineOfSight(besideLamp, beyond + (beyond - lamp)))
+        game.PlayerLookPosition = lamp
+        self.assertEqual(game.lookingAt(), "Street light")
+
+    def test_other_floors_have_none(self):
+        random.seed(3)
+        game = support.newGame(level=1)
+        self.assertEqual(metropolis.streetLights(game), [])
+
+
 class SavingTests(unittest.TestCase):
     def test_a_city_floor_survives_going_down_and_back_up(self):
         game = cityGame()

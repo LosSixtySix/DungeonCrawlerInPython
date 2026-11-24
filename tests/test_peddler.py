@@ -453,7 +453,7 @@ class ShopWindowTests(unittest.TestCase):
         detail = game.windowSpec("shop")["detail"]
         self.assertIn(("price", "PRICE", f"{self.trader.wares[0].price} gold"), detail)
         hints = [text for style, text, _ in detail if style == "hint"]
-        self.assertEqual(hints, ["Enter  buy      Tab  sell"])
+        self.assertEqual(hints, [f"{game.interactKeyName()}  buy      Tab  sell"])  # (E by default)
 
 
 class FightingTests(unittest.TestCase):

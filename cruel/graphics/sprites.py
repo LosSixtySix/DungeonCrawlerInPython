@@ -245,6 +245,21 @@ def shopSignColors(kind):
     return {"p": (110, 80, 50), "w": tuple(max(0, value - 40) for value in board), "W": board}
 
 
+# A Metropolis street light, seen from above: the round glass of a lamp on its post, lit
+STREET_LIGHT = [
+    "..........",
+    "...kkkk...",
+    "..kyYYyk..",
+    ".kyYWWYyk.",
+    ".kYWWWWYk.",
+    ".kYWWWWYk.",
+    ".kyYWWYyk.",
+    "..kyYYyk..",
+    "...kkkk...",
+    "..........",
+]
+STREET_LIGHT_COLORS = {"y": (190, 140, 50), "Y": (240, 190, 90), "W": (255, 240, 190)}
+
 PEDDLER_STONE_COLOR = (86, 92, 104)  # the Peddler's room walls: cold blue-gray, the same on every floor
 
 # The Metropolis's Dwellers (metropolis.py), drawn on their design sheet: upright insectoids seen from above, a big
@@ -937,6 +952,7 @@ def buildSprites(colors, tileSize):
                      for look in EXPANSION_LOOKS for name, (rows, fixed) in factionPictures(look).items()},
         "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
         "signpost": makeShadowed(SIGNPOST, enemyRoles(colors, SIGNPOST_COLORS), tileSize),
+        "streetLight": makeShadowed(STREET_LIGHT, enemyRoles(colors, STREET_LIGHT_COLORS), tileSize),
         "shopSigns": {kind: makeShadowed(SHOP_SIGN, enemyRoles(colors, shopSignColors(kind)), tileSize) for kind in SHOP_SIGN_COLORS},
         "campChests": {look: makeShadowed(CAMP_CHEST, enemyRoles(colors, campChestColors(look)), tileSize) for look in EXPANSION_LOOKS},
         "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],

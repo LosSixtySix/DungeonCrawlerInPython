@@ -150,6 +150,34 @@ class ShopWindowTests(unittest.TestCase):
         game.shopEnter(everything=True)
         self.assertEqual(game.player.materials["iron_ore"], 1, "two lots of 6")
 
+    def pressInteract(self, modifierKeys=0):
+        key = self.game.settings.hotkeys["interact"]
+        self.game.onKeyDown(pygame.event.Event(pygame.KEYDOWN, key=key, mod=modifierKeys, unicode="e", scancode=0))
+        self.game.onKeyUp(pygame.event.Event(pygame.KEYUP, key=key, mod=modifierKeys))
+
+    def test_the_interact_key_opens_the_shop_and_then_buys(self):
+        game = self.game
+        game.player.gold = 100
+        self.pressInteract()
+        self.assertEqual(game.focus, "shop")
+        self.assertEqual(game.player.materials.get("iron_ore"), None, "opening the shop buys nothing")
+        self.pressInteract()
+        self.assertEqual(game.player.materials.get("iron_ore"), 5)
+
+    def test_ctrl_interact_sells_every_whole_lot(self):
+        game = self.game
+        game.player.materials = {"iron_ore": 20}
+        self.pressInteract()
+        game.toggleShopTab()
+        self.pressInteract(pygame.KMOD_LCTRL)
+        self.assertEqual(game.player.materials["iron_ore"], 2, "three lots of 6")
+
+    def test_the_hints_name_the_interact_key(self):
+        game = self.game
+        self.pressInteract()
+        hints = [text for style, text, _ in game.windowSpec("shop")["detail"] if style == "hint"]
+        self.assertEqual(hints, [f"{game.interactKeyName()}  buy      Tab  sell"])
+
     def test_attacking_a_merchant_turns_it_hostile_and_closes_its_shop(self):
         game = self.game
         game.enemyDodge = lambda target, damage, position: damage
