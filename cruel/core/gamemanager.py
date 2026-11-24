@@ -1775,11 +1775,13 @@ class gameManager():
         Peddler (peddler.provoke)."""
         expansion.playerHurt(self, enemy, position)
         peddler.provoke(self, enemy, position)
+        dwellers.hostileAct(self, position, victim=enemy)  # on a city floor, anyone who sees it turns hostile
 
     def breakWall(self, position):
         """A wall was broken: it becomes floor and its materials go straight into the pouch."""
         organizers.wallBroken(self, position, "player")  # if an Organizer built it, it may come after you
         expansion.playerBrokeWall(self, position)  # a neutral faction's hut wall: it turns on you
+        dwellers.hostileAct(self, position)  # a city's wall: anyone who sees it turns hostile
         tile = self.grid[position]
         name = tile[2].name
         if name == "Gold Wall" and self.proportion == "All Gold":
@@ -3931,6 +3933,8 @@ class gameManager():
         ground = self.groundAt(spot)
         chest = ground[2] if len(ground) > 2 else None
         expansion.playerTookFrom(self, chest, spot)
+        if isinstance(chest, metropolis.CityChest):  # stealing from the city
+            dwellers.hostileAct(self, spot)
 
     def itemsSpot(self):
         """Where Items Here takes from: the chest or pile you face, otherwise a pile you're standing on."""
@@ -4109,7 +4113,7 @@ class gameManager():
             return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
             enemy = tile[2]
-            notes = [note for note in (expansion.attitudeLabel(self, enemy), peddler.attitudeLabel(enemy),
+            notes = [note for note in (expansion.attitudeLabel(self, enemy), peddler.attitudeLabel(enemy), dwellers.attitudeLabel(enemy),
                                        "burning" if getattr(enemy, "burnTurns", 0) > 0 else None) if note]
             return enemy.name + (f" ({', '.join(notes)})" if notes else "")
         return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
