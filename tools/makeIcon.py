@@ -30,9 +30,9 @@ def makeIcon():
     left, top, right, bottom = draw.textbbox((0, 0), "C", font=font)
     font = ImageFont.truetype(os.path.join(ASSETS, "Forgore.otf"), int(100 * target / (bottom - top)))
     left, top, right, bottom = draw.textbbox((0, 0), "C", font=font)
-    x = (big - (right - left)) / 2 - left
-    y = (big - (bottom - top)) / 2 - top
-    draw.text((x, y), "C", font=font, fill=LETTER_COLOR)
+    letterLeft = (big - (right - left)) / 2 - left
+    letterTop = (big - (bottom - top)) / 2 - top
+    draw.text((letterLeft, letterTop), "C", font=font, fill=LETTER_COLOR)
 
     icon = image.resize((SIZE, SIZE), Image.LANCZOS)
     icon.save(os.path.join(ASSETS, "icon.png"))

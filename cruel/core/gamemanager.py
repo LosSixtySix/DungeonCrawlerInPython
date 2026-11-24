@@ -1,7 +1,7 @@
 import pygame
 import random as rand
-from cruel.world import connectingEmptyRooms as CER
-from cruel.entities import playerClass as pc
+from cruel.world import connectingEmptyRooms
+from cruel.entities import playerClass
 from cruel.inventory import items
 from cruel.entities import enemies
 from cruel.world import wall
@@ -9,7 +9,7 @@ import copy
 import math
 import os
 from cruel.core import paths
-from cruel.core import EventDispatcher as ED
+from cruel.core import EventDispatcher
 from cruel.world import themes
 from cruel.core import attempts
 from cruel.world import events
@@ -26,7 +26,7 @@ from cruel.audio import sound
 from cruel.graphics import titlefog
 from cruel.core.version import VERSION
 from cruel.core.settings import Settings, HOTKEY_ACTIONS, FIXED_KEYS, LIGHT_STYLES, VOLUME_STEP, MAP_ZOOMS
-from cruel.graphics.renderer import renderer as rend, SWAY_FPS, FIRE_LIGHT_RADIUS
+from cruel.graphics.renderer import renderer, SWAY_FPS, FIRE_LIGHT_RADIUS
 import pickle
 from cruel.core import savefile
 
@@ -202,7 +202,7 @@ class gameManager():
         self.keysHeld = set()
         self.rebinding = None  # checked for every held key, so it must exist on the title screen too (resetSession sets it again)
 
-        self.EventDispatcher = ED.EventDispatcher()
+        self.EventDispatcher = EventDispatcher.EventDispatcher()
         self.SubscribeToEvents()
 
         self.running = True
@@ -255,7 +255,7 @@ class gameManager():
             os.environ["SDL_VIDEO_CENTERED"] = "1"
             self.win = pygame.display.set_mode(size)
         theme = self.painter.theme if self.painter is not None else None
-        self.painter: rend = rend(self.win)
+        self.painter: renderer = renderer(self.win)
         self.tileSize = self.painter.setTileSize(10)
         if theme is not None:
             self.painter.setTheme(theme)
@@ -336,7 +336,7 @@ class gameManager():
         self.goToTitle()
 
     def newGame(self):
-        self.player: pc.PlayerClass = pc.PlayerClass()
+        self.player: playerClass.PlayerClass = playerClass.PlayerClass()
 
         self.level = 0
         self.deepest = 0  # deepest floor reached this run, for the Attempts list
@@ -2118,25 +2118,27 @@ class gameManager():
     def generateScorchedLevel(self, depth):
         """A Scorched Depths floor: half Stone rooms, half Molten. Its walls come in blobs, not scattered single
         tiles, so there's wide open ground between them. The Molten Blade waits in a chest in the middle."""
-        R, rows = self.rowLength, self.numberOfSpots // self.rowLength
-        grid = {i: [0, 0] for i in range(self.numberOfSpots)}
-        target, walls = int(self.numberOfSpots * SCORCHED_WALL_SHARE), 0
-        while walls < target:
-            cx, cy, radius = rand.randrange(R), rand.randrange(rows), rand.randint(1, 3)
-            for y in range(cy - radius, cy + radius + 1):
-                for x in range(cx - radius, cx + radius + 1):
-                    if 0 <= x < R and 0 <= y < rows and self.inCircle(x - cx, y - cy, radius) and grid[x + y * R][0] == 0:
-                        grid[x + y * R][0] = 2
+        rowLength, rows = self.rowLength, self.numberOfSpots // self.rowLength
+        grid = {spot: [0, 0] for spot in range(self.numberOfSpots)}
+        targetWalls, walls = int(self.numberOfSpots * SCORCHED_WALL_SHARE), 0
+        while walls < targetWalls:
+            blobColumn, blobRow, radius = rand.randrange(rowLength), rand.randrange(rows), rand.randint(1, 3)
+            for row in range(blobRow - radius, blobRow + radius + 1):
+                for column in range(blobColumn - radius, blobColumn + radius + 1):
+                    if (0 <= column < rowLength and 0 <= row < rows
+                            and self.inCircle(column - blobColumn, row - blobRow, radius)
+                            and grid[column + row * rowLength][0] == 0):
+                        grid[column + row * rowLength][0] = 2
                         walls += 1
-        center = (rows // 2) * R + R // 2
+        center = (rows // 2) * rowLength + rowLength // 2
         if center == self.playerPositionFlat:
             center += 3
-        for p in self.tilesAround(self.playerPositionFlat, 2) + self.tilesAround(center, 3):
-            grid[p][0] = 0
-        rooms, proportion, nodes = self.createRooms(CER.createNodes(grid, R, 5), SCORCHED)
-        for p in self.tilesAround(self.playerPositionFlat, 1):  # you arrive on cool stone
-            rooms["Molten"].discard(p)
-            rooms["Stone"].add(p)
+        for spot in self.tilesAround(self.playerPositionFlat, 2) + self.tilesAround(center, 3):
+            grid[spot][0] = 0
+        rooms, proportion, nodes = self.createRooms(connectingEmptyRooms.createNodes(grid, rowLength, 5), SCORCHED)
+        for spot in self.tilesAround(self.playerPositionFlat, 1):  # you arrive on cool stone
+            rooms["Molten"].discard(spot)
+            rooms["Stone"].add(spot)
         self.placeRandomItems(grid, items.createRandomStatItems(3), 10, self.playerPositionFlat - 1)
         self.createObjects(grid, rooms)
         grid[center] = [3, 0, [relics.make("molten_blade")]]
@@ -2428,7 +2430,7 @@ class gameManager():
         # The first floor is always Mixed, so every starting material (and every herb) is there to find
         oreFloor, motherlode = (None, False) if depth == 0 else self.pickOreFloor(depth)
         self.newFloorMotherlode = motherlode
-        rooms, proportion, nodes = self.createRooms(CER.createNodes(grid, self.rowLength, 5), "Mixed" if depth == 0 else oreFloor)
+        rooms, proportion, nodes = self.createRooms(connectingEmptyRooms.createNodes(grid, self.rowLength, 5), "Mixed" if depth == 0 else oreFloor)
         for room in nodes:
             caveIn = rand.randint(0, 100)
             if caveIn == 0:
@@ -4112,7 +4114,7 @@ class gameManager():
             self.craftSpec(spec)
         elif windowId == "inventory":
             spec["kind"] = "grid"
-            spec["items"] = [item.name + (f" x{pc.countOf(item)}" if pc.countOf(item) > 1 else "")
+            spec["items"] = [item.name + (f" x{playerClass.countOf(item)}" if playerClass.countOf(item) > 1 else "")
                              for item in player.inventory]
             spec["capacity"] = player.inventoryLimit
             self.fitSelections()
@@ -4125,7 +4127,7 @@ class gameManager():
 
     STAT_NAMES = {"Damage": "Damage", "WallDamage": "Wall Damage", "Defense": "Defense", "Light": "Vision", "Health": "Health",
                   "FireRes": "Fire Resist", "MagicRes": "Magic Resist", "Storage": "Inventory Slots",
-                  pc.POTION_STACK: "Potions per Slot", "CleanDodge": "Clean Dodge %"}
+                  playerClass.POTION_STACK: "Potions per Slot", "CleanDodge": "Clean Dodge %"}
 
     def statLines(self, item):
         """[(stat name, bonus)] for a piece of gear."""
@@ -4155,8 +4157,8 @@ class gameManager():
             lines.append(("label", "LIGHT", ""))
             lines.append(("body", "Set it down and it gives off a dim light on its tile and the tiles around it, "
                                   "even after you walk away. Pick it back up any time", ""))
-            if player.potionStackLimit() > 1 or pc.countOf(item) > 1:
-                lines.append(("row", "In this stack", f"{pc.countOf(item)} / {player.potionStackLimit()}"))
+            if player.potionStackLimit() > 1 or playerClass.countOf(item) > 1:
+                lines.append(("row", "In this stack", f"{playerClass.countOf(item)} / {player.potionStackLimit()}"))
             lines.append(("hint", "Enter  set it down", ""))
             lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines
@@ -4172,8 +4174,8 @@ class gameManager():
                       "Explosive": f"Thrown: {item.bonus} damage to everything where it lands, you included. Breaks nearby walls"}.get(item.effect, item.effect)
                                
             lines.append(("body", effect, ""))
-            if player.potionStackLimit() > 1 or pc.countOf(item) > 1:
-                lines.append(("row", "In this stack", f"{pc.countOf(item)} / {player.potionStackLimit()}"))
+            if player.potionStackLimit() > 1 or playerClass.countOf(item) > 1:
+                lines.append(("row", "In this stack", f"{playerClass.countOf(item)} / {player.potionStackLimit()}"))
             lines.append(("hint", "Enter  aim and throw" if item.effect in THROWN_EFFECTS else "Enter  use", ""))
             lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines

@@ -43,6 +43,6 @@ class _Unpickler(pickle.Unpickler):
         return super().find_class(MOVED.get(module, module), name)
 
 
-def load(f):
+def load(saveFile):
     """pickle.load for save files, old module names included."""
-    return _Unpickler(f).load()
+    return _Unpickler(saveFile).load()
