@@ -1726,10 +1726,11 @@ class gameManager():
             if dealt > 0:
                 self.bleed(target)
                 self.thirst()
+                expansion.playerHurt(self, tile[2], target)  # a neutral faction's goblin: its faction turns on you
             if tile[2].hp <= 0:
                 self.killEnemy(target)
             elif dealt > 0 and self.player.hasEffect("molten"):  # the Molten Blade
-                self.fireEnemy(target, relics.MOLTEN_FIRE, igniteChance=relics.MOLTEN_IGNITE_CHANCE)
+                self.fireEnemy(target, relics.MOLTEN_FIRE, igniteChance=relics.MOLTEN_IGNITE_CHANCE, byPlayer=True)
         elif tile[0] in (3, 9):  # a chest or an item pile
             if self.roomItems is not None:
                 self.openWindow("items")
@@ -1746,6 +1747,7 @@ class gameManager():
     def breakWall(self, position):
         """A wall was broken: it becomes floor and its materials go straight into the pouch."""
         organizers.wallBroken(self, position, "player")  # if an Organizer built it, it may come after you
+        expansion.playerBrokeWall(self, position)  # a neutral faction's hut wall: it turns on you
         tile = self.grid[position]
         name = tile[2].name
         if name == "Gold Wall" and self.proportion == "All Gold":
@@ -2854,6 +2856,7 @@ class gameManager():
             enemy = self.grid[position][2]
             enemy.hp -= damage
             self.bleed(position)
+            expansion.playerHurt(self, enemy, position)
             if enemy.hp <= 0:
                 self.killEnemy(position)
         return len(hit)
@@ -3040,7 +3043,7 @@ class gameManager():
                 tile = self.grid[position]
                 if tile[0] == 5 and len(tile) > 2:
                     hit += 1
-                    self.fireEnemy(position, shot["power"])
+                    self.fireEnemy(position, shot["power"], byPlayer=True)
             if self.playerPositionFlat in area:  # too close: you burn too
                 hit += 1
                 self.firePlayer(shot["power"])
@@ -3071,6 +3074,7 @@ class gameManager():
                     hit += 1
                     tile[2].hp -= shot["power"]
                     self.bleed(position)
+                    expansion.playerHurt(self, tile[2], position)
                     if tile[2].hp <= 0:
                         self.killEnemy(position)
             if self.playerPositionFlat in area:
@@ -3220,7 +3224,8 @@ class gameManager():
         dealt = max(0, damage - getattr(enemy, "fireResistance", 0))
         return round(dealt * (1 - getattr(enemy, "fireResistPercent", 0)))
 
-    def fireEnemy(self, position, damage, canIgnite=True, igniteChance=BURN_CHANCE):
+    def fireEnemy(self, position, damage, canIgnite=True, igniteChance=BURN_CHANCE, byPlayer=False):
+        """Fire damage to the enemy at position. byPlayer: you did it (a Fire potion, the Molten Blade), not a burn."""
         enemy = self.grid[position][2]
         dealt = self.enemyFireDamage(enemy, damage)
         if dealt == 0:
@@ -3228,6 +3233,8 @@ class gameManager():
             return
         enemy.hp -= dealt
         self.bleed(position)
+        if byPlayer:
+            expansion.playerHurt(self, enemy, position)
         if enemy.hp <= 0:
             self.killEnemy(position)
             return
@@ -3255,6 +3262,8 @@ class gameManager():
             return
         enemy.hp -= dealt
         self.bleed(position)
+        if killer == "player":
+            expansion.playerHurt(self, enemy, position)
         if enemy.hp <= 0:
             self.killEnemy(position, killer)
 
@@ -3829,10 +3838,22 @@ class gameManager():
                 self.roomItems.pop(index)
             else:
                 item.amount -= taken  # the rest stays on the floor until there's room in the pouch
+            if taken > 0:
+                self.tookFromChest()
             return
         item = copy.copy(item)
         if self.player.addItemToInventory(item):
             self.roomItems.pop(index)
+            self.tookFromChest()
+
+    def tookFromChest(self):
+        """You took something from the chest or pile in Items Here: a neutral goblin faction's chest turns it on you."""
+        spot = self.itemsSpot()
+        if spot is None:
+            return
+        ground = self.groundAt(spot)
+        chest = ground[2] if len(ground) > 2 else None
+        expansion.playerTookFrom(self, chest, spot)
 
     def itemsSpot(self):
         """Where Items Here takes from: the chest or pile you face, otherwise a pile you're standing on."""
@@ -4008,7 +4029,10 @@ class gameManager():
             piece = tile[2]
             return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
-            return tile[2].name + (" (burning)" if getattr(tile[2], "burnTurns", 0) > 0 else "")
+            enemy = tile[2]
+            notes = [note for note in (expansion.attitudeLabel(self, enemy),
+                                       "burning" if getattr(enemy, "burnTurns", 0) > 0 else None) if note]
+            return enemy.name + (f" ({', '.join(notes)})" if notes else "")
         return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
 
     def windowSpec(self, windowId):
