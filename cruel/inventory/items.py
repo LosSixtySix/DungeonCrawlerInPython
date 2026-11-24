@@ -154,3 +154,8 @@ if __name__ == "__main__":
 class CityChest(list):
     """A chest that belongs to a Metropolis (a house chest, or a dead merchant's stock): the items in it, like any
     chest. Taking from it is stealing (dwellers.hostileAct)."""
+
+
+class StorageChest(CityChest):
+    """A chest in a storehouse on a city's works floor (mineshafts.py), where its workers put what they bring in.
+    It belongs to the city like any city chest, and stays where it is when it's empty."""

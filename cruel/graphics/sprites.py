@@ -237,12 +237,32 @@ SHOP_SIGN = [
 SHOP_SIGN_COLORS = {  # shop kind (cityshops.SHOP_KINDS): its board's color
     "ore": (200, 122, 58), "gems": (214, 48, 74), "food": (122, 176, 74), "weapons": (184, 188, 198),
     "tools": (138, 100, 60), "armor": (106, 122, 154), "potions": (106, 208, 192), "builder": (168, 160, 144),
+    "mine": (120, 112, 104), "farm": (150, 200, 220),  # the works (metropolis.WORKS)
 }
 
 
 def shopSignColors(kind):
     board = SHOP_SIGN_COLORS[kind]
     return {"p": (110, 80, 50), "w": tuple(max(0, value - 40) for value in board), "W": board}
+
+
+# A mineshaft, seen from above: a pit with a rocky lip, its sides falling away into the dark, and a ladder going
+# down it from the top edge, its rails and rungs dimmer the deeper they go until the dark swallows them
+MINESHAFT = [
+    ".rrrrrrrr.",
+    "rRRRRRRRRr",
+    "rReLWWLeRr",
+    "rRdLddLdRr",
+    "rRdlwwldRr",
+    "rRDlDDlDRr",
+    "rRDmvvmDRr",
+    "rRDDDDDDRr",
+    "rRRRRRRRRr",
+    ".rrrrrrrr.",
+]
+MINESHAFT_COLORS = {"r": (46, 38, 32), "R": (104, 88, 70), "e": (58, 46, 36), "d": (30, 24, 20), "D": (10, 8, 8),
+                    "L": (176, 132, 82), "W": (150, 110, 66), "l": (122, 90, 56), "w": (100, 74, 46),
+                    "m": (70, 52, 34), "v": (58, 44, 30)}
 
 
 # A Metropolis street light, seen from above: the round glass of a lamp on its post, lit
@@ -969,6 +989,7 @@ def buildSprites(colors, tileSize):
         "spawner": makeShadowed(SPAWNER, enemyRoles(colors, SPAWNER_COLORS), tileSize),
         "signpost": makeShadowed(SIGNPOST, enemyRoles(colors, SIGNPOST_COLORS), tileSize),
         "streetLight": makeShadowed(STREET_LIGHT, enemyRoles(colors, STREET_LIGHT_COLORS), tileSize),
+        "mineshaft": makeShadowed(MINESHAFT, enemyRoles(colors, MINESHAFT_COLORS), tileSize),
         "wallLamps": {side: makeShadowed(rotateClockwise(WALL_LAMP, turns), enemyRoles(colors, STREET_LIGHT_COLORS), tileSize)
                       for side, turns in WALL_LAMP_TURNS.items()},
         "shopSigns": {kind: makeShadowed(SHOP_SIGN, enemyRoles(colors, shopSignColors(kind)), tileSize) for kind in SHOP_SIGN_COLORS},

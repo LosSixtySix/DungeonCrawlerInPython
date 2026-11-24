@@ -22,6 +22,7 @@ from cruel.world import organizers
 from cruel.world import expansion
 from cruel.world import peddler
 from cruel.world import metropolis
+from cruel.world import mineshafts
 from cruel.world import dwellers
 from cruel.world import cityshops
 from cruel.core import devconsole
@@ -361,6 +362,9 @@ class gameManager():
         self.scorchedDoors = {}  # floor -> where its Scorched door is (one per Molten Vault floor at most)
         self.wallLamps = {}  # floor -> {tile: metropolis.WallLamp} (a city's lamps on walls)
         self.trackStarts = set()  # floors with no door back up (the Scorched Depths, and the floor below it)
+        self.sideFloor = None  # on a city's works floor (mineshafts.py): (works kind, where its shaft is); else None
+        self.cityAside = None  # while on a works floor: the city's floor, put aside (mineshafts.putAside)
+        self.floorsAside = {}  # (floor, shaft position) -> a works floor put aside while you're elsewhere
         self.enemyOccupiedItemSpaces = {}
         self.patienceMs = 0  # how long you've waited, untouched, on the first floor's center tile (stepPatience)
 
@@ -1119,8 +1123,8 @@ class gameManager():
         placed = self.player.stationPlaced.get(station)
         if placed is None:
             return "packed"
-        level, position = placed
-        if level != self.level:
+        floor, position = placed
+        if floor != mineshafts.floorKey(self):
             return "elsewhere"
         return "ready" if position in self.neighbors(self.playerPositionFlat) else "away"
 
@@ -1166,7 +1170,7 @@ class gameManager():
         if state == "away":
             return f"stand next to your {name}"
         if state == "elsewhere":
-            return f"your {name} is on floor {player.stationPlaced[recipe.station][0]}"
+            return f"your {name} is on floor {mineshafts.floorLabel(player.stationPlaced[recipe.station][0])}"
         if recipe.kind == "pack":
             return None
         if recipe.kind == "station" and recipe.makes in player.stations:
@@ -1307,7 +1311,7 @@ class gameManager():
         if kind == "setup":
             spot = self.freeSpotBesidePlayer()
             self.grid[spot] = [7, 1, recipes.Station(recipe.station)]
-            player.stationPlaced[recipe.station] = (self.level, spot)
+            player.stationPlaced[recipe.station] = (mineshafts.floorKey(self), spot)
             message = popup = f"{recipes.STATION_INFO[recipe.station]['name']} set up"
             self.craftMessage = message
             self.addPopup(popup, spot)
@@ -1385,7 +1389,7 @@ class gameManager():
         if not station.claimed:
             station.claimed = True
             self.player.stations.add(station.id)
-            self.player.stationPlaced[station.id] = (self.level, position)
+            self.player.stationPlaced[station.id] = (mineshafts.floorKey(self), position)
             self.addPopup(f"{station.name} claimed", position)
             self.craftMessage = f"The {station.name} is yours. Pack it up to carry it."
         self.craftTab = recipes.STATIONS.index(station.id)
@@ -1674,7 +1678,9 @@ class gameManager():
             self.onWindowEnter(self.focus)
         elif self.currentLocation[0] == SCORCHED_DOOR:
             self.enterScorched()
-        elif self.playerPositionFlat in self.doorPositions:
+        elif self.currentLocation[0] == metropolis.MINESHAFT:
+            mineshafts.climb(self)
+        elif self.playerPositionFlat in self.doorPositions and not mineshafts.onSideFloor(self):
             self.onOpenDoor()
 
     def onDirectionKey(self, dx, dy, newDirection):
@@ -1787,8 +1793,9 @@ class gameManager():
         """A wall was broken: it becomes floor and its materials go straight into the pouch."""
         organizers.wallBroken(self, position, "player")  # if an Organizer built it, it may come after you
         expansion.playerBrokeWall(self, position)  # a neutral faction's hut wall: it turns on you
-        dwellers.hostileAct(self, position)  # a city's wall: anyone who sees it turns hostile
         tile = self.grid[position]
+        if isinstance(tile[2], wall.CityBuildingWall):  # a city's building: anyone who sees it turns hostile
+            dwellers.hostileAct(self, position)
         name = tile[2].name
         if name == "Gold Wall" and self.proportion == "All Gold":
             self.goldWallCount += 1
@@ -2013,7 +2020,7 @@ class gameManager():
         if len(self.roomItems) == 0:
             spot = self.itemsSpot()
             ground = self.groundAt(spot)
-            if not (len(ground) > 2 and isinstance(ground[2], expansion.CampChest)):  # a goblin chest stays, empty
+            if not (len(ground) > 2 and isinstance(ground[2], (expansion.CampChest, items.StorageChest))):  # a goblin chest or storehouse chest stays, empty
                 self.setGround(spot, [0, ground[1]])
             self.roomItems = None
             self.closeWindow("items")
@@ -2086,7 +2093,8 @@ class gameManager():
 
     def openScorchedDoor(self):
         """The Seal broke: on a Molten Vault floor a Scorched door opens on a random open tile (once per floor)."""
-        if self.proportion != "All Gold" or self.theme.name != SCORCHED_THEME or self.level in self.scorchedDoors:
+        if self.proportion != "All Gold" or self.theme.name != SCORCHED_THEME or self.level in self.scorchedDoors \
+                or mineshafts.onSideFloor(self):
             return
         spots = [i for i, tile in self.grid.items() if tile[0] == 0 and i != self.playerPositionFlat]
         if not spots:
@@ -2106,8 +2114,9 @@ class gameManager():
         self.motherlodes = {f for f in self.motherlodes if f <= last}
         self.trackStarts = {f for f in self.trackStarts if f <= last}
         for station, (floor, _) in list(self.player.stationPlaced.items()):
-            if floor > last:  # set up on a floor that's gone: it's packed again
+            if mineshafts.floorNumber(floor) > last:  # set up on a floor that's gone: it's packed again
                 del self.player.stationPlaced[station]
+        mineshafts.dropAsideBelow(self, last)
 
     def enterScorched(self):
         """Through the Scorched door: a new Scorched Depths floor one deeper, with no door back up. Any floors you
@@ -2379,11 +2388,14 @@ class gameManager():
         peddler.placeSignpost(self.grid, self.neighbors(self.playerPositionFlat))
 
     def floorTypeName(self):
-        return f"Motherlode ({self.proportion})" if self.level in self.motherlodes else self.proportion
+        name = f"Motherlode ({self.proportion})" if self.level in self.motherlodes else self.proportion
+        if mineshafts.onSideFloor(self):
+            return f"{metropolis.WORKS[self.sideFloor[0]]}: {name}"
+        return name
 
     def floorSubtitle(self):
         """The second line of the "Floor N" message: the theme, plus the floor type on an ore floor."""
-        if self.proportion in wall.ORE_FLOORS or self.proportion == metropolis.METROPOLIS:
+        if self.proportion in wall.ORE_FLOORS or self.proportion == metropolis.METROPOLIS or mineshafts.onSideFloor(self):
             return f"{self.floorTypeName()}  -  {self.theme.name}"
         return self.theme.name
 
@@ -2434,10 +2446,15 @@ class gameManager():
         self.doorPositions.append(i)
 
     def updateDoors(self):
-        currentDoorPos = self.doorPositions[self.level]
-        previousDoorPos = self.doorPositions[self.level - 1] if self.level > 0 and self.level not in self.trackStarts else None
+        if mineshafts.onSideFloor(self):  # a works floor: no doors, only its shaft
+            currentDoorPos = previousDoorPos = None
+        else:
+            currentDoorPos = self.doorPositions[self.level]
+            previousDoorPos = self.doorPositions[self.level - 1] if self.level > 0 and self.level not in self.trackStarts else None
 
-        if self.playerPositionFlat == currentDoorPos:
+        if self.currentLocation[0] == metropolis.MINESHAFT:
+            self.currentPosition = self.currentLocation[2].name
+        elif self.playerPositionFlat == currentDoorPos:
             self.currentPosition = "Door to Next Level"
         elif self.playerPositionFlat == previousDoorPos:
             self.currentPosition = "Door to previous Level"
@@ -2452,7 +2469,7 @@ class gameManager():
         else:
             self.currentPosition = "Hidden in smoke" if self.playerPositionFlat in self.smoke else "Floor"
 
-        if self.grid[currentDoorPos][0] != 1:
+        if currentDoorPos is not None and self.grid[currentDoorPos][0] != 1:
             self.grid[currentDoorPos][0] = 4
         if previousDoorPos is not None and self.grid[previousDoorPos][0] != 1:
             self.grid[previousDoorPos][0] = 6
@@ -2479,8 +2496,9 @@ class gameManager():
     def sameRow(self, i, j):
         return i // self.rowLength == j // self.rowLength
 
-    def generateNewLevel(self, addStartingItem=False, depth=0):
-        if depth > 0 and self.cityNext(depth):
+    def generateNewLevel(self, addStartingItem=False, depth=0, allowCity=True):
+        """A new floor at this depth. allowCity False: never a Metropolis (a city's works floor)."""
+        if depth > 0 and allowCity and self.cityNext(depth):
             return self.generateMetropolis(depth)
         grid = {}
         ListOfEnemyPositions = set()
@@ -2872,11 +2890,12 @@ class gameManager():
         self.visibleGrid = self.grid  # (see the top of this function)
         self.visibleTiles = list(self.grid) if getattr(self, "revealMap", False) else             [i for i in set(visiblePositions) | set(self.fireLight) | set(self.glowLight) | set(self.EnemyPositions)
              if self.grid.get(i, (None, 0))[1] == 1]
+        door = None if mineshafts.onSideFloor(self) else self.doorPositions[self.level]  # (a works floor has none)
         if self.player.seeDoor:
-            self.grid[self.doorPositions[self.level]][1] = 2
+            if door is not None:
+                self.grid[door][1] = 2
             self.player.seeDoor = False
-        door = self.doorPositions[self.level]
-        if self.grid[door][1] == 0:  # Wisdom: sense the door down when it's close, even through walls
+        if door is not None and self.grid[door][1] == 0:  # Wisdom: sense the door down when it's close, even through walls
             R, radius = self.rowLength, self.doorSense()
             if (door % R - self.playerPositionFlat % R) ** 2 + (door // R - self.playerPositionFlat // R) ** 2 <= radius * radius:
                 self.grid[door][1] = 2
@@ -3218,7 +3237,8 @@ class gameManager():
                 if kind == 2:
                     tile[2].holeBelow = True  # it stands over a hole now
                     continue
-                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT):
+                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT,
+                            metropolis.MINESHAFT):
                     continue
                 if kind == 5 and len(tile) > 2 and self.isBig(tile[2]):
                     continue  # a giant is too big to fall: the floor under it holds
@@ -3247,6 +3267,8 @@ class gameManager():
         """You fell through a hole: FALL_DAMAGE, and you land on the floor below, where you fell (or on the nearest
         open floor to it there)."""
         self.player.damageTaken += FALL_DAMAGE
+        if mineshafts.onSideFloor(self):  # from a works floor you fall to the floor below its city
+            mineshafts.fallOff(self)
         if self.proportion == SCORCHED:  # the floor below the Scorched Depths is a new one, like its door
             self.leaveScorched(falling=True)
         elif self.level < len(self.doorPositions) - 1:
@@ -3623,7 +3645,7 @@ class gameManager():
                 if i in fading:
                     del fading[i]
                 continue
-            if tile[0] in (4, 6, SCORCHED_DOOR) or (i % R - hx) ** 2 + (i // R - hy) ** 2 <= far:
+            if tile[0] in (4, 6, SCORCHED_DOOR, metropolis.MINESHAFT) or (i % R - hx) ** 2 + (i // R - hy) ** 2 <= far:
                 continue
             turns = fading.get(i, 0) + 1
             if turns >= FORGET_TURNS:
@@ -3651,7 +3673,7 @@ class gameManager():
         for i, tile in self.grid.items():
             if tile[1] != 2:
                 continue
-            door = tile[0] in (4, 6, SCORCHED_DOOR)
+            door = tile[0] in (4, 6, SCORCHED_DOOR, metropolis.MINESHAFT)
             if (i % R - hx) ** 2 + (i // R - hy) ** 2 >= edge:
                 shades[i] = DOOR_SHADE_MOST if door else 1.0
             elif not door and i in fading:
@@ -4020,6 +4042,9 @@ class gameManager():
             "scorchedDoors": self.scorchedDoors,
             "wallLamps": self.wallLamps,
             "trackStarts": self.trackStarts,
+            "sideFloor": self.sideFloor,
+            "cityAside": self.cityAside,
+            "floorsAside": self.floorsAside,
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -4046,6 +4071,9 @@ class gameManager():
             self.scorchedDoors = data.get("scorchedDoors", {})
             self.wallLamps = data.get("wallLamps", {})
             self.trackStarts = data.get("trackStarts", set())
+            self.sideFloor = data.get("sideFloor")
+            self.cityAside = data.get("cityAside")
+            self.floorsAside = data.get("floorsAside", {})
             self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
             self.patienceMs = 0
             self.forcedTheme = None
@@ -4138,7 +4166,9 @@ class gameManager():
         if tile[0] == metropolis.STREET_LIGHT:
             return "Lamp post"
         if tile[0] == metropolis.SHOP_SIGN:
-            return f"Sign: {cityshops.shopName(tile[2])}"
+            return f"Sign: {metropolis.signName(tile[2])}"
+        if tile[0] == metropolis.MINESHAFT:
+            return tile[2].name
         if tile[0] == peddler.SIGNPOST:
             return "Signpost (a gray rag is tied to it: someone is trading on this floor)"
         if tile[0] == expansion.CAMP:

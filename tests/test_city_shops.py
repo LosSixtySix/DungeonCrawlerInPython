@@ -224,7 +224,9 @@ class ShopSignTests(unittest.TestCase):
         self.game.goToNewLevel()
 
     def signs(self):
-        return [(spot, tile[2]) for spot, tile in self.game.grid.items() if tile[0] == metropolis.SHOP_SIGN]
+        """(position, shop kind) of each shop's sign (not the mine's or the farm's)."""
+        return [(spot, tile[2]) for spot, tile in self.game.grid.items()
+                if tile[0] == metropolis.SHOP_SIGN and tile[2] not in metropolis.WORKS]
 
     def test_each_shop_has_a_sign_naming_its_kind(self):
         merchants = [dweller for _, dweller in dwellers.cityDwellers(self.game) if dweller.role == "merchant"]

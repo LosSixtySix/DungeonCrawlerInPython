@@ -18,7 +18,8 @@ into them. A path map is kept for a while per destination (PATH_KEEP_TURNS), sin
 places (their homes, posts and counters).
 
 Hostility. The city is calm until you do something hostile on it (hostileAct): steal from one of its chests, break
-any of its walls, or hurt a Dweller. Only the Dwellers who see it happen turn hostile: within their vision, with a
+any of its buildings' walls (the rock round them is anyone's), or hurt a Dweller. Its works floors (mineshafts.py)
+are the same. Only the Dwellers who see it happen turn hostile: within their vision, with a
 clear line of sight to the spot (the one you hurt always knows). If nobody sees it, nothing happens.
   - A hostile citizen, noble or merchant runs to the nearest guard and, within TELL_REACH of it, tells it where it
     last saw you. Then it goes home and hides. If it's cornered (you're beside it and it has no free tile further
@@ -61,7 +62,7 @@ def distance(game, spot, other):
 def pathMap(game, goal):
     """{tile: steps to goal}, kept for PATH_KEEP_TURNS on this floor."""
     cache = game.__dict__.setdefault("dwellerPaths", {})
-    key = (game.level, game.turnCount // PATH_KEEP_TURNS, goal)
+    key = (game.level, getattr(game, "sideFloor", None), game.turnCount // PATH_KEEP_TURNS, goal)
     if key not in cache:
         if len(cache) > PATH_CACHE_LIMIT:
             cache.clear()
@@ -173,10 +174,16 @@ def canSee(game, dwellerSpot, dweller, spot):
     return distance(game, dwellerSpot, spot) <= dweller.visionRange and game.lineOfSight(dwellerSpot, spot)
 
 
+def onDwellerFloor(game):
+    """Is this a floor the Dwellers keep: a city, or one of its works floors (mineshafts.py)?"""
+    return game.proportion == metropolis.METROPOLIS or getattr(game, "sideFloor", None) is not None
+
+
 def hostileAct(game, spot, victim=None):
-    """You did something hostile at spot on a city floor (stole, broke something, or hurt victim): every Dweller who
-    can see spot turns hostile, and so does victim. Returns how many turned hostile (0: nobody saw)."""
-    if game.proportion != metropolis.METROPOLIS:
+    """You did something hostile at spot on a Dweller floor (stole, broke one of its buildings, or hurt victim):
+    every Dweller who can see spot turns hostile, and so does victim. Returns how many turned hostile (0: nobody
+    saw)."""
+    if not onDwellerFloor(game):
         return 0
     witnesses = [dweller for dwellerSpot, dweller in cityDwellers(game)
                  if dweller is victim or canSee(game, dwellerSpot, dweller, spot)]
