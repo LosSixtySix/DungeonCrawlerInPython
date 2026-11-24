@@ -3,11 +3,13 @@ several floor themes, the windows, the pause menu, the title, the Attempts list,
 video driver."""
 import random
 import unittest
+from unittest import mock
 
 import pygame
 
 from cruel.core import gamemanager
 from cruel.graphics import renderer
+from cruel.world import metropolis
 from cruel.world import themes
 from tests.support import newGame
 
@@ -204,6 +206,13 @@ class PlayingFrameTests(unittest.TestCase):
         tileColors = {tuple(game.win.get_at((pixelX, pixelY)))[:3] for pixelX in range(playerTile.left, playerTile.right)
                       for pixelY in range(playerTile.top, playerTile.bottom)}
         self.assertGreater(len(tileColors), 1)  # the player sprite, not a flat floor tile
+
+    def test_standing_on_a_mineshaft_draws_you_like_standing_on_a_door(self):
+        game = self.game
+        game.grid[game.playerPositionFlat] = [1, 1, metropolis.Mineshaft("mine")]  # (the shaft rides along under you)
+        with mock.patch.object(renderer.renderer, "plantPicture", wraps=game.painter.plantPicture) as plantPicture:
+            game.draw()  # (a mineshaft has a kind, like a plant: it used to be drawn as one, and that crashed)
+        plantPicture.assert_not_called()
 
     def test_every_floor_theme_draws(self):
         game = self.game
