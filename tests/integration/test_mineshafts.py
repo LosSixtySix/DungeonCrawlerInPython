@@ -2,11 +2,16 @@
 which sit beside the city's floor while you're on them.
 
 Integration tests; the rest are in tests/acceptance/test_mineshafts.py."""
+import random
 import unittest
 from cruel.world import metropolis
+from cruel.world import mineshafts
+from cruel.world import wall
 from tests import support
 from tests.helpers.metropolis import cityGame, newCity
 from tests.helpers.mineshafts import shaftSpot
+
+WALL = 2
 
 
 class CityWorksTests(unittest.TestCase):
@@ -36,6 +41,41 @@ class CityWorksTests(unittest.TestCase):
         support.placePlayer(game, spot)
         game.updateDoors()
         self.assertEqual(game.currentPosition, "Mineshaft down to the Dweller Mine")
+
+
+class ClearanceTests(unittest.TestCase):
+    """Room round every building on a works floor, so nothing blocks its doors."""
+
+    def buildingBoxes(self, works):
+        boxes = [storehouse["walls"] | storehouse["inside"] | {storehouse["door"], storehouse["backDoor"]}
+                 for storehouse in works.storehouses]
+        boxes += [pen["fence"] | set(pen["inside"]) for pen in works.pens]
+        boxes += [farmhouse["box"] for farmhouse in works.farmhouses]
+        return boxes
+
+    def test_no_rock_and_no_other_building_within_two_tiles_of_any_building(self):
+        for seed in range(6):
+            random.seed(seed)
+            game = support.newGame()
+            grid, rowLength = game.grid, game.rowLength
+            shaft = (len(grid) // rowLength // 2) * rowLength + rowLength // 2
+            works = mineshafts.layOutWorks(grid, rowLength, shaft, "farm", game.rooms)
+            boxes = self.buildingBoxes(works)
+            self.assertTrue(works.pens and works.farmhouses, f"seed {seed}")
+            for box in boxes:
+                columns, rows = [spot % rowLength for spot in box], [spot // rowLength for spot in box]
+                around = {column + row * rowLength
+                          for row in range(min(rows) - mineshafts.CLEARANCE, max(rows) + mineshafts.CLEARANCE + 1)
+                          for column in range(min(columns) - mineshafts.CLEARANCE, max(columns) + mineshafts.CLEARANCE + 1)} - box
+                for spot in around:
+                    tile = grid.get(spot)
+                    if tile is None or not mineshafts.inBounds(rowLength, len(grid) // rowLength, spot % rowLength, spot // rowLength):
+                        continue
+                    self.assertFalse(tile[0] == WALL and not isinstance(tile[2], wall.CityBuildingWall),
+                                     f"seed {seed}: rock beside a building")
+                for other in boxes:
+                    if other is not box and not (other & box):
+                        self.assertFalse(around & other, f"seed {seed}: two buildings closer than two tiles")
 
 
 if __name__ == "__main__":

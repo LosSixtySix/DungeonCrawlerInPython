@@ -17,7 +17,9 @@ more crops (dwellerfarming.py), wherever there's room for them.
 
 A building is planned on a site (findSite; a worker that finds none waits SEARCH_AGAIN_TURNS to look again): a box near the shaft (its middle within SITE_REACH, outside the
 clearing) of open floor or rock the miners could break, clear of the fields, the shaft, the lamps and other
-buildings, with a step of ground outside its door that you can walk to from the shaft. Of the sites that fit, the
+buildings, with a step of ground outside its door that you can walk to from the shaft. Its margin, the ground
+within mineshafts.CLEARANCE of it, can't have another building in it, and its rock is dug out with the site's, so
+nothing blocks the building's doors. Of the sites that fit, the
 one nearest the shaft with the least rock to dig wins. The box's edge is its walls (a storehouse's or a pen fence)
 but for its two doors: one in the middle of the side facing the shaft, one in the middle of the far side (a back
 door, with a way dug from it to ground you can walk to, BACK_WAY_MOST long at most); a storehouse has
@@ -112,10 +114,10 @@ def findSite(game, position, worker, width, height, round_=False):
             rock = siteRock(game, site, keepOff)
             if rock is None:
                 continue
-            margin = {column + row * rowLength for row in range(top - 1, top + height + 1)
-                      for column in range(left - 1, left + width + 1)} - site["box"]
+            margin = mineshafts.withClearance(rowLength, left, top, width, height) - site["box"]
             if not marginFits(game, margin, keepOff - set(getattr(worker, "fields", {}))):
                 continue
+            rock |= {spot for spot in margin if dwellerwork.mineable(game.grid[spot])}
             backWay = wayOut(game, site["backOutside"], reach, keepOff | site["box"])
             if backWay is None:
                 continue

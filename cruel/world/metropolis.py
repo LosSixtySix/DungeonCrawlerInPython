@@ -18,14 +18,17 @@ https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
              somewhere near the middle, a path from where you arrive to it, and paths out to targets spread over the
              floor, each starting from the nearest road so they branch off one another. Each path is either
              "rounded" (it curves smoothly as it goes) or "square" (straight runs with right-angle corners), picked
-             at random. Buildings are built along the paths, each in the shape its theme builds (STYLES: hexagons,
+             at random. Buildings are built along the paths, BUILDING_CLEARANCE apart, with the ground that close
+             round each cleared, each in the shape its theme builds (STYLES: hexagons,
              round towers, oblong domes, soft rounded cells or sharp squares), every one with its door facing a road:
              the noble quarter's mansions nearest the plaza first, then the Queen's Chamber (CHAMBER_SIZE), then the
              city's works (a mine and a farm, WORKS), HATCHERIES hatcheries (NESTS nests each, for the Queen's
              eggs),
              then SHOP_COUNT shops (each a different kind), then houses. Every building has two doors (its door, facing a
              road, and its back door, as far from it as can be: so a crowd at one door can go round to the other), each
-             with a doorstep carved from it to the road, and you can walk to every door from where you arrive. A shop's sign sits in
+             with a doorstep carved from it to the road, and you can walk to every door from where you arrive. The
+             rock left over lines the roads; away from them it's walled at random, like any other floor
+             (fillWithRock). A shop's sign sits in
              its wall beside the door. A house has a CHEST_CHANCE of a chest (a CityChest).
   Works      a mine and a farm: buildings with a mineshaft (MINESHAFT) in the middle and a sign by the door. The
              shaft goes down to the floor the city works (mineshafts.py): stand on it and press Enter.
@@ -66,6 +69,8 @@ HOUSE_SIZE = (5, 8)
 SHOP_SIZE = (9, 11)
 MANSION_SIZE = (10, 13)
 MANSIONS = (2, 4)
+BUILDING_CLEARANCE = 2      # buildings stand this far apart, the ground this close round each cleared of rock
+ROCK_DENSITIES = [round(0.15 + 0.05 * step, 2) for step in range(13)]  # (gameManager.WALL_DENSITIES: any floor's)
 CHAMBER_SIZE = (12, 14)     # the Queen's Chamber: room for her (2 x 2), her guards and her eggs
 HATCHERY_SIZE = (7, 9)
 HATCHERIES = 2
@@ -169,6 +174,7 @@ class City:
         self.posts = []             # guard posts, spread over the roads
         self.wallLamps = {}         # tile: WallLamp
         self.dwellers = {}          # tile: Dweller
+        self.builtCells = set()     # every tile a building stands on (placeBuilding: the next keeps its distance)
         self.queen = None           # the Dweller Queen (placeCourt), if her chamber found room
 
     def spot(self, column, row):
@@ -370,22 +376,26 @@ def layRoads(city, playerSpot):
 # ---------------------------------------------------------------- buildings
 
 @functools.lru_cache(maxsize=None)
-def withMargin(cells, rowLength):
-    """The tiles a building with these cells needs free (itself and a tile all round it), as offsets from its
+def withMargin(cells, rowLength, reach=1):
+    """The tiles a building with these cells needs free (itself and reach tiles all round it), as offsets from its
     top-left tile on a map rowLength wide. (Worked out once per shape.)"""
-    needed = {(column + stepColumn, row + stepRow) for column, row in cells for stepColumn in (-1, 0, 1) for stepRow in (-1, 0, 1)}
+    steps = range(-reach, reach + 1)
+    needed = {(column + stepColumn, row + stepRow) for column, row in cells for stepColumn in steps for stepRow in steps}
     return tuple(column + row * rowLength for column, row in needed)
 
 
 def fits(city, cells, left, top, taken):
-    """Can a building with these cells stand at (left, top), with a tile of open ground all round it, inside the
-    city wall?"""
+    """Can a building with these cells stand at (left, top), inside the city wall, with a tile of open ground all
+    round it (taken: roads and buildings) and no other building within BUILDING_CLEARANCE?"""
     width = max(column for column, _ in cells) + 1
     height = max(row for _, row in cells) + 1
-    if not (city.inside(left - 1, top - 1) and city.inside(left + width, top + height)):
+    reach = BUILDING_CLEARANCE
+    if not (city.inside(left - reach, top - reach) and city.inside(left + width - 1 + reach, top + height - 1 + reach)):
         return False
     corner = city.spot(left, top)
-    return taken.isdisjoint(corner + offset for offset in withMargin(cells, city.rowLength))
+    if not taken.isdisjoint(corner + offset for offset in withMargin(cells, city.rowLength)):
+        return False
+    return city.builtCells.isdisjoint(corner + offset for offset in withMargin(cells, city.rowLength, reach))
 
 
 def doorCells(city, cells, walls, left, top):
@@ -453,8 +463,9 @@ def placeBuilding(city, kind, sizeRange, candidates, taken, nearRoad=True):
         building = Building(kind, {city.spot(left + column, top + row) for column, row in walls - {doorCell, backDoorCell}},
                             {city.spot(left + column, top + row) for column, row in cells - walls}, door,
                             city.spot(left + backDoorCell[0], top + backDoorCell[1]))
-        for column, row in cells:  # (the next building's own margin keeps a one-tile alley between them)
+        for column, row in cells:  # (the next building keeps BUILDING_CLEARANCE from it: fits)
             taken.add(city.spot(left + column, top + row))
+            city.builtCells.add(city.spot(left + column, top + row))
         middle = (left + width / 2, top + height / 2)
         building.center = min(building.inside, key=lambda spot: math.hypot(spot % city.rowLength + 0.5 - middle[0],
                                                                           spot // city.rowLength + 0.5 - middle[1]))
@@ -498,15 +509,42 @@ def carveDoorstep(city, door, builtOn):
         frontier = nextFrontier
 
 
-def fillWithRock(city):
-    """Every tile inside the city wall that isn't a road or part of a building becomes rock (a Stone Wall, like any
-    other floor's walls): the roads are carved out of it."""
+def clearedRound(city):
+    """The ground within BUILDING_CLEARANCE of every building (not a building itself): kept open."""
     builtOn = set()
     for building in city.buildings:
         builtOn |= building.tiles
+    cleared = set()
+    reach = BUILDING_CLEARANCE
+    for spot in builtOn:
+        column, row = spot % city.rowLength, spot // city.rowLength
+        for stepRow in range(-reach, reach + 1):
+            for stepColumn in range(-reach, reach + 1):
+                if city.inside(column + stepColumn, row + stepRow):
+                    cleared.add(city.spot(column + stepColumn, row + stepRow))
+    return cleared - builtOn
+
+
+def fillWithRock(city):
+    """Every tile inside the city wall that isn't a road, part of a building or the ground cleared round one
+    (clearedRound) is rock: rock beside a road (one of the 8 tiles round it) is a Stone Wall, so the roads are
+    carved out of it; the rest is walled at random, like any other floor (a density from ROCK_DENSITIES), the
+    tiles left open being Yard ground."""
+    builtOn = set()
+    for building in city.buildings:
+        builtOn |= building.tiles
+    cleared = clearedRound(city)
+    density = random.choice(ROCK_DENSITIES)
     for spot in city.grid:
-        if city.inside(spot % city.rowLength, spot // city.rowLength) and spot not in city.roads and spot not in builtOn:
+        column, row = spot % city.rowLength, spot // city.rowLength
+        if not city.inside(column, row) or spot in city.roads or spot in builtOn or spot in cleared:
+            continue
+        besideRoad = any(city.spot(column + stepColumn, row + stepRow) in city.roads
+                         for stepColumn in (-1, 0, 1) for stepRow in (-1, 0, 1))
+        if besideRoad or random.random() < density:
             city.grid[spot] = [WALL, 0, wall.StoneWall()]
+        else:
+            city.grid[spot] = [FLOOR, 0]
 
 
 def removeUnreachable(city, playerSpot):

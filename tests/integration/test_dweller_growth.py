@@ -293,6 +293,26 @@ class BuildingTests(PenTest):
             self.assertNotIsInstance(self.game.grid[spot][2] if len(self.game.grid[spot]) > 2 else None, wall.CityBuildingWall)
         self.assertIn(site["outside"], dwellerbuilding.expansion.walkingDistances(self.game, self.spot(50, 40), 200))
 
+    def test_a_site_is_two_tiles_from_any_other_building_and_its_rock_that_close_is_dug_out_too(self):
+        farmer = self.farmer(50, 40)
+        for column in range(30, 70):
+            self.wallAt(column, 31, wall.ShopWall)  # another building's wall
+            self.wallAt(column, 49, wall.StoneWall)  # rock
+        site = dwellerbuilding.findSite(self.game, self.spot(50, 40), farmer, 7, 6)
+        rowLength = self.game.rowLength
+        for spot in site["box"]:
+            for other in range(30, 70):
+                self.assertGreater(dwellers.distance(self.game, spot, self.spot(other, 31)), mineshafts.CLEARANCE,
+                                   "another building's wall is no nearer than CLEARANCE")
+        boxColumns = [spot % rowLength for spot in site["box"]]
+        boxRows = [spot // rowLength for spot in site["box"]]
+        ring = {column + row * rowLength
+                for row in range(min(boxRows) - mineshafts.CLEARANCE, max(boxRows) + mineshafts.CLEARANCE + 1)
+                for column in range(min(boxColumns) - mineshafts.CLEARANCE, max(boxColumns) + mineshafts.CLEARANCE + 1)} - site["box"]
+        self.assertEqual(site["margin"], ring)
+        rockNear = {spot for spot in ring if dwellerwork.mineable(self.game.grid[spot])}
+        self.assertTrue(rockNear <= site["rock"], "it's all dug out with the site")
+
     def test_a_builder_digs_rock_on_the_site_no_more_than_its_hardness_a_swing(self):
         farmer = self.farmer(50, 40)
         rock = self.wallAt(51, 40, wall.StoneWall)

@@ -52,6 +52,8 @@ FARMER_START_FOOD = 3       # herbs of each crop a keeper starts with (so the gr
 FARMER_START_SEEDS = 2      # seeds of its crop a grower starts with
 CHEST_START_FOOD = 8        # herbs of each crop in a farm's storehouse chests to begin with
 FARMHOUSES = 2
+CLEARANCE = 2               # every building has this much open ground round it: no other building this close, and
+#                             the rock this close dug out (clearAround), so nothing blocks its doors
 FARMHOUSE_REACH = (10, 17)  # how far from the shaft a farmhouse's middle is
 FLOOR, WALL, CHEST, ENEMY, PLANT = 0, 2, 3, 5, 8
 
@@ -226,6 +228,29 @@ class Works:
         return tiles
 
 
+def clearAround(grid, rowLength, box, works):
+    """Digs out the rock (cave walls and veins) within CLEARANCE of a building's box, leaving everything the works
+    use (other buildings, ways) as it is."""
+    rowCount = len(grid) // rowLength
+    keep = works.builtOn() | set(box)
+    columns = [spot % rowLength for spot in box]
+    rows = [spot // rowLength for spot in box]
+    for row in range(min(rows) - CLEARANCE, max(rows) + CLEARANCE + 1):
+        for column in range(min(columns) - CLEARANCE, max(columns) + CLEARANCE + 1):
+            spot = column + row * rowLength
+            if not inBounds(rowLength, rowCount, column, row) or spot in keep:
+                continue
+            tile = grid[spot]
+            if tile[0] == WALL and not (len(tile) > 2 and isinstance(tile[2], wall.CityBuildingWall)):
+                openUp(grid, spot)
+
+
+def withClearance(rowLength, left, top, width, height):
+    """A box's tiles and every tile within CLEARANCE of it."""
+    return {column + row * rowLength for row in range(top - CLEARANCE, top + height + CLEARANCE)
+            for column in range(left - CLEARANCE, left + width + CLEARANCE)}
+
+
 def inBounds(rowLength, rowCount, column, row, margin=1):
     return margin <= column < rowLength - margin and margin <= row < rowCount - margin
 
@@ -326,6 +351,7 @@ def buildStorehouses(grid, rowLength, rowCount, shaftColumn, shaftRow, works):
         storehouse = {"walls": walls, "inside": inside, "door": door, "backDoor": backDoor, "chests": chests}
         works.storehouses.append(storehouse)
         works.clearing -= walls | inside
+        clearAround(grid, rowLength, walls | inside | {door, backDoor}, works)
         works.ways |= digWayOut(grid, rowLength, backDoor + stepRow * rowLength, shaftColumn + shaftRow * rowLength,
                                 works.builtOn(), walls | inside | {door, backDoor})
 
@@ -390,13 +416,11 @@ def buildPens(grid, rowLength, rowCount, shaftSpot, works):
         reach = random.randint(*PEN_REACH)
         left = round(shaftColumn + reach * math.cos(angle)) - PEN_WIDTH // 2
         top = round(shaftRow + reach * math.sin(angle)) - PEN_HEIGHT // 2
-        if not (inBounds(rowLength, rowCount, left - 1, top - 1, margin=1) and
-                inBounds(rowLength, rowCount, left + PEN_WIDTH, top + PEN_HEIGHT, margin=1)):
+        if not (inBounds(rowLength, rowCount, left - CLEARANCE, top - CLEARANCE, margin=1) and
+                inBounds(rowLength, rowCount, left + PEN_WIDTH - 1 + CLEARANCE, top + PEN_HEIGHT - 1 + CLEARANCE, margin=1)):
             continue
         box = {column + row * rowLength for row in range(top, top + PEN_HEIGHT) for column in range(left, left + PEN_WIDTH)}
-        withMargin = {column + row * rowLength for row in range(top - 1, top + PEN_HEIGHT + 1)
-                      for column in range(left - 1, left + PEN_WIDTH + 1)}
-        if withMargin & works.builtOn():
+        if withClearance(rowLength, left, top, PEN_WIDTH, PEN_HEIGHT) & works.builtOn():
             continue
         fence = {spot for spot in box if spot % rowLength in (left, left + PEN_WIDTH - 1) or spot // rowLength in (top, top + PEN_HEIGHT - 1)}
         inside = box - fence
@@ -419,6 +443,7 @@ def buildPens(grid, rowLength, rowCount, shaftSpot, works):
         inside = frozenset(inside)
         pen = {"fence": fence, "inside": inside, "gate": gate, "backGate": backGate}
         works.pens.append(pen)
+        clearAround(grid, rowLength, box, works)
         spots = sorted(inside - {gate + step * -1})
         random.shuffle(spots)
         for spot in spots[:random.randint(*GRUBS_PER_PEN)]:
@@ -440,13 +465,11 @@ def buildFarmhouses(grid, rowLength, rowCount, shaftSpot, works, rooms):
             break
         middleColumn, middleRow = round(shaftColumn + reach * math.cos(angle)), round(shaftRow + reach * math.sin(angle))
         half = farmhouses.HALF
-        if not (inBounds(rowLength, rowCount, middleColumn - half - 1, middleRow - half - 1) and
-                inBounds(rowLength, rowCount, middleColumn + half + 1, middleRow + half + 1)):
+        if not (inBounds(rowLength, rowCount, middleColumn - half - CLEARANCE, middleRow - half - CLEARANCE) and
+                inBounds(rowLength, rowCount, middleColumn + half + CLEARANCE, middleRow + half + CLEARANCE)):
             continue
         farmhouse = farmhouses.shape(rowLength, middleColumn, middleRow, (shaftColumn, shaftRow))
-        withMargin = {middleColumn + column + (middleRow + row) * rowLength
-                      for row in range(-half - 1, half + 2) for column in range(-half - 1, half + 2)}
-        if withMargin & works.builtOn():
+        if withClearance(rowLength, middleColumn - half, middleRow - half, 2 * half + 1, 2 * half + 1) & works.builtOn():
             continue
         crop = farmhouses.pickCrop(works.fields)
         for spot in farmhouse["walls"]:
@@ -462,6 +485,7 @@ def buildFarmhouses(grid, rowLength, rowCount, shaftSpot, works, rooms):
             works.fields[bed] = crop
         farmhouse["crop"] = crop
         works.farmhouses.append(farmhouse)
+        clearAround(grid, rowLength, farmhouse["box"], works)
         for outside in (farmhouse["outside"], farmhouse["backOutside"]):
             works.ways |= digWayOut(grid, rowLength, outside, shaftSpot, works.builtOn(), farmhouse["box"])
 
