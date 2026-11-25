@@ -5,6 +5,7 @@ Acceptance tests; the rest are in tests/integration/test_gamemanager.py."""
 import os
 import random
 import unittest
+from unittest import mock
 import pygame
 from cruel.core import gamemanager
 from cruel.entities import enemies
@@ -457,10 +458,13 @@ class DrawingTests(unittest.TestCase):
         game = self.game
         game.setPositionsVisible()
         game.messageBools["escapeMessage"] = True
-        for _ in range(300):
-            game.draw()
-            if not game.messageBools["escapeMessage"]:
-                break
+        game.painter.messageTicks = None
+        with mock.patch("pygame.time.get_ticks", return_value=0) as clock:  # (frames 1/60 s apart)
+            for frame in range(300):
+                clock.return_value = frame * 1000 // 60
+                game.draw()
+                if not game.messageBools["escapeMessage"]:
+                    break
         self.assertFalse(game.messageBools["escapeMessage"])
 
 

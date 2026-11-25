@@ -163,8 +163,11 @@ class PlayingFrameTests(unittest.TestCase):
         game = self.game
         game.messageBools["floorLevelMessage"] = True
         painter = game.painter
-        painter.fade = 255
-        game.draw()
+        painter.fade, painter.messageTicks = 255, None
+        with mock.patch("pygame.time.get_ticks", return_value=1000) as clock:  # (two frames 0.1s apart)
+            game.draw()
+            clock.return_value = 1100
+            game.draw()
         self.assertLess(painter.fade, 255)
 
     def test_the_message_canvas_covers_the_screen(self):
