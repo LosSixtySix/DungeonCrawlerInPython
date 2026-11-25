@@ -74,6 +74,15 @@ class WaitTests(WaitTest):
         finally:
             game.settings.resetHotkeys()
 
+    def test_a_move_key_you_had_put_on_space_keeps_moving_you(self):
+        game = self.game
+        game.settings.hotkeys["move_right"] = pygame.K_SPACE  # (bound before Wait was added)
+        try:
+            keyDown(game, pygame.K_SPACE)
+            self.assertEqual(game.playerPositionFlat, self.here + 1)
+        finally:
+            game.settings.resetHotkeys()
+
 
 if __name__ == "__main__":
     unittest.main()

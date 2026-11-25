@@ -569,10 +569,10 @@ class gameManager():
                 else:
                     self.onInteract(forceAttack=bool(event.mod & pygame.KMOD_SHIFT))
             return
-        if self.isAction(key, "wait"):
-            return self.waitTurn()
         if move is not None:
             self.onDirectionKey(*move)
+        elif self.isAction(key, "wait"):  # (last: a key you'd bound to something else before Wait came keeps doing that)
+            self.waitTurn()
 
     def waitTurn(self):
         """The Wait hotkey (Space): you do nothing, and it spends your action like a step would, so the world
