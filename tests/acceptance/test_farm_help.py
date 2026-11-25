@@ -19,6 +19,9 @@ class FarmRefilledTests(unittest.TestCase):
             for spot, unit in list(dwellers.cityDwellers(game)):
                 if unit.work == "farm":
                     game.killEnemy(spot, killer=None, unit=unit)
+            del game.workCensus[farmKey]  # (it counts itself again: no farmers now)
+            queen.recordCensus(game)
+        self.assertEqual(game.workCensus[farmKey]["farmer"], 0)
         citizens = {id(unit) for _, unit in dwellers.cityDwellers(game) if unit.role == "citizen" and unit.work is None}
         for _ in range(500):
             game.enemyTurn()
