@@ -149,7 +149,8 @@ MOLTEN_WALL_DAMAGE = 2      # fire damage when you break a Molten wall
 FALL_DAMAGE = 3            # damage you, or anything else, take falling through a hole to the floor below
 PATIENCE_MS = 5 * 60 * 1000  # stand on the first floor's center tile this long without touching anything: the floor
                              # opens and drops you onto a random ore floor (stepPatience)
-OVERGROWTH_DAMAGE = 2  # during Overgrowth, a plant that sprouts on your tile hurts you (and may push you out or trap you)
+OVERGROWTH_DAMAGE = 2  # during Overgrowth, a plant that sprouts on your tile hurts you (and may push you out or trap you),
+#                        and one that sprouts under any other unit hurts it (overgrowUnits)
 DEMISE_DAMAGE = 5    # magic damage Organizer's Demise deals each turn to anything (but an Organizer) standing in it
 GROUND_FIRE_CHANCE = 0.25  # chance each floor tile a Fire Flask splashes catches fire
 GROUND_FIRE_TURNS = 3      # how long burning ground lasts
@@ -3483,8 +3484,9 @@ class gameManager():
         you. One that blocks the way pushes you onto an empty tile beside you, or, with nowhere to go, traps you
         inside it until you break it (Ctrl + interact works on your own tile)."""
         plant = plantTile[2]
-        self.player.damageTaken += OVERGROWTH_DAMAGE
-        self.bleed(self.playerPositionFlat)
+        if not plant.planted:  # (a planted plant never hurts anyone)
+            self.player.damageTaken += OVERGROWTH_DAMAGE
+            self.bleed(self.playerPositionFlat)
         if plant.walkable:
             self.currentLocation = plantTile
             self.addPopup(f"{plant.name} grows over you", self.playerPositionFlat)
@@ -3501,6 +3503,29 @@ class gameManager():
         else:
             self.currentLocation = plantTile
             self.addPopup(f"Stuck in {plant.name}! Ctrl+{self.interactKeyName()} to break free", self.playerPositionFlat)
+        self.change = True
+
+    def overgrowUnits(self, sprouts):
+        """Plants sprouted under units (Overgrowth; sprouts: {spot: the plant's tile}): every unit on the space is
+        hurt (a big unit once, however many of its tiles), unless the plant was planted. A plant grows on under a unit that's still there (it can
+        walk off it, like a pile), but never on a big unit's body; where they all died, it takes the tile."""
+        hurt = set()
+        for spot, plantTile in sprouts.items():
+            for unit in occupancy.unitsAt(self, spot):
+                if id(unit) in hurt or plantTile[2].planted:
+                    continue
+                hurt.add(id(unit))
+                unit.hp -= OVERGROWTH_DAMAGE
+                self.bleed(spot)
+                self.addPopup(f"{plantTile[2].name} grows under it", spot)
+                if unit.hp <= 0:
+                    self.killEnemy(getattr(unit, "anchor", None) if self.isBig(unit) else spot, None, unit=unit)
+            tile = self.grid[spot]
+            if tile[0] == 5 and len(tile) > 2:
+                if not self.isBig(tile[2]):
+                    self.enemyOccupiedItemSpaces[spot] = plantTile
+            elif tile[0] == 0:
+                self.grid[spot] = plantTile
         self.change = True
 
     def stuckIn(self):
@@ -3897,19 +3922,35 @@ class gameManager():
 
     def stepPlants(self):
         """Every GROW_TURNS (an event may change it) the floor's plants take a growth step, on its own turn of them
-        (growthOffset). During Overgrowth plants can sprout on you: your tile takes part in the step as the floor
-        under you (not on a floor you're not on)."""
+        (growthOffset). During Overgrowth plants can sprout on you and on every other unit: your tile, and every
+        tile a unit stands on over open floor, takes part in the step as the floor under it (you only on the floor
+        you're on; the other units on every floor that keeps going), and whoever a plant sprouts under is hurt
+        (overgrowPlayer, overgrowUnits)."""
         growth = events.plantRules(self.activeEvent())
         growTurns = growth.get("growTurns", plants.GROW_TURNS)
         if (self.turnCount + self.growthOffset(growTurns)) % growTurns != 0:
             return
         away = getattr(self, "simulatingAway", False)
         here = self.playerPositionFlat
-        overgrow = not away and self.activeEvent() == "overgrowth" and self.currentLocation[0] == 0
+        overgrowth = self.activeEvent() == "overgrowth"
+        overgrow = not away and overgrowth and self.currentLocation[0] == 0
         if overgrow:
             playerTile, self.grid[here] = self.grid[here], copy.copy(self.currentLocation)
+        unitTiles = {}  # spot: its tile with the unit(s) on it, while the bare floor under it takes part in the step
+        if overgrowth:
+            for spot, tile in self.grid.items():
+                if tile[0] == 5 and spot not in self.enemyOccupiedItemSpaces:  # (over open floor: a plant could grow there)
+                    unitTiles[spot] = tile
+                    self.grid[spot] = [0, tile[1]]
         noBirth = expansion.allFarmTiles(self) | (dwellerfarming.fieldTiles(self) if mineshafts.onSideFloor(self) else set())
         changed = plants.step(self.grid, self.rooms, self.rowLength, noBirth=noBirth, **growth)
+        sprouts = {}
+        for spot, tile in unitTiles.items():
+            if self.grid[spot][0] == 8:
+                sprouts[spot] = self.grid[spot]
+            self.grid[spot] = tile
+        if sprouts:
+            self.overgrowUnits(sprouts)
         if overgrow:
             sprouted, self.grid[here] = self.grid[here], playerTile
             if sprouted[0] == 8:
