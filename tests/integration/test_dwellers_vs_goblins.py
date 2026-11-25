@@ -142,10 +142,12 @@ class AlarmTests(EnemyTest):
             self.wall(30, row)
         citizen = self.place(enemies.DwellerCitizen(), 34, 30)
         goblin = self.place(enemies.Goblin(), 38, 30)
+        goblin.speed = 0  # (no actions: it stays where the citizen saw it, so the guard finds it there)
         self.assertIsNone(dwellers.enemyInSight(game, self.spot(20, 30), guard))
-        self.assertTrue(self.runTurns(40, until=lambda: guard.enemyAt is not None or goblin.hp < goblin.maxHp), "the citizen told it")
+        # (the citizen has to go round the wall to reach the guard: about 40 steps)
+        self.assertTrue(self.runTurns(70, until=lambda: guard.enemyAt is not None or goblin.hp < goblin.maxHp), "the citizen told it")
         self.assertIsNone(citizen.enemyAt, "having told it, it goes back to its day")
-        self.assertTrue(self.runTurns(60, until=lambda: goblin.hp < goblin.maxHp), "the guard found the goblin")
+        self.assertTrue(self.runTurns(100, until=lambda: goblin.hp < goblin.maxHp), "the guard found the goblin (round the wall)")
 
     def test_with_no_guard_left_it_runs_from_the_enemy(self):
         citizen = self.place(enemies.DwellerCitizen(), 40, 30)
