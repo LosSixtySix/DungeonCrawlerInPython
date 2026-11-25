@@ -63,7 +63,6 @@ class RelicTests(unittest.TestCase):
     def test_it_only_comes_from_the_unsealed(self):
         self.assertNotIn("sealed_pattern", [relicId for relicId, _, _ in relics.CHEST_RELICS])
         self.assertIn("sealed_pattern", peddler.NEVER_SOLD_RELICS)
-        self.assertIn("sealed_pattern", relics.BOUND_POWERS, "the Gilded Forge can't rekindle it away")
 
     def test_a_vault_never_holds_it(self):
         game = newGame()
@@ -73,6 +72,27 @@ class RelicTests(unittest.TestCase):
         offered = [call.args[0] for call in choice.call_args_list if call.args and "lantern" in call.args[0]]
         self.assertTrue(offered)
         self.assertNotIn("sealed_pattern", offered[0])
+
+
+class ForgeTests(SealedPatternTest):
+    def test_the_gilded_forge_can_rekindle_its_power_away(self):
+        game, player = self.game, self.player
+        pattern = relics.make("sealed_pattern")
+        player.inventory = [pattern]
+        rekindles = [recipe for recipe in recipes.relicStationRecipes("forge", player.inventory) if recipe.kind == "rekindle"]
+        self.assertEqual([recipe.target for recipe in rekindles], [pattern])
+        player.addMaterial("relic_dust", 2)
+        player.gold = recipes.REKINDLE_GOLD
+        game.finishCraft(rekindles[0])
+        self.assertIn(pattern.relicPower, relics.FORGE_POWERS)
+        self.assertEqual(pattern.slot, "Gloves")
+        wearPattern(player)
+        player.equipment["Gloves"] = pattern
+        self.assertFalse(player.hasEffect("sealed_pattern"))
+        self.assertEqual(player.pitchDamage(), 0)
+        self.assertEqual(player.getMaxHealth(), 10 + player.attributeBonuses["constitution"], "its health cost goes with it")
+        keyDown(game, pygame.K_f)
+        self.assertIsNone(game.throwing, "no more Pitch Bolt")
 
 
 class TriggerTests(SealedPatternTest):

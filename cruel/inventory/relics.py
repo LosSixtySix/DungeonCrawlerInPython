@@ -112,7 +112,7 @@ THORN_DAMAGE = 2  # Demise Stew's Thorn Blood: magic damage to whatever hits you
 SICK_TURNS = 8    # Demise Sickness: 1 HP lost this often
 
 # Powers that are the relic itself: the Gilded Forge can't rekindle them away (the Hand would be just a hand)
-BOUND_POWERS = {"extra_hand", "molten", "pheromones", "sealed_pattern"}  # (the Molten Blade without its fire is just a blade)
+BOUND_POWERS = {"extra_hand", "molten", "pheromones"}  # (the Molten Blade without its fire is just a blade)
 
 # Powers the Gilded Forge can give (not Burrow: that one is the Burrower's Amulet's alone)
 FORGE_POWERS = ["half_swings", "goblin_fear", "seal_ward", "lifedrinker", "far_sight", "gold_double"]
