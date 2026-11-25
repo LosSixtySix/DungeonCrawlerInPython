@@ -1458,8 +1458,9 @@ class gameManager():
             for m, n in needs.items():
                 have = player.have(m)
                 name = resources.materialName(m)
-                if m == "coal" and player.materials.get("charcoal"):  # (have counts the Charcoal too)
-                    name += f" (or {resources.CHARCOAL_PER_COAL} Charcoal each)"
+                standIn, perOne = resources.STAND_INS.get(m, (None, 0))
+                if standIn and player.materials.get(standIn):  # (have counts the stand-in too)
+                    name += f" (or {perOne} {resources.materialName(standIn)} each)"
                 rows.append(("need" if have >= n else "short", name, f"{have} / {n}"))
             return rows
 

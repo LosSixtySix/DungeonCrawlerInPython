@@ -302,12 +302,14 @@ class PlayerClass():
         return added
 
     def have(self, materialId):
-        """How many of a material the player has ("gold" is their gold). Coal counts the Charcoal too: every
-        CHARCOAL_PER_COAL of it is one more Coal (see spendMaterials)."""
+        """How many of a material the player has ("gold" is their gold). A material with a stand-in
+        (resources.STAND_INS) counts it too: Coal counts every CHARCOAL_PER_COAL Charcoal as one more, Hide every
+        FIBROUS_CLOTH_PER_HIDE Fibrous Cloth (see spendMaterials)."""
         if materialId == "gold":
             return self.gold
-        if materialId == "coal":
-            return self.materials.get("coal", 0) + self.materials.get("charcoal", 0) // resources.CHARCOAL_PER_COAL
+        if materialId in resources.STAND_INS:
+            standIn, perOne = resources.STAND_INS[materialId]
+            return self.materials.get(materialId, 0) + self.materials.get(standIn, 0) // perOne
         return self.materials.get(materialId, 0)
 
     def hasMaterials(self, needs, times=1):
@@ -319,14 +321,15 @@ class PlayerClass():
             if materialId == "gold":
                 self.gold -= count
                 continue
-            if materialId == "coal":  # real Coal first, then Charcoal for whatever's short
-                fromCoal = min(count, self.materials.get("coal", 0))
-                short = count - fromCoal
+            if materialId in resources.STAND_INS:  # the real material first, then its stand-in for whatever's short
+                standIn, perOne = resources.STAND_INS[materialId]
+                fromReal = min(count, self.materials.get(materialId, 0))
+                short = count - fromReal
                 if short:
-                    self.materials["charcoal"] -= short * resources.CHARCOAL_PER_COAL
-                    if self.materials["charcoal"] <= 0:
-                        del self.materials["charcoal"]
-                count = fromCoal
+                    self.materials[standIn] -= short * perOne
+                    if self.materials[standIn] <= 0:
+                        del self.materials[standIn]
+                count = fromReal
                 if not count:
                     continue
             self.materials[materialId] -= count

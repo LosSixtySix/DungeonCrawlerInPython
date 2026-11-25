@@ -33,6 +33,7 @@ MATERIALS = {
     "cut_amethyst": ("Cut Amethyst", "Refined", (186, 130, 240)),
     "relic_dust": ("Relic Dust", "Refined", (184, 154, 232)),
     "charcoal": ("Charcoal", "Refined", (52, 46, 44)),  # burns in place of coal, CHARCOAL_PER_COAL to one
+    "fibrous_cloth": ("Fibrous Cloth", "Refined", (112, 124, 84)),  # stands in for hide, FIBROUS_CLOTH_PER_HIDE to one
     "bone": ("Bone", "Drops", (216, 207, 184)),
     "scrap": ("Goblin Scrap", "Drops", (106, 110, 118)),
     "hide": ("Hide", "Drops", (122, 98, 80)),
@@ -54,6 +55,10 @@ MATERIALS = {
     "organizers_demise_seed": ("Demise Seeds", "Plants", (140, 96, 146)),
 }
 CHARCOAL_PER_COAL = 3  # any recipe that needs Coal can use this much Charcoal for each one it's short
+FIBROUS_CLOTH_PER_HIDE = 3  # any recipe that needs Hide can use this much Fibrous Cloth for each one it's short
+# Stand-ins: material id -> (the material that can take its place, how many of it make one). A recipe spends the
+# real material first, then the stand-in for whatever's short (PlayerClass.have and spendMaterials).
+STAND_INS = {"coal": ("charcoal", CHARCOAL_PER_COAL), "hide": ("fibrous_cloth", FIBROUS_CLOTH_PER_HIDE)}
 
 GROUPS = ["Raw", "Ore", "Refined", "Plants", "Drops"]
 
