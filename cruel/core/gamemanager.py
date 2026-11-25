@@ -30,6 +30,7 @@ from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import queen
 from cruel.world import sight
+from cruel.world import sightmemory
 from cruel.world import followers
 from cruel.world import cityshops
 from cruel.core import devconsole
@@ -176,6 +177,7 @@ BLOOD_DRY = 1 / 150       # blood dries away by this much a turn (a full puddle 
 
 
 SEE_THROUGH = (0, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.STREET_LIGHT)  # tile types sight passes over (plants depend on the plant)
+OPEN_TO_YOU = SEE_THROUGH + (1,)  # what your sight and light pass over (seeThroughForPlayer): you don't block them
 
 
 class gameManager():
@@ -2840,18 +2842,39 @@ class gameManager():
         return sight.fieldOfView(fire, radius, self.rowLength, len(grid) // self.rowLength,
                                  lambda spot: spot not in grid or not self.seeThroughForPlayer(spot))
 
-    def seenFromAfar(self, lit, visiblePositions):
+    def seenFromAfar(self, lit, visiblePositions, memory=None):
         """Of the lit tiles (by fire, lamps or Glowrocks), the ones you see from where you stand, however far: the
-        same sight as yours (sight.fieldOfView) out to the furthest of them. None from inside smoke."""
+        same sight as yours (sight.fieldOfView) out to the furthest of them. None from inside smoke. memory
+        (sightmemory.py): keep what's worked out there."""
         targets = [spot for spot in lit if spot not in visiblePositions]
         if not targets or self.playerPositionFlat in self.smoke:
             return set()
         R, here = self.rowLength, self.playerPositionFlat
         reach = math.ceil(max(math.hypot(spot % R - here % R, spot // R - here // R) for spot in targets))
-        grid = self.grid
-        view = sight.fieldOfView(here, reach, R, len(grid) // R,
-                                 lambda spot: spot not in grid or spot in self.smoke or not self.seeThroughForPlayer(spot))
+        grid, smoke = self.grid, self.smoke
+        if memory is None:
+            view = sight.fieldOfView(here, reach, R, len(grid) // R,
+                                     lambda spot: spot not in grid or spot in smoke or not self.seeThroughForPlayer(spot))
+        else:
+            blockers = memory.blockers
+            view = memory.remember(("afar", here, reach, frozenset(smoke)), lambda: sight.fieldOfView(
+                here, reach, R, memory.rowCount, lambda spot: spot in blockers or spot in smoke))
         return view.intersection(targets)
+
+    def yourSight(self, reach, memory):
+        """rayCircleVision(where you stand, reach, 1): your own sight, kept in memory (sightmemory.py) until a
+        blocker changes."""
+        here, smoke = self.playerPositionFlat, self.smoke
+        blockers, units = memory.blockers, memory.units
+
+        def blocks(spot):
+            return spot in blockers or (spot in smoke and spot != here)
+
+        def wholeFace(spot):  # (as rayCircleVision: a unit is only seen if the line to it is clear)
+            return spot not in units
+
+        return memory.remember(("sight", here, reach, frozenset(smoke)), lambda: sight.fieldOfView(
+            here, reach, self.rowLength, memory.rowCount, blocks, wholeFace))
 
     def lineOfSight(self, start, end):
         """True if nothing that blocks your sight stands on the straight line between two tiles."""
@@ -2878,10 +2901,12 @@ class gameManager():
         """Anything standing in Smoke Bomb smoke can't be seen (it shows as smoke)."""
         return position in self.smoke
 
-    def updateFireLight(self):
+    def updateFireLight(self, memory=None):
         """Which tiles the fires, bonfires, lamp posts and wall lamps light, as {tile: (the nearest one lighting it,
-        its light radius)}. A wall lamp isn't a tile of its own, so it keeps lighting with someone standing under it."""
+        its light radius)}. A wall lamp isn't a tile of its own, so it keeps lighting with someone standing under it.
+        memory (sightmemory.py): each light's tiles are kept there until something near it changes."""
         R = self.rowLength
+        lightAround = self.lightAround if memory is None else memory.lightFrom
         self.fireLight = {}
         best = {}
         sources = [(fire, FIRE_LIGHT_RADIUS) for fire in self.fires] + \
@@ -2889,23 +2914,25 @@ class gameManager():
                   [(lamp, metropolis.STREET_LIGHT_RADIUS) for lamp in metropolis.streetLights(self)] + \
                   [(spot, lamp.radius) for spot, lamp in metropolis.wallLampsHere(self).items()]
         for fire, radius in sources:
-            for p in self.lightAround(fire, radius):
+            for p in lightAround(fire, radius):
                 d = (p % R - fire % R) ** 2 + (p // R - fire // R) ** 2
                 if p not in best or d < best[p]:
                     best[p], self.fireLight[p] = d, (fire, radius)
 
-    def updateGlowLight(self):
+    def updateGlowLight(self, memory=None):
         """Which tiles Glowrocks light, as {tile: brightness 0..1}: each rock lights out to GLOW_RADIUS, fading
         with distance (GLOW_BRIGHTNESS on its own tile, nothing at the edge), and walls stop it like they stop fire
-        light. Two rocks lighting the same tile add up. A rock in a pile, under you or under an enemy all count."""
+        light. Two rocks lighting the same tile add up. A rock in a pile, under you or under an enemy all count.
+        memory (sightmemory.py): each rock's tiles are kept there until something near it changes."""
         R = self.rowLength
+        lightAround = self.lightAround if memory is None else memory.lightFrom
         rocks = [p for p, tile in self.grid.items() if tile[0] == 9 and items.pileGlows(tile[2])]
         if len(self.currentLocation) > 2 and items.pileGlows(self.currentLocation[2]):
             rocks.append(self.playerPositionFlat)
         rocks += [p for p, ground in self.enemyOccupiedItemSpaces.items() if len(ground) > 2 and items.pileGlows(ground[2])]
         self.glowLight = {}
         for rock in rocks:
-            for p in self.lightAround(rock, math.ceil(GLOW_RADIUS)):
+            for p in lightAround(rock, math.ceil(GLOW_RADIUS)):
                 d = math.hypot(p % R - rock % R, p // R - rock // R)
                 if d <= GLOW_RADIUS:
                     glow = GLOW_BRIGHTNESS * (1 - d / (GLOW_RADIUS + 0.5))
@@ -2921,7 +2948,10 @@ class gameManager():
         return min(lit, key=lambda t: (t % R - here % R) ** 2 + (t // R - here // R) ** 2)
 
     def setPositionsVisible(self):
-        visiblePositions = self.rayCircleVision(self.playerPositionFlat, self.player.getVisionRange(), 1)
+        # what blocks sight is found once, and what you see and what each light lights is kept until that changes
+        # (sightmemory.py): a redraw for a menu or a message works none of it out again
+        memory = sightmemory.refresh(self, OPEN_TO_YOU)
+        visiblePositions = self.yourSight(self.player.getVisionRange(), memory)
         # what was in view last time goes back to remembered: just those tiles, unless this is a different floor
         # (or a loaded game) since then, when every tile is checked
         if getattr(self, "visibleGrid", None) is self.grid:
@@ -2936,9 +2966,9 @@ class gameManager():
             self.grid[position][1] = 1
         # Firelight and Glowrock light: tiles they light are visible too, from any distance you can see them from
         # (from inside smoke you can't see light out there)
-        self.updateFireLight()
-        self.updateGlowLight()
-        for position in self.seenFromAfar(set(self.fireLight) | set(self.glowLight), visiblePositions):
+        self.updateFireLight(memory)
+        self.updateGlowLight(memory)
+        for position in self.seenFromAfar(set(self.fireLight) | set(self.glowLight), visiblePositions, memory):
             self.grid[position][1] = 1
         if self.player.hasEffect("see_enemies"):
             for position in self.EnemyPositions:
@@ -2948,7 +2978,7 @@ class gameManager():
         self.torchLight = set(visiblePositions) if self.player.holdingTorch() and not self.peaceful else set()
         self.ownSight = set(visiblePositions)  # lit by your own light (Glowrock light adds to it, see renderer.tileLighting)
         # Darkvision (a potion): you see further, by no light, so none of it is torchlight or lit
-        self.darkSight = self.darkvisionSight(visiblePositions)
+        self.darkSight = self.darkvisionSight(visiblePositions, memory)
         for position in self.darkSight:
             self.grid[position][1] = 1
         if getattr(self, "revealMap", False):  # developer console /reveal: the whole floor is in view
@@ -2968,12 +2998,17 @@ class gameManager():
                 self.grid[door][1] = 2
                 self.addPopup("You sense a door", door)
 
-    def darkvisionSight(self, lightSight):
+    def darkvisionSight(self, lightSight, memory=None):
         """The tiles Darkvision shows you past your own light (lightSight): out to relics.DARKVISION_RANGE,
-        stopped by walls like any sight (and by smoke, standing in it). Empty without the potion."""
+        stopped by walls like any sight (and by smoke, standing in it). Empty without the potion. memory
+        (sightmemory.py): keep it there."""
         if not self.player.hasEffect("darkvision") or self.playerPositionFlat in self.smoke:
             return set()
-        return self.rayCircleVision(self.playerPositionFlat, relics.DARKVISION_RANGE, 1) - set(lightSight)
+        if memory is None:
+            seen = self.rayCircleVision(self.playerPositionFlat, relics.DARKVISION_RANGE, 1)
+        else:
+            seen = self.yourSight(relics.DARKVISION_RANGE, memory)
+        return seen - set(lightSight)
 
     def levelUpPreview(self, attribute):
         """What one more point in this attribute would change: [(what, now, after)] for the Level Up window."""

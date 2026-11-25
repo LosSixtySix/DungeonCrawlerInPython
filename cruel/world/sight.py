@@ -25,10 +25,11 @@ Everything is within reach (a rounded circle: dx * dx + dy * dy <= reach * reach
 OCTANTS = ((1, 0, 0, 1), (0, 1, 1, 0), (0, -1, 1, 0), (-1, 0, 0, 1), (-1, 0, 0, -1), (0, -1, -1, 0), (0, 1, -1, 0), (1, 0, 0, -1))
 
 
-def fieldOfView(origin, reach, rowLength, rowCount, blocks, wholeFace=None):
+def fieldOfView(origin, reach, rowLength, rowCount, blocks, wholeFace=None, looked=None):
     """The set of tiles seen from origin out to reach. blocks(spot) says whether a tile blocks sight (the map's
     edge always does); wholeFace(spot), whether a blocker shows its whole face (a wall does, a unit doesn't; without
-    it, every blocker does). The origin is always seen, whatever it is."""
+    it, every blocker does). The origin is always seen, whatever it is. looked: a set to fill with every tile
+    that was asked about (the answer depends on those alone, so it's the same until one of them changes)."""
     originColumn, originRow = origin % rowLength, origin // rowLength
     limit = reach * reach + reach
     openSeen = {origin}
@@ -88,6 +89,8 @@ def fieldOfView(origin, reach, rowLength, rowCount, blocks, wholeFace=None):
         if 0 <= nearX < rowLength and 0 <= nearY < rowCount and \
                 (nearX - originColumn) ** 2 + (nearY - originRow) ** 2 <= limit and blocked(nearX, nearY) and                 (wholeFace is None or wholeFace(nearX + nearY * rowLength)):
             seen.add(nearX + nearY * rowLength)
+    if looked is not None:
+        looked.update(known)
     return seen
 
 
