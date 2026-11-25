@@ -221,8 +221,6 @@ def hostileAct(game, spot, victim=None):
         witnesses.append(victim)  # (the one you hurt always knows)
     for dweller in witnesses:
         turnHostile(game, dweller, game.playerPositionFlat)
-    if witnesses:
-        game.addPopup("Seen!", game.playerPositionFlat)
     return len(witnesses)
 
 
@@ -237,8 +235,6 @@ def turnHostile(game, dweller, sawYouAt):
 
 def tellGuard(game, guardSpot, guard, sawYouAt):
     """A fleeing Dweller reached a guard and told it where you were: the guard hunts you from there."""
-    if not guard.hostile:
-        game.addPopup("Alarm!", guardSpot)
     turnHostile(game, guard, sawYouAt)
 
 
