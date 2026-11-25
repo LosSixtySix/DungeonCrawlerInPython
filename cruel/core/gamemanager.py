@@ -2037,7 +2037,7 @@ class gameManager():
         return added
 
     def addPopup(self, text, position):
-        if getattr(self, "simulatingAway", False):  # (on a floor you're not on: you don't see it)
+        if not self.onScreen():
             return
         now = pygame.time.get_ticks()
         for popup in self.popups:
@@ -3227,7 +3227,8 @@ class gameManager():
         landing = shot["landing"]
         radius = BLAST_RADIUS[shot["effect"]]
         area = self.blastArea(landing, radius)
-        self.explosions.append([landing, radius, shot["effect"], pygame.time.get_ticks()])
+        if self.onScreen():
+            self.explosions.append([landing, radius, shot["effect"], pygame.time.get_ticks()])
         if shot["effect"] == "Fire":
             self.igniteArea(area + [edgeSpot for edgeSpot in self.plantsAtEdge(landing, radius) if edgeSpot not in area])
             hit = 0
@@ -3254,7 +3255,8 @@ class gameManager():
                 self.addPopup("Nothing there", landing)
         elif shot["effect"] == "Explosive":
             hit = 0
-            self.sound.playExplosion()
+            if self.onScreen():
+                self.sound.playExplosion()
             self.igniteArea(area + [edgeSpot for edgeSpot in self.plantsAtEdge(landing, radius) if edgeSpot not in area])
             for position, unit in occupancy.unitsInArea(self, area):
                 hit += 1
@@ -3624,8 +3626,15 @@ class gameManager():
     # bleed: a drip on each tile you leave, and a pool that grows under you while you stay put. A full tile
     # spills into a floor tile beside it. Blood dries away slowly and is left behind when you change floors.
 
+    def onScreen(self):
+        """Is the floor taking its turn the one you're on? A floor you're not on (livingfloors.py) only keeps going:
+        it shows and plays nothing (no spurts, flecks, explosions, popups, messages or sounds) and doesn't ask
+        for your screen to be drawn again, so it costs no more than its own turn."""
+        return not getattr(self, "simulatingAway", False)
+
     def bleed(self, position):
-        self.spurts.append([position, pygame.time.get_ticks(), rand.random()])
+        if self.onScreen():
+            self.spurts.append([position, pygame.time.get_ticks(), rand.random()])
         self.addBlood(position, HIT_SPECK)
 
     def addBlood(self, position, amount):
@@ -3647,7 +3656,7 @@ class gameManager():
     def chip(self, wallTile, fromTile):
         """Flecks fly off the face of a wall that was just hit, in its colors (and its ore's, for a vein)."""
         tile = self.grid.get(wallTile)
-        if not tile or tile[0] != 2 or len(tile) < 3:
+        if not tile or tile[0] != 2 or len(tile) < 3 or not self.onScreen():
             return
         w = tile[2]
         if isinstance(w, wall.OreVein):

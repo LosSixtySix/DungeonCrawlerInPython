@@ -16,6 +16,9 @@ floor events and plants; nothing that's only round you, and nothing ever touches
                  (ensureWorksFloors).
   awayFloor      puts a floor you're not on in place of yours for its turn (its tiles, units, what's kept for its
                  number), with you nowhere on it (peaceful: nothing there sees or hits you), and then puts yours back.
+                 Nothing on it is drawn or heard while it does (gameManager.onScreen): a hit there leaves its blood
+                 but makes no spurt or flecks, and nothing there plays a sound, pops up a message or redraws your
+                 screen. That keeps it from showing on yours, and keeps its turn cheap.
 
 A new track: once you're on a floor with no door back up (gameManager.trackStarts), the floors above the latest
 such floor at or above you can never be reached again. dropUnreachable empties them (from memory and the save),
@@ -26,7 +29,8 @@ ABOVE = 2   # floors above yours that keep going
 BELOW = 2   # and below
 FLOOR_FIELDS = ("grid", "rooms", "proportion", "EnemyPositions", "enemyOccupiedItemSpaces", "theme", "blood", "bloodDry")
 LIVE_FIELDS = FLOOR_FIELDS + ("level", "sideFloor", "peaceful", "simulatingAway", "smoke", "fires", "freshFires",
-                              "movedEnemies", "nodes", "sharedTiles", "sharedTilesGrid", "playerPositionFlat")
+                              "movedEnemies", "nodes", "sharedTiles", "sharedTilesGrid", "playerPositionFlat",
+                              "change")  # (a floor you're not on changing doesn't redraw yours)
 
 
 # ---------------------------------------------------------------- which floors
@@ -167,7 +171,7 @@ def awayFloor(game, key):
         game.level = level
         game.sideFloor = (worksKind(data[0], key[1]), key[1]) if isinstance(key, tuple) else None
         game.peaceful = True          # nothing on it can see or hit you (you're not there)
-        game.simulatingAway = True    # nothing on it shows you a message or a popup
+        game.simulatingAway = True    # nothing on it is shown or heard (gameManager.onScreen)
         game.smoke, game.fires, game.freshFires = {}, {}, set()
         yield
     finally:
