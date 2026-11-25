@@ -214,6 +214,7 @@ class DwellerQueen(Dweller):
         self.royalPosts = []       # where her Royal Guards stand
         self.dew = 0               # Dew her carriers have fed her (queen.py)
         self.carriersAway = {}     # her carriers down on the farm now: {carrier: the turn it went}
+        self.court = {}            # what her eggs need to hatch (metropolis.placeCourt): nests, posts, homes, wanted
 
 
 class RoyalGuard(DwellerGuard):
@@ -224,6 +225,22 @@ class RoyalGuard(DwellerGuard):
     def __init__(self):
         Dweller.__init__(self, 30, 17, FAST, 7, 8, 15, "Royal Guard")
         self.leash = 8             # it won't go further than this from its post, even hunting
+
+
+class DwellerEgg(Dweller):
+    """An egg the Queen laid (queen.py). It never moves or fights: citizens carry it to a nest in a hatchery
+    (nest), and hatchIn turns after it's put there it hatches into whatever the city needs most. court: what it
+    needs to know to hatch (the Queen's, kept even if she dies)."""
+    role = "egg"
+
+    def __init__(self, court=None):
+        super().__init__(4, 4, 1, 0, 0, 0, "Dweller Egg")
+        self.court = court if court is not None else {}
+        self.nest = None           # the nest it's in, once it's been carried there...
+        self.hatchIn = None        # ...and the turns until it hatches
+        self.carrier = None        # the citizen coming to carry it, and the turn it said so
+        self.claimedAt = None
+        self.nestTarget = None     # while it's carried: the nest it's going to
 
 
 class RoyalPupa(Dweller):

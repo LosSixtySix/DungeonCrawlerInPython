@@ -356,6 +356,19 @@ ROYAL_PUPA = [
     "..........",
 ]
 ROYAL_PUPA_COLORS = {"P": (200, 144, 64), "p": (122, 84, 36)}
+DWELLER_EGG = [
+    "..........",
+    "...kkkk...",
+    "..kEEEEk..",
+    ".kEwEEEEk.",
+    ".kEEEEEEk.",
+    ".kEEeeEEk.",
+    ".kEEeeEEk.",
+    "..kEEEEk..",
+    "...kkkk...",
+    "..........",
+]
+DWELLER_EGG_COLORS = {"E": (236, 214, 160), "e": (150, 112, 60), "w": (255, 246, 220)}
 DWELLER_MERCHANT = [
     "..........",
     "..kkkkkk..",
@@ -473,6 +486,7 @@ ENEMY_SPRITES = {
     "Dweller Merchant": (DWELLER_MERCHANT, DWELLER_MERCHANT_COLORS),
     "Royal Guard": (ROYAL_GUARD, ROYAL_GUARD_COLORS),
     "Royal Pupa": (ROYAL_PUPA, ROYAL_PUPA_COLORS),
+    "Dweller Egg": (DWELLER_EGG, DWELLER_EGG_COLORS),
     "Dew Grub": (DEW_GRUB, DEW_GRUB_COLORS),
     "Young Dew Grub": (YOUNG_DEW_GRUB, DEW_GRUB_COLORS),
     **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
