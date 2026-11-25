@@ -62,29 +62,54 @@ class CityLayoutTests(unittest.TestCase):
             self.assertTrue(3 <= len(kinds) <= 5)
             self.assertEqual(len(set(kinds)), len(kinds))
 
-    def test_roads_are_street_and_the_rock_between_buildings_is_yard(self):
+    def test_roads_are_street_and_the_ground_between_buildings_is_yard(self):
         self.assertEqual(self.city.rooms[metropolis.STREET] & self.city.rooms[metropolis.YARD], set())
         for spot in self.city.rooms[metropolis.STREET]:
             self.assertIn(spot, self.city.roads)
         self.assertGreater(len(self.city.rooms[metropolis.YARD]), 100)
-        for spot in self.city.rooms[metropolis.YARD]:
-            self.assertIsInstance(self.city.grid[spot][2], wall.StoneWall)
+        for spot in self.city.rooms[metropolis.YARD]:  # (rock, or the open ground in it)
+            tile = self.city.grid[spot]
+            self.assertTrue(tile[0] != WALL or isinstance(tile[2], wall.StoneWall))
 
-    def test_the_city_is_rock_with_the_roads_carved_out(self):
+    def test_rock_lines_the_roads_round_buildings_is_cleared_and_the_rest_is_walled_at_random(self):
         for seed in range(6):
             city = newCity(seed)
             buildingTiles = set()
             for building in city.buildings:
                 buildingTiles |= building.tiles
+            cleared = metropolis.clearedRound(city)
+            walled = opened = 0
             for spot, tile in city.grid.items():
                 column, row = spot % ROW_LENGTH, spot // ROW_LENGTH
                 if not city.inside(column, row) or spot in buildingTiles:
                     continue
                 if spot in city.roads:
                     self.assertNotEqual(tile[0], WALL, "a road is open")
-                else:
-                    self.assertEqual(tile[0], WALL, "everything off the roads is rock")
+                elif spot in cleared:
+                    self.assertNotEqual(tile[0], WALL, "the ground round a building is clear")
+                elif any(city.spot(column + stepColumn, row + stepRow) in city.roads
+                         for stepColumn in (-1, 0, 1) for stepRow in (-1, 0, 1)):
+                    self.assertEqual(tile[0], WALL, "rock lines the roads")
                     self.assertIsInstance(tile[2], wall.StoneWall)
+                elif tile[0] == WALL:
+                    walled += 1
+                else:
+                    opened += 1
+            self.assertTrue(walled and opened, f"seed {seed}: some of it rock, some of it open ground")
+            share = walled / (walled + opened)
+            self.assertTrue(min(metropolis.ROCK_DENSITIES) - 0.06 <= share <= max(metropolis.ROCK_DENSITIES) + 0.06,
+                            f"seed {seed}: {share:.2f} of the rest walled, like any other floor")
+
+    def test_buildings_stand_two_tiles_apart(self):
+        for seed in range(6):
+            city = newCity(seed)
+            for building in city.buildings:
+                others = set().union(*[other.tiles for other in city.buildings if other is not building])
+                for spot in building.tiles:
+                    column, row = spot % ROW_LENGTH, spot // ROW_LENGTH
+                    near = {city.spot(column + stepColumn, row + stepRow)
+                            for stepColumn in range(-2, 3) for stepRow in range(-2, 3)}
+                    self.assertFalse(near & others, f"seed {seed}: {building.kind} too close to another building")
 
     def test_every_door_has_a_doorstep_carved_to_the_road(self):
         for seed in range(6):
@@ -358,8 +383,9 @@ class CalmDwellerTests(unittest.TestCase):
         for _ in range(40):
             game.enemyTurn()
         for spot, guard in dwellersOn(game, "guard"):
-            # (a detour round a building, or a citizen swapping past it, can take it a few tiles further for a while)
-            self.assertLessEqual(dwellers.distance(game, spot, guard.home), 10)
+            # (a detour round a building or through the open yards, or a citizen swapping past it, can take it a few
+            # tiles further for a while)
+            self.assertLessEqual(dwellers.distance(game, spot, guard.home), 14)
 
     def test_calm_dwellers_never_hurt_you(self):
         game = self.game
@@ -371,10 +397,10 @@ class CalmDwellerTests(unittest.TestCase):
         self.assertEqual(game.player.damageTaken, 0)
 
     def test_nobody_is_lost_or_doubled_as_they_walk(self):
-        count = len(dwellersOn(self.game))
+        count = len(dwellers.cityDwellers(self.game))  # (two small Dwellers can share a space: both count)
         for _ in range(30):
             self.game.enemyTurn()
-        self.assertEqual(len(dwellersOn(self.game)), count)
+        self.assertEqual(len(dwellers.cityDwellers(self.game)), count)
 
 
 class BuildingStyleTests(unittest.TestCase):
