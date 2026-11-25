@@ -1998,8 +1998,13 @@ class gameManager():
     def leaveBody(self, position, unit, stacks, gold):
         """unit died at position: it leaves its body there with its loot on it (instead of an item pile). A plain pile
         already there is gathered into the body; if the ground holds something a body can't lie on (a chest, a
-        plant, another body, a wall it burrowed into), the body lies on the nearest bare floor instead. What doesn't
-        fit on the body spills like any pile."""
+        plant, another body), the body lies on the nearest bare floor instead. What doesn't fit on the body spills like
+        any pile. A burrower that died inside a wall with nothing on it (so the wall still stands) leaves its body
+        inside the wall: it falls to the floor there once the wall is broken (uncoverBodies)."""
+        ground = self.groundAt(position)
+        if ground[0] == 2 and len(ground) > 2 and not (stacks or gold) and bodies.coveredBody(ground) is None:
+            self.entomb(position, ground[2], bodies.Body(getattr(unit, "name", ""), self.worldTurn))
+            return
         spot = next((p for p in self.spillOrder(position) if self.canHoldBody(self.groundAt(p))), None)
         if spot is not None:
             self.layBody(spot, bodies.Body(getattr(unit, "name", ""), self.worldTurn))
@@ -2021,29 +2026,38 @@ class gameManager():
         body = self.bodyAt(spot)
         if body is not None:
             plantTile[2].bodyUnder = body
-            self.plantBodiesHere()[spot] = body
+            self.coveredBodiesHere()[spot] = body
 
-    def plantBodiesHere(self):
-        """{spot: body} for the bodies under plants on this floor. Kept for the floor you're on, and found again by
-        looking at its plants when you come to it (or load a game)."""
-        cache = self.__dict__.setdefault("plantBodies", {"grid": None, "bodies": {}})
+    def entomb(self, spot, wallObject, body):
+        """A burrower died inside the wall on spot: its body stays inside it, hidden, until the wall is broken."""
+        wallObject.bodyInside = body
+        self.coveredBodiesHere()[spot] = body
+
+    def coveredBodiesHere(self):
+        """{spot: body} for the bodies under plants and inside walls on this floor. Kept for the floor you're on, and
+        found again by looking at its plants and walls when you come to it (or load a game)."""
+        cache = self.__dict__.setdefault("coveredBodies", {"grid": None, "bodies": {}})
         if cache["grid"] is not self.grid:
             cache["grid"], cache["bodies"] = self.grid, {}
             for spot in self.grid:
-                ground = self.groundAt(spot)
-                if ground[0] == 8 and len(ground) > 2 and bodies.bodyUnder(ground[2]) is not None:
-                    cache["bodies"][spot] = bodies.bodyUnder(ground[2])
+                body = bodies.coveredBody(self.groundAt(spot))
+                if body is not None:
+                    cache["bodies"][spot] = body
         return cache["bodies"]
 
     def uncoverBodies(self):
-        """A plant with a body under it is gone (picked, burnt, pulled up...): the body lies there again, with what was
-        on it. If something else is on the tile now, it lies on the nearest floor that can hold it."""
-        underPlants = self.plantBodiesHere()
-        for spot, body in list(underPlants.items()):
-            ground = self.groundAt(spot)
-            if ground[0] == 8 and len(ground) > 2 and bodies.bodyUnder(ground[2]) is body:
+        """A plant with a body under it is gone (picked, burnt, pulled up...), or a wall with a body inside it was
+        broken (by anyone, any way): the body lies there again, with what was on it. If something else is on the tile
+        now, it lies on the nearest floor that can hold it. Bones that decayed all the way inside a wall fall out as
+        an item pile."""
+        covered = self.coveredBodiesHere()
+        for spot, body in list(covered.items()):
+            if bodies.coveredBody(self.groundAt(spot)) is body:
                 continue
-            del underPlants[spot]
+            del covered[spot]
+            if body.decayed(self.worldTurn):
+                self.placeItems(spot, bodies.remains(body), body.gold)
+                continue
             target = next((p for p in self.spillOrder(spot) if self.canHoldBody(self.groundAt(p))), None)
             if target is not None:
                 self.layBody(target, body)
@@ -2071,13 +2085,12 @@ class gameManager():
         (bodies.REMAINS) and anything still on them."""
         spots = [p for p, tile in self.grid.items() if tile[0] in (1, 9) and len(tile) > 2 and bodies.isBody(tile[2])]
         spots += [p for p, ground in self.enemyOccupiedItemSpaces.items() if ground[0] == 9 and bodies.isBody(ground[2])]
-        underPlants = self.plantBodiesHere()
-        for spot, body in list(underPlants.items()):  # (one under a plant: the plant stays, its pile lies beside it)
-            if body.decayed(self.worldTurn):
-                ground = self.groundAt(spot)
-                if ground[0] == 8 and bodies.bodyUnder(ground[2]) is body:
-                    ground[2].bodyUnder = None
-                del underPlants[spot]
+        covered = self.coveredBodiesHere()
+        for spot, body in list(covered.items()):  # (under a plant: the plant stays, its pile lies beside it. Inside a
+            ground = self.groundAt(spot)        # wall the bones stay until the wall is broken: uncoverBodies)
+            if body.decayed(self.worldTurn) and ground[0] == 8 and bodies.bodyUnder(ground[2]) is body:
+                ground[2].bodyUnder = None
+                del covered[spot]
                 self.placeItems(spot, bodies.remains(body), body.gold)
         for spot in spots:
             body = self.bodyAt(spot)
@@ -5211,7 +5224,7 @@ class gameManager():
                 self.overlayChange = True
 
             if self.change:
-                self.uncoverBodies()  # (a plant with a body under it was just picked or burnt: it shows at once)
+                self.uncoverBodies()  # (a plant or wall with a body in it was just picked, burnt or broken: it shows at once)
                 self.setLookPosition()
                 self.roomItems = self.getItemsFromGrid()
                 self.setPositionsVisible()

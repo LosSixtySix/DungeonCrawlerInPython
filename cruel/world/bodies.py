@@ -92,6 +92,22 @@ def bodyUnder(thing):
     return getattr(thing, "bodyUnder", None)
 
 
+def bodyInside(thing):
+    """The body inside a wall a burrower died in (gameManager.entomb), or None."""
+    return getattr(thing, "bodyInside", None)
+
+
+def coveredBody(ground):
+    """The body hidden by what's on this ground: under a plant (tile type 8) or inside a wall (tile type 2), or None."""
+    if len(ground) < 3:
+        return None
+    if ground[0] == 8:
+        return bodyUnder(ground[2])
+    if ground[0] == 2:
+        return bodyInside(ground[2])
+    return None
+
+
 def decayStep(age):
     """The age a body's picture is drawn at: its age rounded down to a DECAY_STEP_TURNS step."""
     return min(age, DECAY_TURNS) // DECAY_STEP_TURNS * DECAY_STEP_TURNS
