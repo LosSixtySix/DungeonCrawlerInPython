@@ -17,6 +17,8 @@ The Metropolis's Dwellers at work (metropolis.py builds the city, enemies.Dwelle
   Worker    a citizen on one of the city's works floors (mineshafts.py): it works (dwellerwork.py).
   Grub      a Dew Grub, the city's livestock: it stays in its pen (unless a farmer leads it to another) and
             never fights (dwellerwork.py, dewgrubs.py).
+  Queen     the Dweller Queen, and her court: Royal Guards (guards with a leash: they never go more than leash tiles
+            from their post beside her) and Royal Pupae (queen.py).
 
 They walk with path maps (expansion.walkingDistances), so they go round walls and through doors instead of bumping
 into them. A path map is kept for a while per destination (PATH_KEEP_TURNS), since Dwellers keep going to the same
@@ -84,11 +86,17 @@ def canStep(game, spot, throughPlants=False, unit=None):
     return unit is not None and occupancy.canJoin(game, spot, unit)
 
 
+def canBeMoved(unit):
+    """Can another Dweller move this one out of its way (nudgeAside, swapPast)? Not the Queen or anything else
+    bigger than a space, and not a Royal Pupa (it can't move)."""
+    return getattr(unit, "size", 1) == 1 and getattr(unit, "role", None) not in ("queen", "pupa")
+
+
 def nudgeAside(game, spot):
     """Moves the citizen, noble or merchant on spot onto a free tile beside it (a hunting guard needs spot). True if
     spot is free now. (If it hadn't had its turn yet, it misses this one, but stays in the game.)"""
     tile = game.grid[spot]
-    if tile[0] != 5 or len(tile) < 3 or not isDweller(tile[2]) or tile[2].role == "guard":
+    if tile[0] != 5 or len(tile) < 3 or not isDweller(tile[2]) or tile[2].role == "guard" or not canBeMoved(tile[2]):
         return False
     free = [beside for beside in game.neighbors(spot) if organizers.passable(game.grid[beside])]
     if not free:
@@ -111,7 +119,7 @@ def swapPast(game, position, spot, force=False):
     dwellerwork.walkTo). True if they swapped (the mover then steps onto spot)."""
     tile = game.grid[spot]
     movedThisTurn = getattr(game, "movedEnemies", set())
-    if tile[0] != 5 or len(tile) < 3 or not isDweller(tile[2]) or spot not in movedThisTurn:
+    if tile[0] != 5 or len(tile) < 3 or not isDweller(tile[2]) or spot not in movedThisTurn or not canBeMoved(tile[2]):
         return False
     if occupancy.stillOccupied(game, position) or spot in occupancy.sharedTiles(game):
         return False  # (only two units each alone on their space swap)
@@ -229,8 +237,12 @@ def tellGuard(game, guardSpot, guard, sawYouAt):
 
 
 def noticeYou(game, position, dweller):
-    """A hostile Dweller looks for you: if it sees you, it remembers where and when."""
+    """A hostile Dweller looks for you: if it sees you, it remembers where and when (a Royal Guard: only while you're
+    within its leash; outside it, it forgets where you went)."""
     if game.peaceful or not canSee(game, position, dweller, game.playerPositionFlat):
+        return False
+    if not withinLeash(game, dweller, game.playerPositionFlat):
+        dweller.sawYouAt = None
         return False
     dweller.sawYouAt = game.playerPositionFlat
     dweller.lastSawYou = game.turnCount
@@ -269,12 +281,20 @@ def enemyBeside(game, position):
     return None
 
 
+def withinLeash(game, dweller, spot):
+    """Is spot somewhere this Dweller will go? A Royal Guard won't go more than its leash from its post."""
+    leash = getattr(dweller, "leash", None)
+    return leash is None or dweller.home is None or distance(game, dweller.home, spot) <= leash
+
+
 def enemyInSight(game, position, dweller):
-    """(position, enemy) of the nearest enemy of the city this Dweller can see, or None."""
+    """(position, enemy) of the nearest enemy of the city this Dweller can see (and will go after: withinLeash), or
+    None."""
     seen = []
     for spot in set(game.EnemyPositions) | getattr(game, "movedEnemies", set()):
         tile = game.grid.get(spot)
-        if tile and tile[0] == 5 and len(tile) > 2 and isCityEnemy(tile[2]) and canSee(game, position, dweller, spot):
+        if tile and tile[0] == 5 and len(tile) > 2 and isCityEnemy(tile[2]) and canSee(game, position, dweller, spot) \
+                and withinLeash(game, dweller, spot):
             seen.append((distance(game, position, spot), spot, tile[2]))
     if not seen:
         return None
@@ -299,6 +319,8 @@ def guardAgainstEnemies(game, position, guard):
         guard.enemyAt = None  # it's found it
         return stepToward(game, position, seen[0], pushPast=True, unit=guard)
     toldOf = getattr(guard, "enemyAt", None)
+    if toldOf is not None and not withinLeash(game, guard, toldOf):
+        toldOf = guard.enemyAt = None  # (too far from the Queen for a Royal Guard)
     if toldOf is not None:
         if distance(game, position, toldOf) <= 1:
             guard.enemyAt = None  # nothing there now
@@ -345,6 +367,8 @@ def takeTurn(game, position, dweller):
     """One action for the Dweller at position (already lifted off its tile). Returns where it ends up."""
     if dweller.role == "grub":  # livestock: it just shuffles about its pen (dwellerwork.py)
         return dwellerwork.grubTurn(game, position, dweller)
+    if dweller.role == "pupa":  # turning royal: it waits (queen.py)
+        return position
     dealtWith = dealWithEnemies(game, position, dweller)
     if dealtWith is not None:
         return dealtWith
@@ -422,10 +446,12 @@ def fleeTurn(game, position, dweller):
 
 def guardTurn(game, position, dweller):
     """A hostile guard: hits you if you're beside it, otherwise heads for where you were last seen. Having lost you
-    there, it searches the streets nearby."""
+    there, it searches the streets nearby (a Royal Guard: near its post)."""
     if besideYou(game, position):
         game.hitPlayer(dweller, position)
         return position
+    if dweller.sawYouAt is not None and not withinLeash(game, dweller, dweller.sawYouAt):
+        dweller.sawYouAt = None
     target = dweller.sawYouAt
     if target is None or target == position:
         dweller.sawYouAt = None

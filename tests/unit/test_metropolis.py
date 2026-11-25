@@ -15,7 +15,9 @@ class DwellerPlacementTests(unittest.TestCase):
         self.city = newCity(3)
 
     def ofRole(self, role):
-        return [(spot, dweller) for spot, dweller in self.city.dwellers.items() if dweller.role == role]
+        """The Dwellers of a role (guards: the city's own, not the Queen's Royal Guards)."""
+        return [(spot, dweller) for spot, dweller in self.city.dwellers.items()
+                if dweller.role == role and not getattr(dweller, "royal", False)]
 
     def test_the_numbers_of_each_dweller(self):
         self.assertTrue(metropolis.CITIZENS[0] <= len(self.ofRole("citizen")) <= metropolis.CITIZENS[1])
