@@ -339,6 +339,23 @@ DWELLER_GUARD = [
     "..j....j..",
 ]
 DWELLER_GUARD_COLORS = {"M": (168, 178, 194), "a": (58, 66, 78), "h": (58, 66, 78), "j": (30, 34, 40), "n": (74, 82, 96)}
+# The Queen's court (queen.py), from the Dweller Queen design sheet. A Royal Guard is the guard's picture in
+# royal colors: a gold shell and a crimson crest. A Royal Pupa is a guard wrapped in an amber case.
+ROYAL_GUARD = DWELLER_GUARD
+ROYAL_GUARD_COLORS = {"h": (184, 134, 44), "j": (90, 44, 20), "a": (122, 74, 28), "n": (154, 100, 36), "M": (224, 80, 60)}
+ROYAL_PUPA = [
+    "..........",
+    "...kkkk...",
+    "..kPpPPk..",
+    "..kPPpPk..",
+    ".kPpPPpPk.",
+    ".kPPpPPPk.",
+    "..kPPpPk..",
+    "..kpPPPk..",
+    "...kkkk...",
+    "..........",
+]
+ROYAL_PUPA_COLORS = {"P": (200, 144, 64), "p": (122, 84, 36)}
 DWELLER_MERCHANT = [
     "..........",
     "..kkkkkk..",
@@ -454,6 +471,8 @@ ENEMY_SPRITES = {
     "Dweller Noble": (DWELLER_NOBLE, DWELLER_NOBLE_COLORS),
     "Dweller Guard": (DWELLER_GUARD, DWELLER_GUARD_COLORS),
     "Dweller Merchant": (DWELLER_MERCHANT, DWELLER_MERCHANT_COLORS),
+    "Royal Guard": (ROYAL_GUARD, ROYAL_GUARD_COLORS),
+    "Royal Pupa": (ROYAL_PUPA, ROYAL_PUPA_COLORS),
     "Dew Grub": (DEW_GRUB, DEW_GRUB_COLORS),
     "Young Dew Grub": (YOUNG_DEW_GRUB, DEW_GRUB_COLORS),
     **{f"{pattern.capitalize()} Organizer": (organizerPicture(emblem), organizerColors(pattern))
@@ -939,7 +958,32 @@ FIRE_GIANT = [
     "....................",
 ]
 FIRE_GIANT_COLORS = {"r": (58, 38, 34), "R": (90, 58, 48), "m": (232, 96, 28), "M": (255, 174, 58), "y": (255, 226, 122), "f": (255, 122, 26)}
-GIANT_SPRITES = {"Fire Giant": (FIRE_GIANT, FIRE_GIANT_COLORS)}
+# The Dweller Queen: 20x20, top-down, facing down (her egg sac at the back, her head and mandibles at the front).
+DWELLER_QUEEN = [
+    "......kkkkkkkk......",
+    "....kaaaaaaaaaak....",
+    "...aaaaAAAAAAaaaa...",
+    "..kaAAAAAAAAAAAAak..",
+    "..aaAAEEEEEEEEAAaa..",
+    ".kaaAAEEEEEEEEAAaak.",
+    ".kaaAAAEEAAEEAAAaak.",
+    ".kaaaAAAAAAAAAAaaak.",
+    "..aaaaAAaaaaAAaaaa..",
+    "..kkaaaaaaaaaaaakk..",
+    "LL..ktttTttTtttk..LL",
+    ".LLkTTTTTttTTTTTkLL.",
+    "L.LktTTTTTTTTTTtkL.L",
+    "...kttTTTTTTTTttk...",
+    "..L.kttttttttttk.L..",
+    "...kHHHHHHHHHHHHk...",
+    "..LkHHHHHHHHHHHHkL..",
+    "...kHHHHHHHHHHHHk...",
+    "....kkmmHHHHmmkk....",
+    "......mm....mm......",
+]
+DWELLER_QUEEN_COLORS = {"A": (236, 208, 151), "a": (184, 138, 68), "T": (138, 90, 42), "t": (94, 58, 26), "L": (106, 74, 36),
+                        "C": (255, 214, 90), "c": (200, 150, 44), "H": (168, 116, 58), "E": (245, 233, 205), "m": (62, 40, 16)}
+GIANT_SPRITES = {"Fire Giant": (FIRE_GIANT, FIRE_GIANT_COLORS), "Dweller Queen": (DWELLER_QUEEN, DWELLER_QUEEN_COLORS)}
 
 
 # Enemies turn to face the way they last moved (enemy.facing, the same numbers as the player's direction:

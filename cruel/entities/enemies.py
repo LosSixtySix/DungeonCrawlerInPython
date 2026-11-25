@@ -197,6 +197,44 @@ class DewGrub(Dweller):
         self.maxHp = self.GROWN_HP
 
 
+class DwellerQueen(Dweller):
+    """The Queen of a Metropolis (queen.py): one to a city, in the middle of the Queen's Chamber
+    (metropolis.placeCourt). A large unit like the Fire Giant (size 2: her anchor, the top-left tile on
+    gameManager.EnemyPositions, and three part tiles holding this same object), but she never moves: she hits
+    whatever comes within reach of her body."""
+    role = "queen"
+    unitSize = "large"
+
+    def __init__(self):
+        super().__init__(120, 16, 1, 8, 8, 150, "Dweller Queen")
+        self.size = 2              # tiles across (and down)
+        self.reach = 2             # she hits up to this many tiles from her body (1 = right beside it)
+        self.anchor = None         # her top-left tile
+        self.chamber = frozenset() # the inside of her chamber
+        self.royalPosts = []       # where her Royal Guards stand
+
+
+class RoyalGuard(DwellerGuard):
+    """One of the Queen's Royal Guards: a Dweller Guard in royal colors, stronger, that never goes more than leash
+    tiles from its post beside her (dwellers.py). Never hatched: a guard pupates into one (queen.py)."""
+    royal = True
+
+    def __init__(self):
+        Dweller.__init__(self, 30, 17, FAST, 7, 8, 15, "Royal Guard")
+        self.leash = 8             # it won't go further than this from its post, even hunting
+
+
+class RoyalPupa(Dweller):
+    """A Dweller Guard turning into a Royal Guard (queen.py): it can't move or fight, and turnsLeft turns on it
+    comes out a Royal Guard, which goes to post (by the Queen)."""
+    role = "pupa"
+
+    def __init__(self, turnsLeft=40, post=None):
+        super().__init__(20, 10, 1, 0, 0, 0, "Royal Pupa")
+        self.turnsLeft = turnsLeft
+        self.post = post
+
+
 class GoblinBuilder(Enemy):
     unitSize = "small"
     """Builds an Expansion camp: bonfires, huts and spawners (see expansion.py, which runs its turns)."""

@@ -28,6 +28,7 @@ from cruel.world import occupancy
 from cruel.world import dewgrubs
 from cruel.world import dwellerfarming
 from cruel.world import dwellers
+from cruel.world import queen
 from cruel.world import cityshops
 from cruel.core import devconsole
 from cruel.core import updater
@@ -3841,6 +3842,7 @@ class gameManager():
     def enemyTurn(self):
         self.turnCount += 1
         self.MoveEnemies()
+        queen.stepCourt(self)
         self.checkShop()
         expansion.stepCamp(self)
         self.searingLight()
@@ -3908,6 +3910,7 @@ class gameManager():
         """A turn for a floor you're not on (livingfloors.py puts it in place of yours first): its units, goblin
         camps, burning, Demise, blood, floor event and plants. Nothing that's only round you."""
         self.MoveEnemies()
+        queen.stepCourt(self)
         expansion.stepCamp(self)
         self.stepBurning()
         self.stepDemise()
@@ -3929,6 +3932,11 @@ class gameManager():
             if peddler.isCalm(currentEnemy):  # the Gray Peddler waits in his room until you hurt him
                 listOfNewPositions.add(i)
                 continue
+            if queen.isQueen(currentEnemy):  # the Dweller Queen: she never moves (queen.py)
+                for action in range(self.enemyActions(currentEnemy)):
+                    position = queen.queenTurn(self, position, currentEnemy)
+                listOfNewPositions.add(position)
+                continue
             if self.isBig(currentEnemy):  # a giant: its whole body moves at once (giantTurn)
                 for action in range(self.enemyActions(currentEnemy)):
                     if self.grid[position][0] != 5 or len(self.grid[position]) < 3 or self.grid[position][2] is not currentEnemy:
@@ -3943,8 +3951,10 @@ class gameManager():
             if occupancy.sharedTiles(self).get(spot) is not unit:
                 continue  # it's not there now (it took the first one's place, or it's gone)
             listOfNewPositions.add(self.unitTurn(spot, unit, organizerContext, campContext))
-        # leave out anyone an Organizer killed after it had already moved
-        self.EnemyPositions = {p for p in listOfNewPositions if self.grid[p][0] == 5 and len(self.grid[p]) > 2}
+        # leave out anyone an Organizer killed after it had already moved, and a big unit's other tiles (a small unit
+        # that stepped onto one shares the space with it: it's kept as that space's second unit, occupancy.py)
+        self.EnemyPositions = {p for p in listOfNewPositions if self.grid[p][0] == 5 and len(self.grid[p]) > 2
+                               and (not self.isBig(self.grid[p][2]) or self.grid[p][2].anchor == p)}
         self.movedEnemies = set()
         if mineshafts.onSideFloor(self):  # a farm floor's Dew Grubs go hungry
             dwellerfarming.starveTurn(self)
@@ -3978,6 +3988,8 @@ class gameManager():
         """One action for the enemy at i (already lifted off its tile). Returns (where it ends up, the enemy)."""
         if isinstance(currentEnemy, enemies.Organizer):  # builders: their own turn (organizers.py)
             return organizers.takeTurn(self, i, currentEnemy, organizerContext)
+        if queen.takesTurn(currentEnemy):  # a Royal Pupa (queen.py): it may come out a Royal Guard
+            return queen.takeTurn(self, i, currentEnemy)
         if dwellers.isDweller(currentEnemy):  # a Metropolis Dweller (dwellers.py)
             return dwellers.takeTurn(self, i, currentEnemy), currentEnemy
         if getattr(currentEnemy, "faction", None) is not None:  # an Expansion faction's goblin (expansion.py)
