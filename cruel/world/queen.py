@@ -1,3 +1,4 @@
+import math
 import random
 
 from cruel.entities import enemies
@@ -48,6 +49,14 @@ The Dweller Queen and her court (design sheet: https://claude.ai/artifact/8crUvV
                   census (recordCensus, taken every CENSUS_TURNS turns as each takes its turn). A hatchling guard
                   goes to the post with the fewest guards, a citizen or carrier to a house, and a miner or farmer
                   walks to the city's shaft for its works, climbs down and joins the workers there (joinWorks).
+  Farm hands      a city (Queen or not) keeps its farm running: every CENSUS_TURNS turns, if the farm's census says
+                  it's short of farmers (farmersWanted: a keeper for every dwellerfarming.KEEPER_HERD grubs and a
+                  grower for every dwellerfarming.FIELD_TILES_PER_GROWER field tiles, at least one of each), counting
+                  those already on their way, it sends one idle citizen down (sendFarmHands: the one nearest the
+                  farm's shaft, keeping CITY_CITIZENS_KEPT citizens in the city). It goes like a hatchling would
+                  (joinTurn), and keeps the grubs if the herd needs more keepers, or else grows crops (joinWorks).
+                  With no farmer left down there to learn from, it takes up what the farm's census kept of its fields,
+                  pens and plans (game.workShared).
 """
 
 PUPATE_CHANCE = 0.02
@@ -63,6 +72,7 @@ EGG_CALL_REACH = 30         # a citizen this close to a waiting egg comes for it
 CLAIM_TURNS = 60            # a citizen coming for an egg that hasn't got it in this long lets another come instead
 CENSUS_TURNS = 10           # a works floor counts itself this often (recordCensus)
 PLENTY = 60                 # a works floor's chests hold plenty with this much ore (mine) or food (farm)
+CITY_CITIZENS_KEPT = 5      # the city never sends its last this many citizens down to the farm
 WORKS_JOBS = {"miner": "mine", "farmer": "farm"}
 
 
@@ -159,6 +169,7 @@ def stepCourt(game):
     if getattr(game, "sideFloor", None) is not None:
         recordCensus(game)
         return None
+    sendFarmHands(game)
     court = courtOf(game)
     if court is None:
         return None
@@ -415,15 +426,22 @@ def dropHeld(game, position, dweller):
 
 def census(game):
     """How many of each kind of unit this floor has, how many enemies of the city are on it, and what its storehouse
-    chests hold ({"guard", "citizen", "carrier", "miner", "farmer", "enemies", "stock", "food"})."""
-    counts = dict.fromkeys(("guard", "citizen", "carrier", "miner", "farmer", "enemies"), 0)
+    chests hold ({"guard", "citizen", "carrier", "miner", "farmer", "enemies", "stock", "food"}); and for a farm,
+    its "grubs", "keepers", "growers" and "fieldTiles"."""
+    counts = dict.fromkeys(("guard", "citizen", "carrier", "miner", "farmer", "enemies", "grubs", "keepers", "growers"), 0)
+    counts["fieldTiles"] = 0
     for _, unit in occupancy.allUnits(game):
         if dwellers.isCityEnemy(unit):
             counts["enemies"] += 1
             continue
+        if getattr(unit, "role", None) == "grub":
+            counts["grubs"] += 1
         kind = jobOf(unit)
         if kind in counts:
             counts[kind] += 1
+        if kind == "farmer" and unit.work == "farm":
+            counts["keepers" if dwellerfarming.roleOf(unit) == "keeper" else "growers"] += 1
+            counts["fieldTiles"] = max(counts["fieldTiles"], len(getattr(unit, "fields", {}) or {}))
     chests = [game.grid[spot][2] for spot in dwellerwork.storageChests(game)]
     counts["stock"] = sum(getattr(thing, "amount", 0) for chest in chests for thing in chest)
     counts["food"] = sum(getattr(thing, "amount", 0) for chest in chests for thing in chest
@@ -448,7 +466,63 @@ def recordCensus(game):
     records = game.__dict__.setdefault("workCensus", {})
     if key not in records or game.turnCount % CENSUS_TURNS == 0:
         records[key] = census(game)
+        worker = next((unit for _, unit in dwellers.cityDwellers(game) if getattr(unit, "work", None) in ("mine", "farm")), None)
+        if worker is not None:  # (what its workers share, for a newcomer when none are left: joinWorks)
+            shared = {name: getattr(worker, name) for name in ("plans", "fields", "pens", "farmhouses") if hasattr(worker, name)}
+            sharedOf(game)[key] = shared
 
+
+def sharedOf(game):
+    """{works floor key: what its workers share (plans, fields, pens, farmhouses)} (saved with the game)."""
+    if getattr(game, "workShared", None) is None:
+        game.workShared = {}
+    return game.workShared
+
+
+# ---------------------------------------------------------------- farm hands
+
+def farmersWanted(record):
+    """How many farmers a farm needs, from its census: a keeper for every KEEPER_HERD grubs and a grower for every
+    FIELD_TILES_PER_GROWER field tiles, at least one of each."""
+    keepers = max(1, math.ceil(record.get("grubs", 0) / dwellerfarming.KEEPER_HERD))
+    growers = max(1, math.ceil(record.get("fieldTiles", 0) / dwellerfarming.FIELD_TILES_PER_GROWER))
+    return keepers + growers
+
+
+def idleCitizen(unit):
+    """A citizen with nothing else to do: no work, not on its way to any, calm, not carrying or fetching an egg,
+    not following you."""
+    return getattr(unit, "role", None) == "citizen" and unit.work is None and not getattr(unit, "joining", None) \
+        and not unit.hostile and not followers.isFollower(unit) and getattr(unit, "heldEgg", None) is None \
+        and getattr(unit, "eggTarget", None) is None
+
+
+def sendFarmHands(game):
+    """Every CENSUS_TURNS turns in a city: if its farm is short of farmers (see the top of this file), one idle
+    citizen sets off down to it. Returns who was sent, or None."""
+    if game.turnCount % CENSUS_TURNS != 0:
+        return None
+    records = getattr(game, "workCensus", {})
+    for shaft in shaftsHere(game, "farm"):
+        key = (game.level, shaft)
+        record = records.get(key)
+        if record is None:
+            continue
+        units = dwellers.cityDwellers(game)
+        onTheWay = sum(1 for _, unit in units if getattr(unit, "joining", None) == "farm")
+        onTheWay += sum(1 for unit, _ in livingfloors.arrivals(game).get(key, []) if getattr(unit, "joining", None) == "farm")
+        if record["farmer"] + onTheWay >= farmersWanted(record):
+            continue
+        idle = [(spot, unit) for spot, unit in units if idleCitizen(unit)]
+        citizens = sum(1 for _, unit in units if getattr(unit, "role", None) == "citizen" and unit.work is None
+                       and not followers.isFollower(unit))
+        if not idle or citizens <= CITY_CITIZENS_KEPT:
+            continue
+        spot, citizen = min(idle, key=lambda found: dwellers.distance(game, found[0], shaft))
+        citizen.joining = "farm"
+        citizen.goal = None
+        return citizen
+    return None
 
 def needScores(counts, wanted):
     """{kind: score} from counts (what the city has, its works floors included: census) and wanted (what it wants).
@@ -538,22 +612,29 @@ def joinTurn(game, position, hatchling):
 
 
 def joinWorks(game, position, hatchling):
-    """A hatchling arriving on its works floor becomes one of its workers: what they share (plans, and on a farm
-    its fields, pens and farmhouses) it shares, its home is theirs, and a farmer keeps the grubs or grows crops,
-    whichever there are fewer of."""
+    """A newcomer (a hatchling, or a citizen sent to help) arriving on its works floor becomes one of its workers:
+    what they share (plans, and on a farm its fields, pens and farmhouses) it shares (from the last census, if none
+    are left: game.workShared), and its home is theirs. On a farm it keeps the grubs if they need more keepers (one
+    for every KEEPER_HERD), or else grows crops."""
     kind = hatchling.joining
     workers = [unit for _, unit in dwellers.cityDwellers(game) if getattr(unit, "work", None) == kind]
     hatchling.joining = None
     hatchling.work = kind
     hatchling.farWalk = False
-    if not workers:
-        hatchling.home, hatchling.plans = position, []
-        return
-    peer = workers[0]
-    hatchling.home = peer.home
-    hatchling.plans = peer.plans
+    shared = {name: getattr(workers[0], name) for name in ("plans", "fields", "pens", "farmhouses") if hasattr(workers[0], name)} \
+        if workers else sharedOf(game).get(mineshafts.floorKey(game), {})
+    hatchling.home = workers[0].home if workers else position
+    hatchling.plans = shared.get("plans", [])
     if kind == "farm":
-        hatchling.fields, hatchling.pens = peer.fields, peer.pens
-        hatchling.farmhouses = getattr(peer, "farmhouses", [])
+        hatchling.fields = shared.get("fields", {})
+        hatchling.pens = shared.get("pens", [])
+        hatchling.farmhouses = shared.get("farmhouses", [])
         keepers = sum(1 for unit in workers if dwellerfarming.roleOf(unit) == "keeper")
-        hatchling.farmRole = "keeper" if keepers <= len(workers) - keepers else "grower"
+        grubs = sum(1 for _, unit in dwellers.cityDwellers(game) if getattr(unit, "role", None) == "grub")
+        keepersWanted = max(1, math.ceil(grubs / dwellerfarming.KEEPER_HERD))
+        hatchling.farmRole = "keeper" if keepers < keepersWanted else "grower"
+    record = getattr(game, "workCensus", {}).get(mineshafts.floorKey(game))
+    if record is not None:  # (counted at once, so the city doesn't send another before the next census)
+        record[jobOf(hatchling)] = record.get(jobOf(hatchling), 0) + 1
+        if kind == "farm":
+            record[hatchling.farmRole + "s"] = record.get(hatchling.farmRole + "s", 0) + 1
