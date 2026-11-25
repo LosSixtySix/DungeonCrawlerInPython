@@ -1,5 +1,6 @@
 import pygame
 import random as rand
+from cruel.world import bodies
 from cruel.world import connectingEmptyRooms
 from cruel.entities import playerClass
 from cruel.inventory import items
@@ -383,6 +384,7 @@ class gameManager():
         self.addUnsealed = False
         self.unsealedKills = 0         # Unsealed you killed on this floor (relics.SEALED_PATTERN_KILLS of them seals it)
         self.unsealedBanished = False  # you did: they all died and no more come on this floor
+        self.worldTurn = 0             # every turn of the run, saved: the clock dead bodies rot by (bodies.py)
 
         self.resetSession()
         self.messageBools["escapeMessage"] = True
@@ -795,6 +797,8 @@ class gameManager():
     # ---------------------------------------------------------------- windows
 
     def openWindow(self, windowId):
+        if windowId == "items":
+            self.searchBody()
         if windowId == "items" and self.takePileGold():  # the pile was only gold: nothing left to show
             return
         if windowId not in self.openWindows:
@@ -1005,6 +1009,10 @@ class gameManager():
         ground[2].gold = 0
         if ground[2].items:
             return False
+        if bodies.isBody(ground[2]):  # a body stays, emptied
+            self.roomItems = None
+            self.change = True
+            return True
         self.setGround(spot, [0, ground[1]])
         self.roomItems = None
         self.change = True
@@ -1904,8 +1912,7 @@ class gameManager():
             del occupancy.sharedTiles(self)[position]  # the second unit on the space dies; the first stays
             stacks, gold = (self.killLoot(unit, position), 0) if killer == "player" else self.spillPockets(unit, killer)
             stacks = list(stacks) + list(getattr(unit, "loot", []))
-            if stacks or gold:
-                self.placeItems(position, stacks, gold)
+            self.leaveBody(position, unit, stacks, gold)
             dewgrubs.dropHeld(self, position, unit)
             queen.dropHeld(self, position, unit)
             self.countUnsealedKill(unit, killer)
@@ -1933,8 +1940,7 @@ class gameManager():
         if cityshops.isMerchant(enemy):  # a city merchant's stock stays in its shop, in a chest where it stood
             cityshops.leaveStock(self, enemy, position)
         occupancy.promote(self, position)  # a second unit on the space takes its place
-        if stacks or gold:
-            self.placeItems(position, stacks, gold)
+        self.leaveBody(position, enemy, stacks, gold)
         dewgrubs.dropHeld(self, position, enemy)  # a farmer carrying a Dew Grub drops it
         queen.dropHeld(self, position, enemy)  # (and a citizen carrying one of the Queen's eggs)
         self.countUnsealedKill(enemy, killer)
@@ -1986,6 +1992,107 @@ class gameManager():
                 self.grid[position] = [3, tile[1], [relics.make("sealed_pattern")]]
                 return position
         return None
+
+    # ------------------------------------------------------------ dead bodies (bodies.py)
+
+    def leaveBody(self, position, unit, stacks, gold):
+        """unit died at position: it leaves its body there with its loot on it (instead of an item pile). A plain pile
+        already there is gathered into the body; if the ground holds something a body can't lie on (a chest, a
+        plant, another body, a wall it burrowed into), the body lies on the nearest bare floor instead. What doesn't
+        fit on the body spills like any pile."""
+        spot = next((p for p in self.spillOrder(position) if self.canHoldBody(self.groundAt(p))), None)
+        if spot is not None:
+            self.layBody(spot, bodies.Body(getattr(unit, "name", ""), self.worldTurn))
+        if stacks or gold:
+            self.placeItems(spot if spot is not None else position, stacks, gold)
+
+    def layBody(self, spot, body):
+        """Puts body on spot (bare floor or a plain pile, which it gathers up: its items and gold go on the body)."""
+        ground = self.groundAt(spot)
+        if ground[0] == 9:
+            body.items = ground[2].items + body.items
+            body.gold += ground[2].gold
+        self.setGround(spot, [9, ground[1], body])
+        self.change = True
+
+    def buryUnderPlant(self, spot, plantTile):
+        """A plant sprouts where a body lies (Overgrowth killed what was there): the body stays under it, drawn beneath
+        the plant, until the plant is gone (uncoverBodies)."""
+        body = self.bodyAt(spot)
+        if body is not None:
+            plantTile[2].bodyUnder = body
+            self.plantBodiesHere()[spot] = body
+
+    def plantBodiesHere(self):
+        """{spot: body} for the bodies under plants on this floor. Kept for the floor you're on, and found again by
+        looking at its plants when you come to it (or load a game)."""
+        cache = self.__dict__.setdefault("plantBodies", {"grid": None, "bodies": {}})
+        if cache["grid"] is not self.grid:
+            cache["grid"], cache["bodies"] = self.grid, {}
+            for spot in self.grid:
+                ground = self.groundAt(spot)
+                if ground[0] == 8 and len(ground) > 2 and bodies.bodyUnder(ground[2]) is not None:
+                    cache["bodies"][spot] = bodies.bodyUnder(ground[2])
+        return cache["bodies"]
+
+    def uncoverBodies(self):
+        """A plant with a body under it is gone (picked, burnt, pulled up...): the body lies there again, with what was
+        on it. If something else is on the tile now, it lies on the nearest floor that can hold it."""
+        underPlants = self.plantBodiesHere()
+        for spot, body in list(underPlants.items()):
+            ground = self.groundAt(spot)
+            if ground[0] == 8 and len(ground) > 2 and bodies.bodyUnder(ground[2]) is body:
+                continue
+            del underPlants[spot]
+            target = next((p for p in self.spillOrder(spot) if self.canHoldBody(self.groundAt(p))), None)
+            if target is not None:
+                self.layBody(target, body)
+            elif body.items or body.gold:
+                self.placeItems(spot, body.items, body.gold)
+
+    @staticmethod
+    def canHoldBody(ground):
+        """A body can lie on bare floor, or on a plain item pile (it gathers the pile up)."""
+        return ground[0] == 0 or (ground[0] == 9 and not bodies.isBody(ground[2]))
+
+    def bodyAt(self, position):
+        ground = self.groundAt(position)
+        return ground[2] if ground[0] == 9 and bodies.isBody(ground[2]) else None
+
+    def searchBody(self):
+        """Opening Items Here on a body rolls it over (the first time): onto its side or its back."""
+        spot = self.itemsSpot()
+        body = self.bodyAt(spot) if spot is not None else None
+        if body is not None and body.rollOver(pygame.time.get_ticks()):
+            self.change = True
+
+    def stepBodies(self):
+        """Bodies that have decayed all the way (bodies.DECAY_TURNS) are gone, leaving an item pile: their bones
+        (bodies.REMAINS) and anything still on them."""
+        spots = [p for p, tile in self.grid.items() if tile[0] in (1, 9) and len(tile) > 2 and bodies.isBody(tile[2])]
+        spots += [p for p, ground in self.enemyOccupiedItemSpaces.items() if ground[0] == 9 and bodies.isBody(ground[2])]
+        underPlants = self.plantBodiesHere()
+        for spot, body in list(underPlants.items()):  # (one under a plant: the plant stays, its pile lies beside it)
+            if body.decayed(self.worldTurn):
+                ground = self.groundAt(spot)
+                if ground[0] == 8 and bodies.bodyUnder(ground[2]) is body:
+                    ground[2].bodyUnder = None
+                del underPlants[spot]
+                self.placeItems(spot, bodies.remains(body), body.gold)
+        for spot in spots:
+            body = self.bodyAt(spot)
+            if body is None or not body.decayed(self.worldTurn):
+                continue
+            ground = self.groundAt(spot)
+            self.setGround(spot, [9, ground[1], items.ItemPile(bodies.remains(body), gold=body.gold)])
+            self.change = True
+
+    def rollingBody(self):
+        """True while a body you just searched is rolling over (so the screen keeps animating). You search the one
+        you stand on or face, so only those are checked."""
+        now = pygame.time.get_ticks()
+        spots = [p for p in [self.playerPositionFlat] + self.neighbors(self.playerPositionFlat) if p in self.grid]
+        return any(body is not None and body.rolling(now) for body in (self.bodyAt(p) for p in spots))
 
     def carriedShare(self):
         """The share of an enemy's pocketed materials you get back when you kill it."""
@@ -2132,7 +2239,7 @@ class gameManager():
         if len(self.roomItems) == 0:
             spot = self.itemsSpot()
             ground = self.groundAt(spot)
-            if not (len(ground) > 2 and isinstance(ground[2], (expansion.CampChest, items.StorageChest))):  # a goblin chest or storehouse chest stays, empty
+            if not (len(ground) > 2 and isinstance(ground[2], (expansion.CampChest, items.StorageChest, bodies.Body))):  # a goblin chest, storehouse chest or body stays, empty
                 self.setGround(spot, [0, ground[1]])
             self.roomItems = None
             self.closeWindow("items")
@@ -2599,6 +2706,8 @@ class gameManager():
             self.currentPosition = "Scorched Door"
         elif self.currentLocation[0] == 3:
             self.currentPosition = "Items" if len(self.currentLocation[2]) > 1 else "Item"
+        elif self.currentLocation[0] == 9 and bodies.isBody(self.currentLocation[2]):
+            self.currentPosition = bodies.describe(self.currentLocation[2], self.worldTurn)
         elif self.currentLocation[0] == 9:
             self.currentPosition = "Item pile"
         elif self.currentLocation[0] == 8:
@@ -3658,8 +3767,10 @@ class gameManager():
             tile = self.grid[spot]
             if tile[0] == 5 and len(tile) > 2:
                 if not self.isBig(tile[2]):
+                    self.buryUnderPlant(spot, plantTile)  # (one that died here while another still stands on it)
                     self.enemyOccupiedItemSpaces[spot] = plantTile
-            elif tile[0] == 0:
+            elif tile[0] == 0 or (tile[0] == 9 and bodies.isBody(tile[2])):
+                self.buryUnderPlant(spot, plantTile)  # the body of what it killed lies under it
                 self.grid[spot] = plantTile
         self.change = True
 
@@ -3873,6 +3984,8 @@ class gameManager():
         land at once (its landing tile shows a little burst)."""
         if any(shot["effect"] == "Pitch" for shot in self.inFlight):  # a Pitch Bolt hanging in the air keeps spinning
             return True
+        if self.rollingBody():
+            return True
         if self.explosions or self.spurts or self.flecks or any(self.grid[p][1] == 1 for p in self.fires) \
                 or any(self.grid[p][1] == 1 for p in expansion.bonfires(self)):
             return True
@@ -4039,6 +4152,9 @@ class gameManager():
 
     def enemyTurn(self):
         self.turnCount += 1
+        self.worldTurn = getattr(self, "worldTurn", 0) + 1
+        self.uncoverBodies()
+        self.stepBodies()
         self.player.stepWard()
         livingfloors.arrive(self)
         followers.stepConvert(self)  # (before they move: one beside you as you end your turn)
@@ -4404,6 +4520,7 @@ class gameManager():
             "addUnsealed": self.addUnsealed,
             "unsealedKills": self.unsealedKills,
             "unsealedBanished": self.unsealedBanished,
+            "worldTurn": self.worldTurn,
             "floorEvents": self.floorEvents,
             "motherlodes": self.motherlodes,
             "camps": self.camps,
@@ -4483,6 +4600,7 @@ class gameManager():
             self.addUnsealed = data["addUnsealed"]
             self.unsealedKills = data.get("unsealedKills", 0)  # (saves from before the Sealed Pattern)
             self.unsealedBanished = data.get("unsealedBanished", False)
+            self.worldTurn = data.get("worldTurn", 0)  # (saves from before dead bodies)
 
             self.LoadLevel(self.level)
             return True
@@ -4991,7 +5109,7 @@ class gameManager():
             darkSight=getattr(self, "darkSight", set()), sharedTiles=occupancy.sharedTiles(self),
             wallLamps=metropolis.wallLampsHere(self),
             memoryFade=self.memoryShades(), memoryFalloff=(FORGET_DISTANCE, FORGET_CURVE, DOOR_SHADE_MOST),
-            popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(),
+            popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(), worldTurn=self.worldTurn,
             smoke=self.smoke, zoom=self.settings.mapZoom,
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
@@ -5093,6 +5211,7 @@ class gameManager():
                 self.overlayChange = True
 
             if self.change:
+                self.uncoverBodies()  # (a plant with a body under it was just picked or burnt: it shows at once)
                 self.setLookPosition()
                 self.roomItems = self.getItemsFromGrid()
                 self.setPositionsVisible()

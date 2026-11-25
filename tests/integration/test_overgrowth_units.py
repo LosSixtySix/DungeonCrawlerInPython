@@ -77,6 +77,9 @@ class SproutingTests(UnitTest):
         self.sproutOn([spot])
         self.assertEqual(self.game.grid[spot][0], PLANT)
         self.assertNotIn(spot, self.game.EnemyPositions)
+        game = self.game
+        self.assertEqual(game.grid[spot][2].bodyUnder.unitName, "Goblin", "its body lies under the plant")
+        self.assertEqual([p for p in game.grid if game.bodyAt(p) is not None], [], "and nowhere else")
 
     def test_two_sharing_a_space_are_both_hurt(self):
         first, second = enemies.DwellerCitizen(), enemies.DwellerCitizen()
