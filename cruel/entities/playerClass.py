@@ -25,6 +25,7 @@ CLEAN_DODGE_BASE = 0.05
 FOOTWORK_CLEAN_DODGE = 0.20   # Quickstep Skewers (fed_footwork)
 
 POTION_STACK = "PotionStack"  # Etype of a Potion Belt: its bonus is how many of one potion share an inventory slot
+GLOW_POUCH = "GlowPouch"  # Etype of a Glowrock Pouch: carried in one slot, its bonus is how many Glowrocks it holds
 
 
 def isPotion(item):
@@ -35,6 +36,24 @@ def isPotion(item):
 def countOf(item):
     """How many potions an inventory slot holds (1 for anything that isn't a stack)."""
     return getattr(item, "count", 1)
+
+
+def isGlowPouch(item):
+    return item != "None" and getattr(item, "Etype", None) == GLOW_POUCH
+
+
+def rocksIn(pouch):
+    """The Glowrocks inside a Glowrock Pouch, one item each."""
+    if not hasattr(pouch, "rocks"):
+        pouch.rocks = []
+    return pouch.rocks
+
+
+def slotLabel(item):
+    """An inventory slot's name: a stack shows its count ("x3"), a Glowrock Pouch how full it is ("(4/10)")."""
+    if isGlowPouch(item):
+        return f"{item.name} ({len(rocksIn(item))}/{item.bonus})"
+    return item.name + (f" x{countOf(item)}" if countOf(item) > 1 else "")
 
 
 def sameStack(a, b):
@@ -410,8 +429,22 @@ class PlayerClass():
         self.gold += amount 
 
     def addItemToInventory(self,item):
-        """Puts an item in the inventory: a potion goes onto a stack of the same potion if one has room (see
-        potionStackLimit), anything else into a free slot. Returns False if there's no room."""
+        """Puts an item in the inventory: a Glowrock goes in a Glowrock Pouch with room first, a potion onto a
+        stack of the same potion if one has room (see potionStackLimit), anything else into a free slot. A
+        Glowrock Pouch coming in gathers up the loose Glowrocks. Returns False if there's no room."""
+        if items.isGlowrock(item):
+            pouch = self.glowPouchWithRoom()
+            if pouch is not None:
+                one = copy.copy(item)
+                one.count = 1
+                rocksIn(pouch).append(one)
+                return True
+        if isGlowPouch(item):
+            if len(self.inventory) >= self.inventoryLimit:
+                return False
+            self.inventory.append(item)
+            self.gatherGlowrocks(item)
+            return True
         if isPotion(item):
             limit = self.potionStackLimit()
             for held in self.inventory:
@@ -425,6 +458,39 @@ class PlayerClass():
             return True
         return False
 
+    def glowPouchWithRoom(self):
+        """The first Glowrock Pouch in the inventory that can take another Glowrock, or None."""
+        return next((held for held in self.inventory if isGlowPouch(held) and len(rocksIn(held)) < held.bonus), None)
+
+    def gatherGlowrocks(self, pouch):
+        """Moves loose Glowrocks from the inventory into this pouch until it's full, freeing their slots."""
+        rocks = rocksIn(pouch)
+        index = 0
+        while index < len(self.inventory) and len(rocks) < pouch.bonus:
+            if items.isGlowrock(self.inventory[index]):
+                emptied = countOf(self.inventory[index]) == 1
+                rocks.append(self.takeOne(index))
+                rocks[-1].count = 1
+                if emptied:
+                    continue  # (the next slot moved up into this index)
+            else:
+                index += 1
+
+    def glowrockCount(self):
+        """Every Glowrock you carry: loose in the inventory and in Glowrock Pouches."""
+        return sum(countOf(held) for held in self.inventory if items.isGlowrock(held)) +             sum(len(rocksIn(held)) for held in self.inventory if isGlowPouch(held))
+
+    def takeGlowrock(self):
+        """Takes one Glowrock to set down: out of a Glowrock Pouch if one holds any, otherwise a loose one.
+        None if you have none."""
+        for held in self.inventory:
+            if isGlowPouch(held) and rocksIn(held):
+                return rocksIn(held).pop()
+        for index, held in enumerate(self.inventory):
+            if items.isGlowrock(held):
+                return self.takeOne(index)
+        return None
+
     def potionStackLimit(self):
         """How many of the same potion fit in one inventory slot: 1, or a worn Potion Belt's bonus."""
         return max([1] + [item.bonus for item in self.equipment.values() if item != "None" and item.Etype == POTION_STACK])
@@ -432,10 +498,11 @@ class PlayerClass():
     def roomFor(self, item):
         """How many more of this item the inventory could take (stacks with room count for potions)."""
         free = max(0, self.inventoryLimit - len(self.inventory))
+        pouchRoom = sum(held.bonus - len(rocksIn(held)) for held in self.inventory if isGlowPouch(held))             if items.isGlowrock(item) else 0
         if not isPotion(item):
             return free
         limit = self.potionStackLimit()
-        return free * limit + sum(limit - countOf(held) for held in self.inventory if sameStack(held, item) and countOf(held) < limit)
+        return pouchRoom + free * limit +             sum(limit - countOf(held) for held in self.inventory if sameStack(held, item) and countOf(held) < limit)
 
     def takeOne(self, index):
         """Takes one item out of inventory slot index: one potion off a stack, or the whole slot otherwise."""

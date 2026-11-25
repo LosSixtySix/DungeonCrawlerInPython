@@ -572,6 +572,8 @@ class gameManager():
             self.onDirectionKey(*move)
         elif self.isAction(key, "wait"):  # (last: a key you'd bound to something else before Wait came keeps doing that)
             self.waitTurn()
+        elif self.isAction(key, "drop_glowrock"):  # (last too, for the same reason)
+            self.dropGlowrock()
 
     def waitTurn(self):
         """The Wait hotkey (Space): you do nothing, and it spends your action like a step would, so the world
@@ -860,6 +862,8 @@ class gameManager():
                     self.startThrow(index)
                 elif items.isGlowrock(item):
                     self.dropFocusedItem()  # set it down at your feet, where it glows
+                elif playerClass.isGlowPouch(item):
+                    self.dropGlowrock()  # one out of the pouch
                 elif item.Etype == "Consume":
                     self.useConsumable(index)
                 elif self.player.slotsFor(item) and self.player.freeSlotFor(item) is None:
@@ -930,6 +934,22 @@ class gameManager():
         if spilled:
             self.addPopup(f"{len(spilled)} spilled", self.playerPositionFlat)
         self.addPopup(f"Dropped {item.name}", spot)
+        self.change = True
+
+    def dropGlowrock(self):
+        """The Drop Glowrock hotkey (G): sets one Glowrock down at your feet (or the nearest tile with room), out of
+        a Glowrock Pouch if you have one with any in it, otherwise a loose one. A free action, like any drop."""
+        player = self.player
+        if not player.glowrockCount():
+            self.addPopup("No Glowrock to drop", self.playerPositionFlat)
+            return
+        if not any(self.roomFor(self.groundAt(p)) for p in self.spillOrder(self.playerPositionFlat)):
+            self.addPopup("No room to drop it", self.playerPositionFlat)
+            return
+        rock = player.takeGlowrock()
+        self.fitSelections()
+        spot = self.placeItems(self.playerPositionFlat, [rock])[0]
+        self.addPopup(f"Dropped {rock.name}", spot)
         self.change = True
 
     # -------------------------------------------------------------- item piles
@@ -4488,8 +4508,7 @@ class gameManager():
             self.shopSpec(spec)
         elif windowId == "inventory":
             spec["kind"] = "grid"
-            spec["items"] = [item.name + (f" x{playerClass.countOf(item)}" if playerClass.countOf(item) > 1 else "")
-                             for item in player.inventory]
+            spec["items"] = [playerClass.slotLabel(item) for item in player.inventory]
             spec["capacity"] = player.inventoryLimit
             self.fitSelections()
             spec["visibleRows"] = INVENTORY_ROWS
@@ -4586,8 +4605,7 @@ class gameManager():
             return ware.name, str(ware.price), ware.price > player.gold
         if kind == "item":
             item = player.inventory[which]
-            count = playerClass.countOf(item)
-            return item.name + (f" x{count}" if count > 1 else ""), str(peddler.offerFor(item)), False
+            return playerClass.slotLabel(item), str(peddler.offerFor(item)), False
         have = player.materials.get(which, 0)
         gold, _ = peddler.offerForMaterial(have, cityshops.materialsPerGold(trader))
         return f"{resources.materialName(which)} x{have}", str(gold) if gold else "-", not gold
@@ -4657,6 +4675,10 @@ class gameManager():
             return [(self.STAT_NAMES[item.Etype], item.bonus)]
         return []
 
+    def dropGlowrockKey(self):
+        """The Drop Glowrock hotkey's name, for hints ("G")."""
+        return self.settings.keyName(self.settings.hotkeys["drop_glowrock"])
+
     def itemDetail(self, item):
         """The lines in the inventory's details panel for one item: what it is, its bonuses, its effects, and
         how it compares with what you have on."""
@@ -4679,8 +4701,15 @@ class gameManager():
                                   "even after you walk away. Pick it back up any time", ""))
             if player.potionStackLimit() > 1 or playerClass.countOf(item) > 1:
                 lines.append(("row", "In this stack", f"{playerClass.countOf(item)} / {player.potionStackLimit()}"))
-            lines.append(("hint", "Enter  set it down", ""))
+            lines.append(("hint", f"Enter or {self.dropGlowrockKey()}  set it down", ""))
             lines.append(("hint", "Ctrl+Enter  drop", ""))
+            return lines
+        if playerClass.isGlowPouch(item):
+            lines.append(("label", "GLOWROCK POUCH", ""))
+            lines.append(("body", "Carries Glowrocks in one slot. Glowrocks you make or pick up go in it first", ""))
+            lines.append(("row", "Glowrocks", f"{len(playerClass.rocksIn(item))} / {item.bonus}"))
+            lines.append(("hint", f"Enter or {self.dropGlowrockKey()}  set one down", ""))
+            lines.append(("hint", "Ctrl+Enter  drop the pouch", ""))
             return lines
         if item.Etype == "Consume":
             lines.append(("label", "POTION", ""))
