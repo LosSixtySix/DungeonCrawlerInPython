@@ -96,7 +96,7 @@ class PlayerClass():
         self.followers = []  # Dwellers that follow you (followers.py: won with the Pheromone Crown)
         self.pouchLimit = resources.POUCH_LIMIT  # how many of each material fit (the Leather Pouch raises it)
         self.pouchFullShown = {}  # material id -> times "pouch full" has shown since it filled (gameManager.give)
-        self.wardReady = True    # Warded Chainmail: the first hit on each floor does nothing
+        self.wardCooldown = 0    # Ward (Warded Chainmail): turns until it can block a hit again; 0 = ready
         self.burnTurns = 0       # turns of burning left (fire can set you alight; see gameManager.applyFire)
         self.buffs = {}          # effects from the meal you last ate: effect tag -> turns left (see eat and stepBuffs)
         self.potionEffects = {}  # effects from potions you drank: effect tag -> turns left (meals don't replace these)
@@ -292,6 +292,18 @@ class PlayerClass():
         self.equipment[slot] = "None"
         self.syncSlots()
         return item, self.overflow()
+
+    def wardCanBlock(self):
+        """True if you have Ward and it's ready: the next hit that lands does nothing."""
+        return self.hasEffect("ward") and getattr(self, "wardCooldown", 0) <= 0
+
+    def blockWithWard(self):
+        """Ward blocks a hit: it needs relics.WARD_RECHARGE_TURNS turns before it can block another."""
+        self.wardCooldown = relics.WARD_RECHARGE_TURNS
+
+    def stepWard(self):
+        """One turn passes: Ward recharges a turn."""
+        self.wardCooldown = max(0, getattr(self, "wardCooldown", 0) - 1)
 
     def addMaterial(self, materialId, amount):
         """Puts materials in the pouch, up to resources.POUCH_LIMIT of each. Returns how many fit."""
