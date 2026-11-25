@@ -4,6 +4,7 @@ traded with through the Peddler's shop window; signs by their doors; and a dead 
 Acceptance tests; the rest are in tests/unit/test_city_shops.py."""
 import random
 import unittest
+from unittest import mock
 import pygame
 from cruel.entities import enemies
 from cruel.inventory import items
@@ -135,6 +136,32 @@ class ShopWindowTests(unittest.TestCase):
 
     def test_looking_at_a_merchant_names_its_shop(self):
         self.assertEqual(self.game.lookingAt(), "Dweller Merchant (Ore Exchange)")
+
+    def test_with_nothing_to_sell_the_message_is_beside_the_buy_and_sell_tabs(self):
+        game = self.game
+        game.player.materials = {}
+        game.onInteract()
+        game.toggleShopTab()
+        emptyText = game.windowSpec("shop")["emptyText"]
+        self.assertEqual(game.windowSpec("shop")["slots"], [], "nothing to sell")
+        drawn = []
+        original = game.painter.blitText
+
+        def recordText(surface, message, font, color, x, centerY, align="left"):
+            drawn.append((str(message), x, centerY))
+            return original(surface, message, font, color, x, centerY, align)
+
+        with mock.patch.object(game.painter, "blitText", side_effect=recordText):
+            game.change = True
+            game.draw()
+        sellTab = next((x, centerY) for message, x, centerY in drawn if message == "Sell")
+        messages = [(x, centerY) for message, x, centerY in drawn if message == emptyText]
+        beside = [(x, centerY) for x, centerY in messages if centerY == sellTab[1]]
+        self.assertTrue(beside, "on the tabs' row")
+        self.assertGreater(beside[0][0], sellTab[0] + game.painter.windowSmallFont.size("Sell")[0], "to the right of them")
+        buyTabX = next(x for message, x, centerY in drawn if message == "Buy")
+        slotsRight = buyTabX + 5 * game.painter.BOX_W  # (the slots start under the Buy tab)
+        self.assertFalse([x for x, centerY in messages if centerY != sellTab[1] and x < slotsRight], "not over the empty slots")
 
 
 class ShopSignTests(unittest.TestCase):
