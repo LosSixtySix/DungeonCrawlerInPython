@@ -30,7 +30,7 @@ FIRST_FLOOR = 1             # ...from this floor down (never on the Scorched Dep
 STOCK_SIZE = (6, 9)         # how many things he has
 QUALITY_ODDS = [("Common", 75), ("Fine", 20), ("Masterwork", 5)]  # gear quality, in percent
 RELIC_CHANCE = 0.05         # chance one of his things is a relic
-NEVER_SOLD_RELICS = {"molten_blade"}  # relics you only get by a path (the Scorched Depths), never from him
+NEVER_SOLD_RELICS = {"molten_blade"} | relics.PATH_ONLY_RELICS  # relics you only get by a path (the Scorched Depths), never from him
 NEVER_SOLD_STATIONS = {"shrine", "forge"}  # found in vaults, never made, so never sold
 
 # Prices

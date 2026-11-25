@@ -20,6 +20,7 @@ HOTKEY_ACTIONS = [
     ("interact", "Interact", pygame.K_e),
     ("wait", "Wait a Turn", pygame.K_SPACE),
     ("drop_glowrock", "Drop Glowrock", pygame.K_g),
+    ("pitch_bolt", "Pitch Bolt", pygame.K_f),
     ("cycle", "Cycle Windows", pygame.K_TAB),
     ("character", "Character", pygame.K_c),
     ("room", "Room Info", pygame.K_r),

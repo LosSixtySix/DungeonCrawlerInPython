@@ -23,6 +23,8 @@ def everyMapPicture():
     pictures += [(f"Pit {number}", rows, None) for number, rows in enumerate(sprites.PIT_STYLES)]
     pictures += [(f"Bonfire {number}", rows, sprites.BONFIRE_COLORS) for number, rows in enumerate(sprites.BONFIRE)]
     pictures += [(kind, rows, None) for kind, rows in sprites.PLANT_SPRITES.items()]
+    pictures += [(f"Pitch Bolt {number}", rows, sprites.PITCH_BOLT_COLORS) for number, rows in enumerate(sprites.PITCH_BOLT_FLIGHT)]
+    pictures += [(f"Pitch Hit {number}", rows, sprites.PITCH_BOLT_COLORS) for number, rows in enumerate(sprites.PITCH_BOLT_HIT)]
     return pictures
 
 
@@ -226,3 +228,33 @@ class PickerTests(unittest.TestCase):
 if __name__ == "__main__":
     pygame.init()
     unittest.main()
+
+
+class PitchBoltTests(unittest.TestCase):
+    """The Sealed Pattern's Pitch Bolt: a bullet-sized drop whose glint turns round it, then a three-frame hit."""
+
+    def test_in_flight_it_is_bullet_sized(self):
+        for rows in sprites.PITCH_BOLT_FLIGHT:
+            filled = [(x, y) for y, row in enumerate(rows) for x, letter in enumerate(row) if letter != "."]
+            width = max(x for x, _ in filled) - min(x for x, _ in filled) + 1
+            height = max(y for _, y in filled) - min(y for _, y in filled) + 1
+            self.assertLessEqual((width, height), (4, 4))
+
+    def test_the_glint_turns_round_it(self):
+        glints = [next((x, y) for y, row in enumerate(rows) for x, letter in enumerate(row) if letter == "s")
+                  for rows in sprites.PITCH_BOLT_FLIGHT]
+        self.assertEqual(len(set(glints)), 4, "a different corner each frame")
+
+    def test_no_seal_gold(self):
+        self.assertEqual(set(sprites.PITCH_BOLT_COLORS), {"p", "P", "s"})
+
+    def test_the_frames_follow_the_clock(self):
+        frameSeconds = sprites.PITCH_BOLT_FRAME_MS / 1000
+        self.assertEqual([sprites.pitchBoltFrame(step * frameSeconds + 0.001) for step in range(5)], [0, 1, 2, 3, 0])
+        self.assertEqual([sprites.pitchHitFrame(age) for age in (-0.5, 0, 0.4, 0.7, 1.0)], [0, 0, 1, 2, 2])
+
+    def test_they_are_built_for_every_theme(self):
+        pygame.init()
+        built = sprites.buildSprites(themes.randomTheme("Mixed").colors, 20)
+        self.assertEqual(len(built["pitchBolt"]), 4)
+        self.assertEqual(len(built["pitchHit"]), 3)

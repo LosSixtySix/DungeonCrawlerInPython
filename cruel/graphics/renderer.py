@@ -1360,9 +1360,12 @@ class renderer():
     def effectColor(self, effect):
         if effect == "Magic":
             return self.MAGIC_PURPLE
+        if effect == "Pitch":
+            return self.PITCH_SHEEN
         return self.color("enemy") if effect in ("Fire","Explosive") else self.color("font")
 
     FIRE_RED, FIRE_ORANGE, FIRE_YELLOW = (196, 48, 28), (240, 128, 40), (255, 222, 120)
+    PITCH_BLACK, PITCH_SHEEN = (24, 18, 30), (150, 120, 190)  # the Sealed Pattern's Pitch: black tar with a violet sheen
 
     def drawBlast(self, landing, area, effect, turns, alpha, time):
         """A potion's reach: the round splash tinted with its outer edge traced, the landing tile boxed, and how
@@ -1415,6 +1418,14 @@ class renderer():
                 d = reach * (0.4 + 0.75 * grow)
                 spot = (int(c + math.cos(angle) * d), int(c + math.sin(angle) * d))
                 pygame.draw.circle(surface, (*self.FIRE_YELLOW, fade), spot, max(1, int(reach / 10)))
+        elif effect == "Pitch":  # a splat of black tar with a violet sheen, and droplets flung out
+            pygame.draw.circle(surface, (*self.PITCH_BLACK, fade), (c, c), max(1, int(reach * 0.7 * grow)))
+            pygame.draw.circle(surface, (*self.PITCH_SHEEN, fade), (c, c), max(2, int(reach * 0.7 * grow)), width=max(1, int(reach / 8)))
+            for k in range(5):
+                angle = k * 2 * math.pi / 5 + 0.3
+                d = reach * (0.5 + 0.5 * grow)
+                spot = (int(c + math.cos(angle) * d), int(c + math.sin(angle) * d))
+                pygame.draw.circle(surface, (*self.PITCH_BLACK, fade), spot, max(1, int(reach / 7)))
         elif effect == "Magic":  # a ring of purple thorns bursting out from a pale flash
             pygame.draw.circle(surface, (*self.MAGIC_LIGHT, int(200 * (1 - age))), (c, c), max(1, int(reach * 0.6 * (1 - grow) + 1)))
             pygame.draw.circle(surface, (*self.MAGIC_PURPLE, fade), (c, c), max(2, int(reach * grow)), width=max(1, int(reach / 6)))
@@ -1559,9 +1570,19 @@ class renderer():
         for shot in throws["flying"]:
             self.drawBlast(shot["landing"], shot["area"], shot["effect"], shot["turns"], 40, time)
             rect = self.screenTile(shot["at"])  # the potion itself, partway along its arc
+            if shot["effect"] == "Pitch":
+                if not shot.get("gliding"):  # (a gliding one is drawn below, on its way)
+                    self.win.blit(self.sprites["pitchBolt"][sprites.pitchBoltFrame(time)], rect)
+                continue
             pygame.draw.circle(self.win, (0, 0, 0), rect.center, max(2, self.tileSize // 4) + 1)
             pygame.draw.circle(self.win, self.effectColor(shot["effect"]), rect.center, max(2, self.tileSize // 4))
+        for fromTile, toTile, progress in throws.get("glides", ()):
+            self.drawGlidingBolt(fromTile, toTile, progress, time)
         for landing, radius, effect, age in throws["explosions"]:
+            if effect == "Pitch":  # the bolt's own hit frames, once it has got there
+                if age >= 0:
+                    self.win.blit(self.sprites["pitchHit"][sprites.pitchHitFrame(age)], self.screenTile(landing))
+                continue
             self.drawBurst(self.screenTile(landing).center, (radius + 0.5) * self.tileSize, effect, age)
         self.drawParticles(throws.get("spurts", ()), throws.get("flecks", ()))
         aim = throws["aim"]
@@ -1569,6 +1590,13 @@ class renderer():
             self.drawBlast(aim["landing"], aim["area"], aim["effect"], aim["turns"], 70, time)
             if aim.get("target") not in (None, aim["landing"]):
                 self.drawAimCursor(aim["target"], aim["effect"])
+
+    def drawGlidingBolt(self, fromTile, toTile, progress, time):
+        """A Pitch Bolt progress (0 to 1) of the way from one tile to another, its glint turning as it goes."""
+        start, end = self.screenTile(fromTile), self.screenTile(toTile)
+        progress = max(0.0, min(1.0, progress))
+        spot = (round(start.x + (end.x - start.x) * progress), round(start.y + (end.y - start.y) * progress))
+        self.win.blit(self.sprites["pitchBolt"][sprites.pitchBoltFrame(time)], spot)
 
     def drawAimCursor(self, position, effect):
         """Where you're aiming, when the throw would land short of it (an enemy or a wall in the way): four corner

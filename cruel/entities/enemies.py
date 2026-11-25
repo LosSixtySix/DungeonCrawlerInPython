@@ -4,6 +4,7 @@ import random as rand
 
 CLEAN_DODGE_BASE = 0.05  # (the player's starts the same; see playerClass.CLEAN_DODGE_BASE)
 FAST = 1.25  # speed of the quick ones: Dire Rats, Goblin Chieftains and the Unsealed
+PITCH_RESIST_UNSEALED = 0.5  # share of Pitch damage the Unsealed shrug off
 
 
 class Enemy():
@@ -64,6 +65,7 @@ class Unsealed(Enemy):
         super().__init__(10, 3, FAST, 3, 3, "Unsealed", 25)
         self.allSight = True
         self.fireResistPercent = 0.8  # fire barely touches it
+        self.pitchResistPercent = PITCH_RESIST_UNSEALED  # Pitch is the seal's own stuff: half of it sticks
 
 
 class FireGiant(Enemy):

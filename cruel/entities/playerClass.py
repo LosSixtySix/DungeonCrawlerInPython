@@ -117,7 +117,16 @@ class PlayerClass():
     def getSpeed(self):
         """Actions each turn (a fraction builds up into an extra action now and then)."""
         return 1 + SPEED_PER_DEX_BONUS * self.attributeBonuses["dexterity"] + relics.LIGHTNING_SPEED * self.countEffect("lightning") \
-            + relics.PHEROMONE_SPEED * self.countEffect("pheromones")
+            + relics.PHEROMONE_SPEED * self.countEffect("pheromones") \
+            + relics.SEALED_PATTERN_SPEED * self.freeHands() * self.countEffect("sealed_pattern")
+
+    def freeHands(self):
+        """Hand slots with nothing in them (the Third Hand too, while you have it)."""
+        return sum(1 for slot in ("Right Hand", "Left Hand", EXTRA_HAND) if self.equipment.get(slot) == "None")
+
+    def pitchDamage(self):
+        """Pitch damage added to every hit: the Sealed Pattern's, for each free hand."""
+        return relics.SEALED_PATTERN_PITCH * self.freeHands() * self.countEffect("sealed_pattern")
 
     def evasion(self):
         """Chance (0..1) to evade an enemy's attack."""
@@ -209,6 +218,8 @@ class PlayerClass():
         ordered.update({slot: item for slot, item in equipment.items() if slot not in ordered})
         self.equipment = ordered
         self.inventoryLimit = BASE_INVENTORY + sum(storageOf(item) for item in ordered.values())
+        if self.hasEffect("sealed_pattern") and self.damageTaken >= self.getMaxHealth():
+            self.damageTaken = self.getMaxHealth() - 1  # the Sealed Pattern's lost health never kills you
 
     def sheds(self, item):
         """True if taking this item off takes room away with it: a Backpack (its row), the Vestigial Hand (its
@@ -569,6 +580,8 @@ class PlayerClass():
     def getMaxHealth(self):
         baseHealth = self.attributeBonuses["constitution"] + 10
         baseHealth += self.getequipmentBonus("Health") + 2 * self.countEffect("hardy")
+        if self.hasEffect("sealed_pattern"):
+            baseHealth = max(1, baseHealth - relics.SEALED_PATTERN_HEALTH * self.countEffect("sealed_pattern"))
         return baseHealth
 
     def getMinMaxDamage(self):
