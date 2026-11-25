@@ -29,6 +29,7 @@ from cruel.world import dewgrubs
 from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import queen
+from cruel.world import followers
 from cruel.world import cityshops
 from cruel.core import devconsole
 from cruel.core import updater
@@ -1726,6 +1727,9 @@ class gameManager():
             self.addPopup(f"Stuck in {stuck.name}! Ctrl+{self.interactKeyName()} to break free", self.playerPositionFlat)
             return
         targetLocation = self.grid[newPosition][0] if newPosition in self.grid else None
+        if followers.swapWithYou(self, newPosition):  # (into your follower: you swap places)
+            self.enemyMove = True
+            return
         if targetLocation == 8 and self.grid[newPosition][2].walkable:
             hidden = self.playerHidden()
             self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
@@ -1769,6 +1773,8 @@ class gameManager():
                     self.grid[self.playerPositionFlat] = copy.copy(self.currentLocation)
                     self.currentLocation = currentWall
                     self.playerPositionFlat = target
+        elif tile[0] == 5 and followers.isFollower(tile[2]) and not forceAttack:  # your follower: nothing (Shift hits it)
+            return
         elif tile[0] == 5 and cityshops.isTrader(tile[2]) and not forceAttack:  # the Gray Peddler or a city merchant: its shop
             self.openShop(target)
             return
@@ -2492,6 +2498,7 @@ class gameManager():
         self.messageBools["floorLevelMessage"] = True
         self.painter.fade = 255
         self.landFallen()
+        followers.bringAlong(self)  # (your followers come with you)
         livingfloors.dropUnreachable(self)  # on a new track, the floors above it are gone for good
 
     def PlacePreviousLevelDoor(self):
@@ -3845,8 +3852,10 @@ class gameManager():
     def enemyTurn(self):
         self.turnCount += 1
         livingfloors.arrive(self)
+        followers.stepConvert(self)  # (before they move: one beside you as you end your turn)
         self.MoveEnemies()
         queen.stepCourt(self)
+        followers.forgetTheDead(self)
         self.checkShop()
         expansion.stepCamp(self)
         self.searingLight()
