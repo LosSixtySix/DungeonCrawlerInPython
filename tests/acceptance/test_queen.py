@@ -5,6 +5,8 @@ import unittest
 from unittest import mock
 
 from cruel.graphics import renderer
+from cruel.world import dwellers
+from cruel.world import livingfloors
 from cruel.world import queen
 from tests import support
 from tests.helpers.metropolis import cityGame
@@ -50,6 +52,32 @@ class QueenInHerChamberTests(unittest.TestCase):
         game.enemyTurn()
         self.assertGreater(game.player.damageTaken, 0, "she hits back")
         self.assertEqual(queen.courtOf(game), (self.anchor, self.queen), "without moving")
+
+
+class HatchingCityTests(unittest.TestCase):
+    def test_a_fed_queen_lays_and_her_city_grows_by_a_clutch_of_hatchlings(self):
+        game = cityGame()
+        _, dwellerQueen = queen.courtOf(game)
+        for spot in game.grid:
+            game.grid[spot][1] = 1
+        def grownUp():
+            return [unit for _, unit in dwellers.cityDwellers(game) if not queen.isEgg(unit)]
+        before = len(grownUp())
+        dwellerQueen.dew = queen.DEW_TO_LAY
+        game.enemyTurn()
+        self.assertEqual(len(queen.waitingEggs(game)), queen.CLUTCH)
+        game.change = True
+        game.draw()  # (eggs on the map draw like any Dweller)
+        hatched = False
+        for _ in range(500):
+            game.enemyTurn()
+            eggsLeft = [unit for _, unit in dwellers.cityDwellers(game) if queen.isEgg(unit)] + queen.heldEggs(game)
+            if not eggsLeft:
+                hatched = True
+                break
+        self.assertTrue(hatched)
+        newcomers = len(grownUp()) - before + sum(len(waiting) for waiting in livingfloors.arrivals(game).values())
+        self.assertGreaterEqual(newcomers, queen.CLUTCH - 1, "the clutch hatched (one may already be off down a shaft)")
 
 
 if __name__ == "__main__":

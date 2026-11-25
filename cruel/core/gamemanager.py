@@ -1888,6 +1888,7 @@ class gameManager():
             if stacks or gold:
                 self.placeItems(position, stacks, gold)
             dewgrubs.dropHeld(self, position, unit)
+            queen.dropHeld(self, position, unit)
             return
         if self.isBig(self.grid[position][2]):  # a giant: clear its other tiles, then it dies at its anchor
             giant = self.grid[position][2]
@@ -1915,6 +1916,7 @@ class gameManager():
         if stacks or gold:
             self.placeItems(position, stacks, gold)
         dewgrubs.dropHeld(self, position, enemy)  # a farmer carrying a Dew Grub drops it
+        queen.dropHeld(self, position, enemy)  # (and a citizen carrying one of the Queen's eggs)
 
     def carriedShare(self):
         """The share of an enemy's pocketed materials you get back when you kill it."""

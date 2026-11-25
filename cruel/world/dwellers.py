@@ -6,6 +6,7 @@ from cruel.world import expansion
 from cruel.world import metropolis
 from cruel.world import occupancy
 from cruel.world import organizers
+from cruel.world import queen
 
 """
 The Metropolis's Dwellers at work (metropolis.py builds the city, enemies.Dweller and its four roles are the units).
@@ -90,8 +91,8 @@ def canStep(game, spot, throughPlants=False, unit=None):
 
 def canBeMoved(unit):
     """Can another Dweller move this one out of its way (nudgeAside, swapPast)? Not the Queen or anything else
-    bigger than a space, and not a Royal Pupa (it can't move)."""
-    return getattr(unit, "size", 1) == 1 and getattr(unit, "role", None) not in ("queen", "pupa")
+    bigger than a space, and not a Royal Pupa or an egg (they can't move: an egg is carried, queen.py)."""
+    return getattr(unit, "size", 1) == 1 and getattr(unit, "role", None) not in ("queen", "pupa", "egg")
 
 
 def nudgeAside(game, spot):
@@ -370,7 +371,7 @@ def takeTurn(game, position, dweller):
     """One action for the Dweller at position (already lifted off its tile). Returns where it ends up."""
     if dweller.role == "grub":  # livestock: it just shuffles about its pen (dwellerwork.py)
         return dwellerwork.grubTurn(game, position, dweller)
-    if dweller.role == "pupa":  # turning royal: it waits (queen.py)
+    if dweller.role in ("pupa", "egg"):  # it waits (queen.py)
         return position
     dealtWith = dealWithEnemies(game, position, dweller)
     if dealtWith is not None:
@@ -484,13 +485,20 @@ def calmTurn(game, position, dweller):
         worked = dwellerwork.workTurn(game, position, dweller)
         if worked is not None:
             return worked
+    elif dweller.role == "citizen":  # (off to a works floor it hatched for, or carrying the Queen's eggs: queen.py)
+        helped = queen.citizenTurn(game, position, dweller)
+        if helped is not None:
+            return helped
     if dweller.role == "merchant" or random.random() < IDLE_CHANCE:
         return position
     if dweller.goal is None or dweller.goal == position:
         dweller.goal = pickGoal(game, position, dweller)
     if dweller.goal is None:
         return position
-    newPosition = stepToward(game, position, dweller.goal, unit=dweller)
+    farWalk = getattr(dweller, "farWalk", False)  # (a hatchling going to its home or post across the city)
+    newPosition = stepToward(game, position, dweller.goal, unit=dweller, reach=FAR_PATH_REACH if farWalk else PATH_REACH)
     if newPosition == position:
         dweller.goal = None  # blocked: somewhere else next time
+    if farWalk and (dweller.goal is None or distance(game, newPosition, dweller.home) <= WANDER_REACH.get(dweller.role, 4)):
+        dweller.farWalk = False
     return newPosition

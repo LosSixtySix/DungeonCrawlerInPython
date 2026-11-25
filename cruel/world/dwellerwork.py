@@ -112,8 +112,20 @@ def walkTo(game, position, worker, goal, reach=None):
 # ---------------------------------------------------------------- taking things in
 
 def storageChests(game):
-    """Where this floor's storage chests are."""
-    return [spot for spot, tile in game.grid.items() if tile[0] == CHEST and len(tile) > 2 and isinstance(tile[2], items.StorageChest)]
+    """Where this floor's storage chests are. Looked for once a turn on each floor (farmers ask many times a turn):
+    one destroyed during the turn is left out at once, a storehouse built during it has its chests found next
+    turn."""
+    key = (game.level, getattr(game, "sideFloor", None), game.turnCount, id(game.grid))
+    cache = game.__dict__.setdefault("storageChestsFound", {})
+    if key not in cache:
+        if len(cache) > 16:
+            cache.clear()
+        cache[key] = [spot for spot, tile in game.grid.items() if isStorageChest(tile)]
+    return [spot for spot in cache[key] if isStorageChest(game.grid[spot])]
+
+
+def isStorageChest(tile):
+    return tile[0] == CHEST and len(tile) > 2 and isinstance(tile[2], items.StorageChest)
 
 
 def openStack(chest, materialId):

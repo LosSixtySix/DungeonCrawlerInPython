@@ -78,5 +78,67 @@ class LeashTests(unittest.TestCase):
         self.assertTrue(dwellers.withinLeash(game, guard, 60 + 10 * 100), "an ordinary guard has no leash")
 
 
+class EggTests(unittest.TestCase):
+    def test_an_egg_is_small_never_moves_and_is_carried(self):
+        egg = enemies.DwellerEgg({"nests": [5]})
+        self.assertEqual(occupancy.sizeOf(egg), occupancy.SMALL)
+        self.assertEqual((egg.hp, egg.damage, egg.nest, egg.hatchIn), (4, 0, None, None))
+        self.assertTrue(queen.isEgg(egg) and queen.takesTurn(egg))
+        self.assertFalse(dwellers.canBeMoved(egg))
+        self.assertEqual(egg.court, {"nests": [5]})
+
+    def test_its_picture(self):
+        rows, colors = sprites.ENEMY_SPRITES["Dweller Egg"]
+        self.assertEqual((len(rows), {len(row) for row in rows}), (10, {10}))
+
+
+class NeedTests(unittest.TestCase):
+    wanted = {"guard": 8, "citizen": 20, "carrier": 4, "miner": 8, "farmer": 8}
+
+    def counts(self, **changes):
+        counts = {"guard": 8, "citizen": 20, "carrier": 4, "miner": 8, "farmer": 8, "enemies": 0, "ore": 100, "food": 100}
+        counts.update(changes)
+        return counts
+
+    def best(self, counts):
+        scores = queen.needScores(counts, self.wanted)
+        return [kind for kind, score in scores.items() if score == max(scores.values()) and score > 0]
+
+    def test_with_nothing_short_nothing_is_needed(self):
+        self.assertEqual(self.best(self.counts()), [])
+        with mock.patch.object(queen, "cityCounts", lambda game: self.counts()):
+            self.assertEqual(queen.neediest(None, {"wanted": self.wanted}), "citizen")
+
+    def test_enemies_on_its_floors_make_guards_wanted(self):
+        self.assertEqual(self.best(self.counts(enemies=2, miner=6)), ["guard"])
+        scores = queen.needScores(self.counts(enemies=9), self.wanted)
+        self.assertEqual(scores["guard"], 1.5, "up to 3 enemies count")
+
+    def test_workers_are_wanted_more_when_their_chests_run_low(self):
+        plenty = queen.needScores(self.counts(miner=6, ore=queen.PLENTY), self.wanted)["miner"]
+        short = queen.needScores(self.counts(miner=6, ore=queen.PLENTY - 1), self.wanted)["miner"]
+        self.assertEqual((plenty, short), (0.25 * 0.5, 0.25 * 1.5))
+        self.assertEqual(self.best(self.counts(farmer=6, food=0, miner=6, ore=100)), ["farmer"])
+
+    def test_carriers_count_double_and_citizens_least(self):
+        scores = queen.needScores(self.counts(carrier=3, citizen=15, guard=6), self.wanted)
+        self.assertEqual((scores["carrier"], scores["guard"], scores["citizen"]), (0.5, 0.25, 0.25 * 0.8))
+
+    def test_a_tie_is_picked_at_random(self):
+        counts = self.counts(miner=4, farmer=4, ore=0, food=0)
+        with mock.patch.object(queen, "cityCounts", lambda game: counts):
+            picks = {queen.neediest(None, {"wanted": self.wanted}) for _ in range(40)}
+        self.assertEqual(picks, {"miner", "farmer"})
+
+
+class JobTests(unittest.TestCase):
+    def test_what_each_unit_counts_as(self):
+        carrier, miner, joining = enemies.DwellerCitizen(), enemies.DwellerCitizen(), enemies.DwellerCitizen()
+        carrier.work, miner.work, joining.joining = "dew", "mine", "farm"
+        self.assertEqual([queen.jobOf(unit) for unit in (carrier, miner, joining, enemies.DwellerCitizen(),
+                                                          enemies.DwellerGuard(), enemies.RoyalGuard(), enemies.Goblin())],
+                         ["carrier", "miner", "farmer", "citizen", "guard", None, None])
+
+
 if __name__ == "__main__":
     unittest.main()
