@@ -29,7 +29,12 @@ RELICS = {
     # Only ever in the chest at the middle of a Scorched Depths floor (not in CHEST_RELICS)
     "molten_blade": {"name": "Molten Blade", "slot": "Hands", "etype": "Damage", "bonus": 6, "power": "molten",
                      "scaling": ("strength", "intelligence")},
+    # Only ever in the chest that appears when you kill SEALED_PATTERN_KILLS Unsealed on one floor (not in CHEST_RELICS)
+    "sealed_pattern": {"name": "Sealed Pattern", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "sealed_pattern"},
 }
+
+# Relics that only come by their own path: never in a vault's chest, never sold by the Gray Peddler
+PATH_ONLY_RELICS = {"sealed_pattern"}
 
 # Relics that can be in a chest: (relic id, first floor, floor types it can appear on or None for any)
 CHEST_RELICS = [
@@ -51,6 +56,16 @@ MOLTEN_FIRE = 2              # Molten Blade: fire damage added to every hit...
 MOLTEN_IGNITE_CHANCE = 0.25  # ...and the chance that hit sets the enemy burning
 
 WARD_RECHARGE_TURNS = 10  # after Ward blocks a hit, the turns until it can block another
+
+# The Sealed Pattern. Kill SEALED_PATTERN_KILLS Unsealed on one floor and the rest die, no more come, and its chest
+# appears at the floor's center. Worn, it costs max health but each free hand gives speed and Pitch damage on every hit,
+# and the Pitch Bolt hotkey (F) fires a bolt of Pitch. Pitch is a damage type of its own: only an enemy's
+# pitchResistance (flat) and pitchResistPercent (0-1) take anything off it.
+SEALED_PATTERN_KILLS = 200
+SEALED_PATTERN_HEALTH = 15       # max health it takes away (your max health never goes below 1)
+SEALED_PATTERN_SPEED = 2         # speed for each free hand
+SEALED_PATTERN_PITCH = 5         # Pitch damage added to every hit, for each free hand
+PITCH_BOLT_DAMAGE = 5            # the Pitch Bolt's Pitch damage
 
 EFFECTS = {
     "burrow": ("Burrow", "Burrow through soft walls"),
@@ -74,6 +89,9 @@ EFFECTS = {
     "keen_eye": ("Keen Eye", "1 in 4 veins give an extra ore"),
     "extra_hand": ("Third Hand", "Grows another hand slot from your back"),
     "lightning": ("Lightning", f"+{LIGHTNING_SPEED} speed: more actions every turn"),
+    "sealed_pattern": ("Sealed Pattern", f"-{SEALED_PATTERN_HEALTH} max health (never below 1). Each free hand: "
+                       f"+{SEALED_PATTERN_SPEED} speed and +{SEALED_PATTERN_PITCH} Pitch damage on every hit. "
+                       f"Pitch Bolt (F): fire a bolt for {PITCH_BOLT_DAMAGE} Pitch damage"),
     "pheromones": ("Pheromones", f"+{PHEROMONE_SPEED} speed. Every Dweller is hostile to you while you wear it, but now and then one beside you becomes your follower"),
     # Potions you drink that last a number of turns (PlayerClass.potionEffects)
     "darkvision": ("Darkvision", f"See {DARKVISION_RANGE} tiles in the dark, by no light: enemies aren't drawn to it, and walls still block it"),
@@ -94,7 +112,7 @@ THORN_DAMAGE = 2  # Demise Stew's Thorn Blood: magic damage to whatever hits you
 SICK_TURNS = 8    # Demise Sickness: 1 HP lost this often
 
 # Powers that are the relic itself: the Gilded Forge can't rekindle them away (the Hand would be just a hand)
-BOUND_POWERS = {"extra_hand", "molten", "pheromones"}  # (the Molten Blade without its fire is just a blade)
+BOUND_POWERS = {"extra_hand", "molten", "pheromones", "sealed_pattern"}  # (the Molten Blade without its fire is just a blade)
 
 # Powers the Gilded Forge can give (not Burrow: that one is the Burrower's Amulet's alone)
 FORGE_POWERS = ["half_swings", "goblin_fear", "seal_ward", "lifedrinker", "far_sight", "gold_double"]

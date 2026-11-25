@@ -132,8 +132,9 @@ GLOW_RADIUS = 2.5
 GLOW_BRIGHTNESS = 0.5
 THROWN_EFFECTS = {"Fire", "Smoke", "Magic","Explosive"}  # potions you aim and throw instead of drinking
 THROW_RANGE = 8      # how far (in tiles) a potion can be thrown
+PITCH_BOLT = "pitch_bolt"  # gameManager.throwing while aiming the Sealed Pattern's Pitch Bolt (not an inventory index)
 FLIGHT_TURNS = [(3, 0), (6, 1), (THROW_RANGE, 2)]  # (up to this distance, turns in the air): close throws land at once
-BLAST_RADIUS = {"Fire": 2, "Smoke": 2, "Magic": 2,"Explosive":3}  # a thrown potion reaches tiles within this circle of its landing spot
+BLAST_RADIUS = {"Fire": 2, "Smoke": 2, "Magic": 2,"Explosive":3, "Pitch": 0}  # a thrown potion reaches tiles within this circle of its landing spot
 POCKET_CHANCE = 0.5  # chance an enemy that breaks a wall keeps its materials (you get some back when you kill it)
 CARRIED_SHARE = 0.10  # share of an enemy's pocketed materials you get back at 1 Wisdom...
 CARRIED_SHARE_PER_WISDOM = 0.005  # ...plus this much for each Wisdom point above 1 (+0.5% each)
@@ -379,6 +380,8 @@ class gameManager():
 
         self.goldWallCount = 0
         self.addUnsealed = False
+        self.unsealedKills = 0         # Unsealed you killed on this floor (relics.SEALED_PATTERN_KILLS of them seals it)
+        self.unsealedBanished = False  # you did: they all died and no more come on this floor
 
         self.resetSession()
         self.messageBools["escapeMessage"] = True
@@ -400,7 +403,7 @@ class gameManager():
         self.swap = None  # an equipment swap waiting for Enter (see startSwap)
         self.inventoryScroll = 0  # the Inventory window's top row (see scrollInventory)
         self.smoke = {}       # thrown Smoke Bomb clouds: {map position: turns left}
-        self.throwing = None  # inventory index of the potion being aimed, or None
+        self.throwing = None  # inventory index of the potion being aimed, PITCH_BOLT, or None
         self.throwArea = None # tiles the aimed potion would reach where it lands
         self.inFlight = []    # thrown potions still in the air: {"effect", "power", "path", "landing", "turns", "flight"}
         self.fires = {}       # burning tiles (ground or plants): {map position: turns left}
@@ -574,6 +577,8 @@ class gameManager():
             self.waitTurn()
         elif self.isAction(key, "drop_glowrock"):  # (last too, for the same reason)
             self.dropGlowrock()
+        elif self.isAction(key, "pitch_bolt"):
+            self.startPitchBolt()
 
     def waitTurn(self):
         """The Wait hotkey (Space): you do nothing, and it spends your action like a step would, so the world
@@ -1588,6 +1593,14 @@ class gameManager():
             self.addPopup("Dodged" if dodged == "clean" else "Grazed", position)
         return 0 if dodged == "clean" else math.ceil(damage / 2)
 
+    @staticmethod
+    def pitchShare(swing, pitch, landed):
+        """How much of the Pitch in a swing landed, when landed of the swing's whole (swing, Pitch included) got past
+        the dodge: all of it, none, or half rounded up (never more than landed)."""
+        if landed >= swing:
+            return pitch
+        return min(landed, math.ceil(pitch / 2))
+
     def placeRelicChest(self, grid, depth, proportion):
         """Sometimes a floor has a chest with a relic in it."""
         choices = relics.chestRelics(depth, proportion)
@@ -1618,7 +1631,8 @@ class gameManager():
                     grid[b] = [2, 0, wall.GoldWall()] if abs(dx) == 2 or abs(dy) == 2 else [0, 0]
             center = cx + cy * R
             grid[center] = [7, 0, recipes.Station(stationId, claimed=False)]
-            grid[center - 1 - R] = [3, 0, [relics.make(rand.choice(list(relics.RELICS)))]]
+            grid[center - 1 - R] = [3, 0, [relics.make(rand.choice([relicId for relicId in relics.RELICS
+                                                                    if relicId not in relics.PATH_ONLY_RELICS]))]]
             return center
         return None
 
@@ -1783,8 +1797,13 @@ class gameManager():
         self.enemyMove = True
 
     def attackUnit(self, target, enemy):
-        """You hit enemy, on the space target."""
-        dealt = self.enemyDodge(enemy, self.player.DealDamage(), target)
+        """You hit enemy, on the space target. The Sealed Pattern's Pitch damage rides on the same swing: dodged
+        with it, but taken after the enemy's Pitch resistance."""
+        pitch = self.player.pitchDamage()
+        swing = self.player.DealDamage() + pitch
+        landed = self.enemyDodge(enemy, swing, target)
+        pitch = self.pitchShare(swing, pitch, landed)
+        dealt = landed - pitch
         enemy.hp -= dealt
         if dealt > 0:
             self.bleed(target)
@@ -1792,7 +1811,12 @@ class gameManager():
             self.playerHurtEnemy(enemy, target)
         if enemy.hp <= 0:
             self.killEnemy(target, unit=enemy)
-        elif dealt > 0 and self.player.hasEffect("molten"):  # the Molten Blade
+            return
+        if pitch > 0:
+            self.pitchEnemy(target, pitch, unit=enemy)
+            if enemy.hp <= 0:
+                return
+        if dealt > 0 and self.player.hasEffect("molten"):  # the Molten Blade
             self.fireEnemy(target, relics.MOLTEN_FIRE, igniteChance=relics.MOLTEN_IGNITE_CHANCE, byPlayer=True, unit=enemy)
 
     def attackChosen(self, index):
@@ -1827,7 +1851,7 @@ class gameManager():
         name = tile[2].name
         if name == "Gold Wall" and self.proportion == "All Gold":
             self.goldWallCount += 1
-            if self.goldWallCount >= 10 and not self.addUnsealed:
+            if self.goldWallCount >= 10 and not self.addUnsealed and not self.unsealedBanished:
                 self.messageBools["brokenSealMessage"] = True
                 self.painter.fade = 255
                 self.addUnsealed = True
@@ -1882,6 +1906,7 @@ class gameManager():
                 self.placeItems(position, stacks, gold)
             dewgrubs.dropHeld(self, position, unit)
             queen.dropHeld(self, position, unit)
+            self.countUnsealedKill(unit, killer)
             return
         if self.isBig(self.grid[position][2]):  # a giant: clear its other tiles, then it dies at its anchor
             giant = self.grid[position][2]
@@ -1910,6 +1935,55 @@ class gameManager():
             self.placeItems(position, stacks, gold)
         dewgrubs.dropHeld(self, position, enemy)  # a farmer carrying a Dew Grub drops it
         queen.dropHeld(self, position, enemy)  # (and a citizen carrying one of the Queen's eggs)
+        self.countUnsealedKill(enemy, killer)
+
+    # ------------------------------------------------------------ the Sealed Pattern
+
+    def countUnsealedKill(self, enemy, killer):
+        """You killed an Unsealed: the SEALED_PATTERN_KILLS-th on this floor seals it (banishUnsealed)."""
+        if killer != "player" or getattr(enemy, "name", None) != "Unsealed" or self.unsealedBanished:
+            return
+        self.unsealedKills += 1
+        if self.unsealedKills >= relics.SEALED_PATTERN_KILLS:
+            self.banishUnsealed()
+
+    def banishUnsealed(self):
+        """Every Unsealed on the floor dies (no loot for you: the seal took them), no more come on this floor, and a
+        relic chest with the Sealed Pattern appears at the floor's center."""
+        self.unsealedBanished = True
+        self.addUnsealed = False
+        for position, unit in list(occupancy.sharedTiles(self).items()):  # (second units first: the first would promote them)
+            if getattr(unit, "name", None) == "Unsealed":
+                self.killEnemy(position, killer=None, unit=unit)
+        for position in list(self.EnemyPositions):
+            tile = self.grid.get(position)
+            if tile and tile[0] == 5 and len(tile) > 2 and getattr(tile[2], "name", None) == "Unsealed":
+                self.killEnemy(position, killer=None)
+        spot = self.placeSealedPatternChest()
+        self.addPopup("The seal holds", self.playerPositionFlat)
+        if spot is not None:
+            self.addPopup("A relic chest appears", spot)
+        self.change = True
+
+    def floorCenter(self):
+        rows = self.numberOfSpots // self.rowLength
+        return (rows // 2) * self.rowLength + self.rowLength // 2
+
+    def placeSealedPatternChest(self):
+        """Puts the Sealed Pattern's chest on the open floor or wall nearest the floor's center (never under you or
+        an enemy). Returns where, or None if there's nowhere."""
+        center = self.floorCenter()
+        centerColumn, centerRow = center % self.rowLength, center // self.rowLength
+
+        def distance(position):
+            return math.hypot(position % self.rowLength - centerColumn, position // self.rowLength - centerRow)
+
+        for position in sorted(self.grid, key=distance):
+            tile = self.grid[position]
+            if tile[0] in (0, 2) and position != self.playerPositionFlat and position not in self.EnemyPositions:
+                self.grid[position] = [3, tile[1], [relics.make("sealed_pattern")]]
+                return position
+        return None
 
     def carriedShare(self):
         """The share of an enemy's pocketed materials you get back when you kill it."""
@@ -2460,6 +2534,8 @@ class gameManager():
     def afterLevelChange(self):
         self.goldWallCount = 0
         self.addUnsealed = False
+        self.unsealedKills = 0
+        self.unsealedBanished = False
         self.player.burnTurns = 0  # the stairs put you out
         self.smoke = {}      # smoke, fire and potions in the air stay behind on the floor you left
         self.inFlight = []
@@ -3097,11 +3173,28 @@ class gameManager():
     # Far throws stay in the air for a turn or two (FLIGHT_TURNS) before they land, so you have to lead a target.
 
     def startThrow(self, index):
+        """Starts aiming: index is the potion's inventory slot, or PITCH_BOLT for the Sealed Pattern's bolt."""
         self.throwing = index
         look = self.PlayerLookPosition
         self.currentAimSpot = look if look in self.grid else self.playerPositionFlat
         self.refreshThrowAim()
-        self.addPopup("Aim, Enter to throw", self.playerPositionFlat)
+        if index == PITCH_BOLT:
+            key = self.settings.keyName(self.settings.hotkeys["pitch_bolt"])
+            self.addPopup(f"Aim, Enter or {key} to fire", self.playerPositionFlat)
+        else:
+            self.addPopup("Aim, Enter to throw", self.playerPositionFlat)
+
+    def startPitchBolt(self):
+        """The Pitch Bolt hotkey (F): with the Sealed Pattern on, aim a bolt of Pitch like a throw. It lands on the
+        first enemy in its way and hits only that space; walls stop it unharmed."""
+        if not self.player.hasEffect("sealed_pattern"):
+            self.addPopup("Only the Sealed Pattern can do that", self.playerPositionFlat)
+            return
+        self.startThrow(PITCH_BOLT)
+
+    def aimedEffect(self):
+        """The effect of what's being aimed: "Pitch" for the Pitch Bolt, otherwise the potion's."""
+        return "Pitch" if self.throwing == PITCH_BOLT else self.player.inventory[self.throwing].effect
 
     def cancelThrow(self):
         self.throwing = None
@@ -3113,7 +3206,7 @@ class gameManager():
     def onThrowKey(self, key):
         if key == pygame.K_ESCAPE:
             return self.cancelThrow()
-        if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER) or (self.throwing == PITCH_BOLT and self.isAction(key, "pitch_bolt")):
             return self.throw()
         move = self.direction(key)
         if move is None:
@@ -3219,10 +3312,10 @@ class gameManager():
         return next((turns for reach, turns in FLIGHT_TURNS if distance <= reach), FLIGHT_TURNS[-1][1])
 
     def refreshThrowAim(self):
-        item = self.player.inventory[self.throwing]
+        effect = self.aimedEffect()
         path, landing = self.throwPath(self.currentAimSpot)
         self.aimLine = set(path[:-1])  # the landing tile is outlined instead, so you can still see what's on it
-        self.throwArea = (landing, self.blastArea(landing, BLAST_RADIUS[item.effect]), self.flightTurns(landing)) if landing else None
+        self.throwArea = (landing, self.blastArea(landing, BLAST_RADIUS[effect]), self.flightTurns(landing)) if landing else None
         self.change = True
 
     def throw(self):
@@ -3230,10 +3323,14 @@ class gameManager():
         if landing is None:
             self.addPopup("No room to throw", self.playerPositionFlat)
             return
-        item = self.player.takeOne(self.throwing)
+        if self.throwing == PITCH_BOLT:
+            effect, power = "Pitch", relics.PITCH_BOLT_DAMAGE
+        else:
+            item = self.player.takeOne(self.throwing)
+            effect, power = item.effect, item.bonus
         self.cancelThrow()
         turns = self.flightTurns(landing)
-        shot = {"effect": item.effect, "power": item.bonus, "path": path, "landing": landing, "turns": turns, "flight": turns}
+        shot = {"effect": effect, "power": power, "path": path, "landing": landing, "turns": turns, "flight": turns}
         if turns == 0:
             self.land(shot)
         else:
@@ -3258,6 +3355,13 @@ class gameManager():
                 self.firePlayer(shot["power"])
             if not hit:
                 self.addPopup("Nothing burns", landing)
+        elif shot["effect"] == "Pitch":  # the Sealed Pattern's Pitch Bolt: just the one space, and never the walls
+            hit = 0
+            for position, unit in occupancy.unitsInArea(self, area):
+                hit += 1
+                self.pitchEnemy(position, shot["power"], unit=unit)
+            if not hit:
+                self.addPopup("Nothing there", landing)
         elif shot["effect"] == "Magic":  # Demise Flask: magic damage, but Organizers take root instead
             hit = 0
             for position, unit in occupancy.unitsInArea(self, area):
@@ -3454,6 +3558,24 @@ class gameManager():
             return
         if canIgnite and self.enemyFireDamage(enemy, BURN_DAMAGE) > 0 and rand.random() < igniteChance:
             enemy.burnTurns = BURN_TURNS  # shown as flames on it (no point setting alight something its burn can't hurt)
+
+    # ------------------------------------------------------------------ pitch
+    # Pitch (the Sealed Pattern's) ignores Defense: only an enemy's pitchResistance (flat) then pitchResistPercent
+    # (0-1) takes anything off it. It never sets anything burning.
+
+    def pitchEnemy(self, position, damage, unit=None):
+        """You hurt the enemy at position with Pitch (unit: which, with two there; the first if not said)."""
+        enemy = unit if unit is not None else self.grid[position][2]
+        dealt = max(0, damage - getattr(enemy, "pitchResistance", 0))
+        dealt = round(dealt * (1 - getattr(enemy, "pitchResistPercent", 0)))
+        if dealt == 0:
+            self.addPopup("Resisted", position)
+            return
+        enemy.hp -= dealt
+        self.bleed(position)
+        self.playerHurtEnemy(enemy, position)
+        if enemy.hp <= 0:
+            self.killEnemy(position, unit=enemy)
 
     # ------------------------------------------------------------------ magic
     # Magic ignores Defense, like fire: only Magic Resist (gear "MagicRes") takes damage off it for you, and
@@ -3833,7 +3955,7 @@ class gameManager():
         aim = None
         if self.throwArea is not None:
             landing, area, turns = self.throwArea
-            effect = self.player.inventory[self.throwing].effect
+            effect = self.aimedEffect()
             # target: the tile you're aiming at. It's past the landing spot when an enemy (or a wall) is in the way,
             # and it's drawn too, so every key moves something you can see
             aim = {"landing": landing, "area": area, "turns": turns, "effect": effect, "target": self.currentAimSpot}
@@ -3912,7 +4034,7 @@ class gameManager():
             player.damageTaken += 1  # Demise Stew's sickness
         for tag in player.stepBuffs():
             self.addPopup(f"{relics.effectName(tag)} wore off", self.playerPositionFlat)
-        if self.addUnsealed and not player.hasEffect("seal_ward"):
+        if self.addUnsealed and not player.hasEffect("seal_ward") and not self.unsealedBanished:
             validSpots = [k for k in self.grid.keys() if self.grid[k][0] == 2]
             if len(validSpots) > 0:
                 addPosition = rand.choice(validSpots)
@@ -4247,6 +4369,8 @@ class gameManager():
             "player": self.player,
             "goldwallCount": self.goldWallCount,
             "addUnsealed": self.addUnsealed,
+            "unsealedKills": self.unsealedKills,
+            "unsealedBanished": self.unsealedBanished,
             "floorEvents": self.floorEvents,
             "motherlodes": self.motherlodes,
             "camps": self.camps,
@@ -4324,6 +4448,8 @@ class gameManager():
             self.updateOldRelics()
             self.goldWallCount = data["goldwallCount"]
             self.addUnsealed = data["addUnsealed"]
+            self.unsealedKills = data.get("unsealedKills", 0)  # (saves from before the Sealed Pattern)
+            self.unsealedBanished = data.get("unsealedBanished", False)
 
             self.LoadLevel(self.level)
             return True
