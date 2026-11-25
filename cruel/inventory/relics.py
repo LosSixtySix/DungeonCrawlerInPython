@@ -50,6 +50,8 @@ DARKVISION_RANGE = 12  # Potion Of Darkvision: how far you see without light
 MOLTEN_FIRE = 2              # Molten Blade: fire damage added to every hit...
 MOLTEN_IGNITE_CHANCE = 0.25  # ...and the chance that hit sets the enemy burning
 
+WARD_RECHARGE_TURNS = 10  # after Ward blocks a hit, the turns until it can block another
+
 EFFECTS = {
     "burrow": ("Burrow", "Burrow through soft walls"),
     "molten": ("Molten", "Immune to fire. Hits deal 2 more fire damage, 1 in 4 sets the enemy burning"),
@@ -62,7 +64,7 @@ EFFECTS = {
     "far_sight": ("Far Sight", "+3 vision"),
     "gold_double": ("Greed", "Gold walls pay double"),
     "gold_per_kill": ("Gilded", "+3 gold per kill"),
-    "ward": ("Ward", "The first hit on each floor does nothing"),
+    "ward": ("Ward", f"Blocks a hit completely, then is ready again {WARD_RECHARGE_TURNS} turns later"),
     "regen": ("Mending", "Heals 1 HP every 20 turns"),
     "see_enemies": ("Void Sight", "Enemies show through walls"),
     "extra_ore": ("Prospector", "+1 ore from every vein"),

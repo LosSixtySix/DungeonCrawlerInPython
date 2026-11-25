@@ -1558,8 +1558,8 @@ class gameManager():
         if dodged == "clean":  # missed you entirely: no Ward used up, no thorns
             self.addPopup("Dodged", self.playerPositionFlat)
             return
-        if player.hasEffect("ward") and player.wardReady:
-            player.wardReady = False
+        if player.wardCanBlock():
+            player.blockWithWard()
             self.addPopup("Warded", self.playerPositionFlat)
             return
         damage = player.hitDamage(enemy.damage)
@@ -2458,7 +2458,6 @@ class gameManager():
         return self.theme.name
 
     def afterLevelChange(self):
-        self.player.wardReady = True
         self.goldWallCount = 0
         self.addUnsealed = False
         self.player.burnTurns = 0  # the stairs put you out
@@ -3885,6 +3884,7 @@ class gameManager():
 
     def enemyTurn(self):
         self.turnCount += 1
+        self.player.stepWard()
         livingfloors.arrive(self)
         followers.stepConvert(self)  # (before they move: one beside you as you end your turn)
         self.MoveEnemies()
@@ -4311,8 +4311,8 @@ class gameManager():
                 self.player.stationPlaced = {}
             if not hasattr(self.player, "pouchLimit"):
                 self.player.pouchLimit = resources.POUCH_LIMIT
-            if not hasattr(self.player, "wardReady"):
-                self.player.wardReady = True
+            if not hasattr(self.player, "wardCooldown"):  # (saves from when Ward came back once a floor)
+                self.player.wardCooldown = 0
             if not hasattr(self.player, "buffs"):
                 self.player.buffs = {}
             if not hasattr(self.player, "potionEffects"):
