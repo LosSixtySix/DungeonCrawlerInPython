@@ -3,11 +3,12 @@ instead of an item pile: a Body is an item pile (tile type 9) that looks like th
 and it stays even once it's empty. It lies face down at one of four angles, maybe mirrored, picked when it dies.
 Looking through it (opening Items Here on it) rolls it over, onto its side or onto its back, picked at random.
 Then it decays: the flesh rots darker and greyer, gives way to the bones, the bones crumble, and at DECAY_TURNS the
-body is gone (anything still on it is left as a plain pile). gameManager.worldTurn is the clock: it counts every turn
+body is gone, leaving an item pile: its bones (REMAINS) and anything still on it. gameManager.worldTurn is the clock: it counts every turn
 of the run and is saved, so bodies keep rotting on floors you've left."""
 import random as rand
 
 from cruel.inventory import items
+from cruel.inventory import resources
 
 FRESH_TURNS = 150      # just as it fell...
 ROT_FULL_TURNS = 400   # ...rotting until here (its colors darken toward ROT_COLOR)...
@@ -20,6 +21,7 @@ ROT_MOST = 0.55        # how far the flesh's colors go toward ROT_COLOR
 VARIANTS = 4           # which pixels give way first differs between bodies: one of this many patterns
 ROLL_FRAME_MS = 140    # the roll over: each pose it passes through shows this long
 POSES = ("down", "side", "up")
+REMAINS = ("bone", 1)  # what a body leaves in an item pile when it has decayed all the way: (material, amount)
 
 
 class Body(items.ItemPile):
@@ -74,6 +76,11 @@ class Body(items.ItemPile):
     def rolling(self, nowMs):
         elapsed = None if self.rolledAtMs is None else nowMs - self.rolledAtMs
         return elapsed is not None and 0 <= elapsed < len(self.rollPoses()) * ROLL_FRAME_MS + ROLL_FRAME_MS
+
+
+def remains(body):
+    """The items a body that has decayed all the way leaves in a pile: what was still on it, and its bones."""
+    return list(body.items) + [resources.MaterialStack(*REMAINS)]
 
 
 def isBody(thing):

@@ -13,13 +13,18 @@ import pygame
 
 from cruel.core import gamemanager
 from cruel.entities.enemies import DireRat, Goblin, GoblinChief
-from cruel.inventory import items, relics
+from cruel.inventory import items, relics, resources
 from cruel.world import bodies, expansion, occupancy, plants
 from tests.helpers.gamemanager import CHEST, ENEMY, FLOOR, PILE, RIGHT, keyDown, newGame, standInOpenFloor
 
 
 def potion():
     return items.consumable("Healing Potion", 3, "Heal")
+
+
+def remainsOf(pile):
+    """The materials lying in a pile: [(material, amount)]."""
+    return [(item.materialId, item.amount) for item in pile.items if isinstance(item, resources.MaterialStack)]
 
 
 class BodyTest(unittest.TestCase):
@@ -264,9 +269,10 @@ class DecayTests(BodyTest):
         self.assertIsNotNone(game.bodyAt(self.besideYou), "turn 999: still there")
         game.enemyTurn()
         self.assertIsNone(game.bodyAt(self.besideYou))
-        self.assertEqual(game.grid[self.besideYou][0], FLOOR)
+        self.assertEqual(game.grid[self.besideYou][0], PILE, "an item pile is left")
+        self.assertEqual(remainsOf(game.grid[self.besideYou][2]), [("bone", 1)])
 
-    def test_what_was_still_on_it_is_left_as_a_pile(self):
+    def test_what_was_still_on_it_is_left_in_the_pile_with_its_bones(self):
         game = self.game
         game.worldTurn = 0
         body = self.killBesideYou()
@@ -276,7 +282,9 @@ class DecayTests(BodyTest):
         game.stepBodies()
         pile = game.grid[self.besideYou][2]
         self.assertFalse(bodies.isBody(pile))
-        self.assertEqual(([item.name for item in pile.items], pile.gold), (["Healing Potion"], 6))
+        self.assertEqual(([item.name for item in pile.items if not isinstance(item, resources.MaterialStack)], pile.gold),
+                         (["Healing Potion"], 6))
+        self.assertEqual(remainsOf(pile), [("bone", 1)])
 
     def test_a_body_under_you_or_an_enemy_decays_too(self):
         game = self.game
@@ -288,8 +296,10 @@ class DecayTests(BodyTest):
         self.putEnemy(enemySpot, Goblin())
         game.worldTurn = bodies.DECAY_TURNS
         game.stepBodies()
-        self.assertEqual(game.currentLocation[0], FLOOR)
-        self.assertNotIn(enemySpot, game.enemyOccupiedItemSpaces)
+        for ground in (game.currentLocation, game.enemyOccupiedItemSpaces[enemySpot]):
+            self.assertEqual(ground[0], PILE)
+            self.assertFalse(bodies.isBody(ground[2]))
+            self.assertEqual(remainsOf(ground[2]), [("bone", 1)])
 
     def test_the_clock_is_saved(self):
         game = self.game
@@ -396,6 +406,7 @@ class UnderAPlantTests(BodyTest):
         grounds = [game.groundAt(spot) for spot in game.grid]
         spilled = [item.name for ground in grounds if ground[0] == PILE for item in ground[2].items]
         self.assertIn("Healing Potion", spilled, "what was on it spills beside the plant")
+        self.assertIn(("bone", 1), [stack for ground in grounds if ground[0] == PILE for stack in remainsOf(ground[2])], "with its bones")
 
 
 if __name__ == "__main__":

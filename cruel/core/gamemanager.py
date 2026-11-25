@@ -2067,28 +2067,24 @@ class gameManager():
             self.change = True
 
     def stepBodies(self):
-        """Bodies that have decayed all the way (bodies.DECAY_TURNS) are gone; anything still on one is left as a
-        plain pile."""
+        """Bodies that have decayed all the way (bodies.DECAY_TURNS) are gone, leaving an item pile: their bones
+        (bodies.REMAINS) and anything still on them."""
         spots = [p for p, tile in self.grid.items() if tile[0] in (1, 9) and len(tile) > 2 and bodies.isBody(tile[2])]
         spots += [p for p, ground in self.enemyOccupiedItemSpaces.items() if ground[0] == 9 and bodies.isBody(ground[2])]
         underPlants = self.plantBodiesHere()
-        for spot, body in list(underPlants.items()):  # (one under a plant: the plant stays, what was on it spills)
+        for spot, body in list(underPlants.items()):  # (one under a plant: the plant stays, its pile lies beside it)
             if body.decayed(self.worldTurn):
                 ground = self.groundAt(spot)
                 if ground[0] == 8 and bodies.bodyUnder(ground[2]) is body:
                     ground[2].bodyUnder = None
                 del underPlants[spot]
-                if body.items or body.gold:
-                    self.placeItems(spot, body.items, body.gold)
+                self.placeItems(spot, bodies.remains(body), body.gold)
         for spot in spots:
             body = self.bodyAt(spot)
             if body is None or not body.decayed(self.worldTurn):
                 continue
             ground = self.groundAt(spot)
-            if body.items or body.gold:
-                self.setGround(spot, [9, ground[1], items.ItemPile(body.items, gold=body.gold)])
-            else:
-                self.setGround(spot, [0, ground[1]])
+            self.setGround(spot, [9, ground[1], items.ItemPile(bodies.remains(body), gold=body.gold)])
             self.change = True
 
     def rollingBody(self):
