@@ -72,12 +72,17 @@ control back to the game, leaving every window open. Drag a window by its title 
 
 MENU_OPTIONS_FILE = paths.savePath("menuOpts.txt")
 
-# Frame rate cap, and how much the splash messages fade per frame
+# Frame rate cap
 FPS = 60
-# Each message starts at 255 and loses this much every frame: 255 / step / FPS = seconds on screen
-FADE_STEPS = {"escapeMessage": 1, "floorLevelMessage": 1.5, "brokenSealMessage": 1.5, "eventMessage": 1.5}
-# The title fades in as the exact reverse of the "Escape" message fading out: same speed (about 4 seconds)
-TITLE_FADE_STEP = FADE_STEPS["escapeMessage"]
+# How long each big message takes to fade away, in seconds (real time, however fast the frames come). An event's
+# name shows as long as a floor's.
+MESSAGE_SECONDS = {"escapeMessage": 255 / FPS, "floorLevelMessage": 255 / 1.5 / FPS, "brokenSealMessage": 255 / 1.5 / FPS}
+MESSAGE_SECONDS["eventMessage"] = MESSAGE_SECONDS["floorLevelMessage"]
+# How dark the screen goes behind a message at first (255: black), fading with it. An event starts while you're
+# playing, so it only darkens the view and you still see what's around you.
+MESSAGE_SHADES = {"eventMessage": 150}
+# The title fades in as the exact reverse of the "Escape" message fading out: this much a frame, the same speed
+TITLE_FADE_STEP = 1
 KEY_REPEAT_DELAY = 250     # ms before a held key starts repeating
 KEY_REPEAT_INTERVAL = 90   # ms between repeats (about 11 a second)
 SAVE_FILE = paths.savePath("savegame.pkl")
@@ -4824,7 +4829,8 @@ class gameManager():
             grid=self.grid, rooms=self.rooms, player=self.player, playerPosition=self.playerPositionFlat,
             aimLine=self.aimLine, throws=self.throwView(), hud=hud,
             windows=[self.windowSpec(w) for w in self.windowDrawOrder], pause=self.pauseView(),
-            message=messageText, fadeStep=FADE_STEPS.get(messageKey, 0),
+            message=messageText, messageSeconds=MESSAGE_SECONDS.get(messageKey, 1),
+            messageShade=MESSAGE_SHADES.get(messageKey, 255),
             lightTime=self.lightStep / SWAY_FPS, lightStyle=self.lightStyle(), lightOnly=lightOnly, glintOnly=glintOnly, overlayOnly=overlayOnly,
             fireLight=getattr(self, "fireLight", {}), glowLight=getattr(self, "glowLight", {}), ownSight=getattr(self, "ownSight", set()),
             darkSight=getattr(self, "darkSight", set()), sharedTiles=occupancy.sharedTiles(self),

@@ -272,7 +272,7 @@ class renderer():
 
     # ------------------------------------------------------------- top level
 
-    def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, fadeStep=0,
+    def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, messageSeconds=1, messageShade=255,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
              console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None, wallLamps=None,
              memoryFalloff=None, zoom=1, glowLight=None, ownSight=None, darkSight=None, sharedTiles=None):
@@ -280,6 +280,8 @@ class renderer():
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
         pause: dict describing the pause menu, or None when it's closed.
+        message: a big message over everything, fading away over messageSeconds (real time: see fadeMessage). The
+        screen behind it darkens to messageShade (255: black) at first and lightens as it fades.
         lightTime: seconds, for the animated light. lightStyle: "sway", "flicker" or None (not animated).
         lightOnly: only the light moved, so just redraw the lit tiles instead of the whole map.
         glintOnly: only ore glints changed, so just redraw the twinkling vein tiles (see glintsDue).
@@ -356,11 +358,8 @@ class renderer():
 
         messageFinished = False
         if message is not None:
-            self.win.blit(self.drawMessage(message), (0, 0))
-            self.fade -= fadeStep
-            if self.fade <= 0:
-                self.fade = 255
-                messageFinished = True
+            self.win.blit(self.drawMessage(message, messageShade), (0, 0))
+            messageFinished = self.fadeMessage(messageSeconds)
 
         if pause is not None:
             self.DrawMenu(pause)
@@ -1121,14 +1120,30 @@ class renderer():
             cy = y0 + int((listBottom + 66 + row * 22) * k)
             self.blitText(win, f"{keyName}  -  {label}", self.menuHintFont, font, cx, cy)
 
-    def drawMessage(self, message):
-        """A big centered message; a second line (after a newline) is drawn smaller under it."""
+    MESSAGE_LONGEST_STEP_MS = 100  # a stalled frame (a new floor being made) fades a message this much at most
+
+    def fadeMessage(self, seconds):
+        """Fades the message (self.fade, 255 down to 0) by the time since its last frame, so it's gone after seconds
+        however fast the frames come. Returns True when it's gone (and fade is back at 255 for the next one)."""
+        now = pygame.time.get_ticks()
+        last, self.messageTicks = getattr(self, "messageTicks", None), now
+        if last is not None:
+            self.fade -= 255 * max(0, min(now - last, self.MESSAGE_LONGEST_STEP_MS)) / (seconds * 1000)
+        if self.fade <= 0:
+            self.fade = 255
+            self.messageTicks = None
+            return True
+        return False
+
+    def drawMessage(self, message, shade=255):
+        """A big centered message; a second line (after a newline) is drawn smaller under it. The screen behind
+        it is darkened by shade (255: black), less as it fades."""
         first, _, second = message.partition("\n")
         alpha = max(0, int(self.fade))
         canvas = getattr(self, "messageCanvas", None)
         if canvas is None or canvas.get_size() != (self.screenWidth, self.screenHeight):
             canvas = self.messageCanvas = pygame.Surface((self.screenWidth, self.screenHeight), pygame.SRCALPHA)
-        canvas.fill((0, 0, 0, alpha))
+        canvas.fill((0, 0, 0, alpha * shade // 255))
         key = (message, tuple(self.color("font")), tuple(self.color("select")))
         if getattr(self, "messageText", (None,))[0] != key:
             self.messageText = (key, self.SplashScreenFont.render(first, True, self.color("font")),
