@@ -179,6 +179,7 @@ def gear(etype, name, slot, scaling="strength"):
 
 BACKPACK_SLOTS = 5  # one more row of the Inventory window
 POTION_BELT_STACK = 5  # how many of the same potion share an inventory slot while a Potion Belt is worn
+GLOWROCK_POUCH_HOLDS = 10  # how many Glowrocks one Glowrock Pouch carries in its single inventory slot
 FIRE_FLASK_DAMAGE = 5
 SMOKE_TURNS = 12  # a Smoke Bomb's cloud lingers this long (it thins out over its last SMOKE_THIN_TURNS)
 DEMISE_FLASK_DAMAGE = 5
@@ -217,6 +218,11 @@ RECIPES = [
            f"A leather belt lined with vial loops. Up to {POTION_BELT_STACK} of the same potion share one inventory slot.",
            f"Belt  Potions stack to {POTION_BELT_STACK}",
            makeItem=lambda b, b2: items.equipment("PotionStack", "Potion Belt", "Belt", POTION_BELT_STACK)),
+    # Like the Backpack, quality only names it: every Glowrock Pouch holds GLOWROCK_POUCH_HOLDS
+    Recipe("glowrock_pouch", "Glowrock Pouch", "workbench", 2, {"hide": 2, "wood": 1}, "item",
+           f"A stiff hide bag with a wooden clasp. Up to {GLOWROCK_POUCH_HOLDS} Glowrocks in one inventory slot; "
+           "new ones go in it first.", f"Carried  Holds {GLOWROCK_POUCH_HOLDS} Glowrocks",
+           makeItem=lambda b, b2: items.equipment("GlowPouch", "Glowrock Pouch", None, GLOWROCK_POUCH_HOLDS)),
     Recipe("soft_boots", "Soft-Soled Boots", "workbench", 2, {"hide": 4, "wood": 1}, "item",
            "Quiet hide soles. When you slip a blow, it's more likely to miss you entirely.", "Feet  Clean Dodge +10%",
            bonus=10, makeItem=gear("CleanDodge", "Soft-Soled Boots", "Feet", None)),

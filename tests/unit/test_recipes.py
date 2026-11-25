@@ -3,6 +3,7 @@ import random
 import unittest
 
 from cruel.entities.playerClass import PlayerClass
+from cruel.entities import playerClass
 from cruel.inventory import items, recipes, relics, resources
 from cruel.world import plants
 
@@ -152,6 +153,8 @@ class BuildTests(unittest.TestCase):
                 self.assertEqual(crafted.quality, quality)
                 if recipe.kind == "potion":
                     self.assertEqual(crafted.Etype, "Consume", recipe.id)
+                elif playerClass.isGlowPouch(crafted):  # carried, not worn
+                    self.assertIsNone(crafted.slot, recipe.id)
                 else:
                     self.assertIn(crafted.slot, ("Hands", "Head", "Neck", "Back", "Chest", "Belt", "Legs", "Feet",
                                                  "Gloves"), recipe.id)
