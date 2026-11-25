@@ -914,26 +914,63 @@ class renderer():
                 lines.append((style, text, value))
         return lines
 
+    CRAFT_TAB_GAP = 6     # between two station tabs
+    CRAFT_TAB_ARROW = 14  # room kept at each end of the tab strip for the arrow saying more tabs are that way
+
+    def craftTabWidth(self, name):
+        return self.windowSmallFont.size(name)[0] + 16
+
+    def craftTabsShown(self, widths, selected, room, first=0):
+        """(first, last): the station tabs drawn, a run of them that fits in room pixels with the selected one in
+        it. The strip scrolls like a list: it stays where it was (first, from the last frame) unless the selected
+        tab is off one end, and never leaves empty room at the right that the tabs before it could fill."""
+        def span(start, end):
+            return sum(widths[start:end + 1]) + self.CRAFT_TAB_GAP * (end - start)
+
+        count = len(widths)
+        first = max(0, min(first, selected, count - 1))
+        while first < selected and span(first, selected) > room:
+            first += 1
+        while first > 0 and span(first - 1, count - 1) <= room:
+            first -= 1
+        last = first
+        while last + 1 < count and span(first, last + 1) <= room:
+            last += 1
+        return first, last
+
     def drawCraft(self, spec, rect, focused, body):
-        """Station tabs along the top, the recipe list on the left, details on the right, a status line below."""
+        """Station tabs along the top (a strip that scrolls left and right to keep the selected one in view, with an
+        arrow at each end that has more), the recipe list on the left, details on the right, a status line below."""
         win = self.win
         muted, select, boxLine, short = self.color("muted"), self.color("select"), self.color("boxLine"), self.color("enemy")
         highlight = themes.mix(self.color("panel"), select, 0.14)
         x = rect.x + self.PAD + 2
         y = rect.y + self.WINDOW_HEAD + self.ROW // 2 + 2
-        tx = x
-        for i, name in enumerate(spec["tabs"]):
-            selected = i == spec["tab"]
-            locked = spec.get("tabsLocked", [False] * len(spec["tabs"]))[i]
-            w = self.windowSmallFont.size(name)[0] + 16
-            box = pygame.Rect(tx, y - 11, w, 22)
-            if locked and not selected:
+        tabs = spec["tabs"]
+        locks = spec.get("tabsLocked", [False] * len(tabs))
+        widths = [self.craftTabWidth(name) for name in tabs]
+        stripLeft, stripRight = rect.x + self.PAD, rect.right - self.PAD
+        room = stripRight - stripLeft - 2 * self.CRAFT_TAB_ARROW
+        first, last = self.craftTabsShown(widths, spec["tab"], room, getattr(self, "craftTabFirst", 0))
+        self.craftTabFirst = first
+        tx = stripLeft + self.CRAFT_TAB_ARROW
+        for i in range(first, last + 1):
+            name, selected = tabs[i], i == spec["tab"]
+            box = pygame.Rect(tx, y - 11, widths[i], 22)
+            if locks[i] and not selected:
                 pygame.draw.rect(win, themes.mix(self.color("panel"), boxLine, 0.5), box, width=1)
                 self.blitText(win, name, self.windowSmallFont, themes.mix(self.color("panel"), muted, 0.55), tx + 8, y)
             else:
                 pygame.draw.rect(win, select if selected else boxLine, box, width=1)
                 self.blitText(win, name, self.windowSmallFont, select if selected else body, tx + 8, y)
-            tx += w + 6
+            tx += widths[i] + self.CRAFT_TAB_GAP
+        if first > 0:  # more tabs to the left / right
+            left = stripLeft + 3
+            pygame.draw.polygon(win, muted, [(left, y), (left + 6, y - 5), (left + 6, y + 5)])
+        if last < len(tabs) - 1:
+            right = stripRight - 3
+            pygame.draw.polygon(win, muted, [(right, y), (right - 6, y - 5), (right - 6, y + 5)])
+        self.craftTabsDrawn = (first, last)
         top = y + self.ROW // 2 + 4
 
         # recipe list
