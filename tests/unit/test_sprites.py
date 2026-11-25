@@ -50,6 +50,31 @@ class PictureShapeTests(unittest.TestCase):
         self.assertTrue(all(len(row) == 20 for row in sprites.FIRE_GIANT))
 
 
+class CauldronTests(unittest.TestCase):
+    """The cauldron is drawn from above: the brew inside its rim, the coals glowing out past it on every side."""
+
+    def test_the_fire_shows_on_every_side(self):
+        rows = sprites.CAULDRON
+        fire = set("fF")
+        self.assertTrue(fire & set(rows[0]), "top")
+        self.assertTrue(fire & set(rows[-1]), "bottom")
+        self.assertTrue(fire & {row[0] for row in rows}, "left")
+        self.assertTrue(fire & {row[-1] for row in rows}, "right")
+
+    def test_the_brew_is_inside_the_rim(self):
+        rows = sprites.CAULDRON
+        for number, row in enumerate(rows):
+            for column, letter in enumerate(row):
+                if letter in "gGw":
+                    self.assertIn(row[column - 1], "gGwiI", (number, column))
+                    self.assertIn(row[column + 1], "gGwiI", (number, column))
+                    self.assertIn(rows[number - 1][column], "gGwiI", (number, column))
+                    self.assertIn(rows[number + 1][column], "gGwiI", (number, column))
+
+    def test_it_has_a_bubble(self):
+        self.assertIn("w", "".join(sprites.CAULDRON))
+
+
 class AnvilTests(unittest.TestCase):
     """The anvil is drawn from above, like everything on the map: its face on a round stump, not its side."""
 
