@@ -655,19 +655,22 @@ SMELTER = [
 ]
 SMELTER_COLORS = {"c": (150, 96, 64), "C": (108, 66, 44), "f": (255, 132, 40), "F": (255, 220, 120)}
 
+# The anvil seen from above: its flat face with the horn pointing left and the square hardy hole by the heel,
+# the four feet showing past its sides, all on a round wooden stump.
 ANVIL = [
-    "..........",
-    "...kkkkkk.",
-    "kkkkiiiiik",
-    "kIIiiiiiik",
-    "kkkkiiiiik",
-    "...kIiiIk.",
-    "...kiIIik.",
+    "...knnk...",
+    "..knnNnk..",
+    ".kdkkkkdk.",
+    ".kkIIIIIIk",
+    "kIiiiiihik",
+    ".kkiiiiiik",
     "..kkkkkkkk",
-    "..knnnnnnk",
-    "..kkkkkkkk",
+    ".kdknnkdk.",
+    "..knNnnk..",
+    "...kkkk...",
 ]
-ANVIL_COLORS = {"i": (112, 116, 124), "I": (172, 178, 188), "n": (110, 74, 44)}
+ANVIL_COLORS = {"i": (112, 116, 124), "I": (172, 178, 188), "d": (66, 68, 74), "h": (24, 24, 28),
+                "n": (110, 74, 44), "N": (80, 52, 30)}
 
 SHRINE = [
     "..........",
