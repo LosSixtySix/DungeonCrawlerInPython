@@ -13,7 +13,8 @@ from cruel.world import plants
 from tests import support
 from tests.test_mineshafts import cityGame, climbDown, shaftSpot
 
-FLOOR, ENEMY = 0, 5
+FLOOR, WALL, ENEMY = 0, 2, 5
+BLOOD_FIELD = livingfloors.FLOOR_FIELDS.index("blood")
 
 
 def unitsOn(data):
@@ -108,6 +109,61 @@ class AwayTurnTests(unittest.TestCase):
         game.enemyTurn()
         self.assertTrue(game.floorEvents[1]["active"], "it started there")
         self.assertFalse(game.messageBools["eventMessage"])
+
+
+class NothingShownFromAwayTests(unittest.TestCase):
+    """A floor you're not on keeps going but is never drawn or heard: nothing that happens there plays on yours."""
+
+    def setUp(self):
+        random.seed(2)
+        self.game = support.newGame(level=3)
+        self.game.changeLevel(2)
+        self.awayGrid = self.game.levelGrids[1][0]
+
+    def awayFloorSpot(self):
+        """Open floor on the floor above, far from where you stand, with open floor all round it."""
+        game, grid = self.game, self.awayGrid
+        return next(spot for spot, tile in grid.items() if tile[0] == FLOOR
+                    and all(grid[near][0] == FLOOR for near in game.neighbors(spot))
+                    and abs(spot % game.rowLength - game.playerPositionFlat % game.rowLength) > 8)
+
+    def test_a_hit_there_leaves_its_blood_there_but_no_spurt_or_flecks_play_here(self):
+        game, grid = self.game, self.awayGrid
+        wallSpot = next(spot for spot, tile in grid.items() if tile[0] == WALL and len(tile) > 2
+                        and any(grid[near][0] == FLOOR for near in game.neighbors(spot)))
+        hitFrom = next(near for near in game.neighbors(wallSpot) if grid[near][0] == FLOOR)
+        with mock.patch.object(game.painter, "wallColor") as wallColor,                 mock.patch.object(game.painter, "roomWallColor") as roomWallColor:
+            with livingfloors.awayFloor(game, 1):
+                game.bleed(hitFrom)
+                game.chip(wallSpot, hitFrom)
+        self.assertEqual((game.spurts, game.flecks), ([], []))
+        self.assertGreater(game.levelGrids[1][BLOOD_FIELD].get(hitFrom, 0), 0, "its blood stays on its floor")
+        wallColor.assert_not_called()  # (nor is the work done to show them)
+        roomWallColor.assert_not_called()
+        game.bleed(game.playerPositionFlat)
+        self.assertEqual(len(game.spurts), 1, "on your own floor a hit does spurt")
+
+    def test_an_explosion_there_is_neither_seen_nor_heard_here(self):
+        game = self.game
+        landing = self.awayFloorSpot()
+        with mock.patch.object(game.sound, "playExplosion") as playExplosion:
+            with livingfloors.awayFloor(game, 1):
+                game.land({"effect": "Explosive", "power": 1, "path": [landing], "landing": landing, "turns": 0, "flight": 0})
+        self.assertEqual(game.explosions, [])
+        playExplosion.assert_not_called()
+
+    def test_a_floor_you_are_not_on_changing_does_not_redraw_yours(self):
+        game = self.game
+        data = game.levelGrids[1]
+        spot = self.awayFloorSpot()
+        rat = enemies.DireRat()
+        rat.lastPlayerPosition = spot + 3
+        data[0][spot] = [ENEMY, 0, rat]
+        data[3].add(spot)
+        game.change = False
+        livingfloors.simulate(game)
+        self.assertNotEqual(unitsOn(game.levelGrids[1]).get(rat), spot, "it took its turn")
+        self.assertFalse(game.change)
 
 
 class CityTests(unittest.TestCase):
