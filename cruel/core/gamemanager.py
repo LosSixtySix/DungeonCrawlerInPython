@@ -484,9 +484,9 @@ class gameManager():
         return None
 
     def isRepeatable(self, key):
-        """Keys that keep acting while held: moving (and moving through menus) and Interact (digging/attacking).
-        Toggles like Esc, Enter, Tab and the window hotkeys only act once per press."""
-        return self.direction(key) is not None or self.isAction(key, "interact")
+        """Keys that keep acting while held: moving (and moving through menus), Interact (digging/attacking) and
+        Wait (a turn after turn). Toggles like Esc, Enter, Tab and the window hotkeys only act once per press."""
+        return self.direction(key) is not None or self.isAction(key, "interact") or self.isAction(key, "wait")
 
     def onFocusLost(self, event):
         self.keysHeld.clear()  # we won't get the key-up events while the window is in the background
@@ -569,8 +569,17 @@ class gameManager():
                 else:
                     self.onInteract(forceAttack=bool(event.mod & pygame.KMOD_SHIFT))
             return
+        if self.isAction(key, "wait"):
+            return self.waitTurn()
         if move is not None:
             self.onDirectionKey(*move)
+
+    def waitTurn(self):
+        """The Wait hotkey (Space): you do nothing, and it spends your action like a step would, so the world
+        takes its turn. Not while picking a color."""
+        if self.pickerActive():
+            return
+        self.enemyMove = True
 
     def onKeyUp(self, event):
         self.keysHeld.discard(event.key)
