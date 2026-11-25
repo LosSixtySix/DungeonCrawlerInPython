@@ -227,8 +227,6 @@ def takeTurn(gm, i, org, context):
     """One organizer's turn. Returns (where it is now, the enemy there): an organizer that touched
     Organizer's Demise comes back as a new Plant Organizer."""
     if not isinstance(org, enemies.PlantOrganizer) and any(gm.inDemise(n) for n in gm.eightAround(i)):
-        if gm.grid[i][1] == 1:
-            gm.addPopup("Overgrown!", i)
         return i, enemies.PlantOrganizer()
     if gm.playerPositionFlat in gm.neighbors(i):
         gm.hitPlayer(org, i)
@@ -272,8 +270,6 @@ def wallBroken(gm, position, breaker):
             continue
         if manhattan(gm, p, position) <= AGGRO_RANGE and org.aggro is None:
             org.aggro, org.aggroTurns = breaker, 0
-            if gm.grid[p][1] == 1:
-                gm.addPopup("Enraged!", p)
 
 
 def aggroPosition(gm, org):
@@ -327,8 +323,6 @@ def overgrow(gm, position):
     if isinstance(tile[2], enemies.PlantOrganizer):
         return False
     tile[2] = enemies.PlantOrganizer()
-    if tile[1] == 1:
-        gm.addPopup("Overgrown!", position)
     return True
 
 

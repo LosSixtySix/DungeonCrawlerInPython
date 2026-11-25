@@ -161,22 +161,6 @@ class HerdSizeTests(PenTest):
         self.assertEqual(len(self.grubsIn(pen)), dwellerfarming.KEEPER_HERD, "the rest were fed")
 
 
-class NoPopupTests(PenTest):
-    def test_no_message_pops_up_over_a_grub_born_or_starved_near_you(self):
-        pen = self.pen(40, 30)
-        mother, other = self.fill(pen, 2)
-        self.game.playerPositionFlat = self.positionOf(mother) + 1
-        for spot in pen["inside"]:
-            self.game.grid[spot][1] = 1
-        with mock.patch.object(self.game, "addPopup") as addPopup:
-            with mock.patch.object(dewgrubs, "BIRTH_CHANCE", 1):
-                self.assertIsNotNone(dewgrubs.maybeGiveBirth(self.game, self.positionOf(mother), mother))
-            other.hunger = dwellerfarming.STARVE_TURNS - 1
-            dwellerfarming.starveTurn(self.game)
-            self.assertNotIn(other, self.grubsIn(pen))
-        addPopup.assert_not_called()
-
-
 class GrubMovingTests(PenTest):
     def test_from_a_crowded_pen_to_one_with_room(self):
         crowded, roomy = self.pen(40, 30), self.pen(60, 30)

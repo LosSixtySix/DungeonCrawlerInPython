@@ -78,7 +78,6 @@ class WitnessTests(CityTest):
         self.assertTrue(watching.hostile)
         self.assertFalse(behindAWall.hostile)
         self.assertFalse(tooFar.hostile)
-        self.assertIn("Seen!", [popup[0] for popup in game.popups])
 
     def test_if_nobody_sees_it_nothing_happens(self):
         game = self.game
@@ -88,7 +87,6 @@ class WitnessTests(CityTest):
         self.assertEqual(dwellers.hostileAct(game, self.spot(31, 20)), 0)
         game.breakWall(self.spot(31, 20))
         self.assertFalse(faraway.hostile)
-        self.assertNotIn("Seen!", [popup[0] for popup in game.popups])
 
     def test_the_dweller_you_hurt_always_knows(self):
         game = self.game
@@ -162,7 +160,6 @@ class FleeingTests(CityTest):
         self.assertEqual(nearGuard.sawYouAt, whereItSawYou, "it tells the guard where it saw you")
         self.assertFalse(farGuard.hostile)
         self.assertTrue(citizen.toldGuard)
-        self.assertIn("Alarm!", [popup[0] for popup in game.popups])
 
     def test_having_told_a_guard_it_goes_home(self):
         game = self.game

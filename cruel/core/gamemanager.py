@@ -902,7 +902,7 @@ class gameManager():
                     return
                 problem, spilled = self.player.unEquipItem(slot)
                 self.spill(spilled)
-                if problem:
+                if problem and problem != "Nothing there":  # (an empty slot says nothing)
                     self.addPopup(problem, self.playerPositionFlat)
                 else:
                     self.spendActions(EQUIP_ACTIONS)
@@ -941,10 +941,7 @@ class gameManager():
             return
         item, spilled = take()  # dropping a Backpack or Vestigial Hand spills what it held too
         self.fitSelections()
-        spot = self.placeItems(self.playerPositionFlat, [item] + spilled)[0]
-        if spilled:
-            self.addPopup(f"{len(spilled)} spilled", self.playerPositionFlat)
-        self.addPopup(f"Dropped {item.name}", spot)
+        self.placeItems(self.playerPositionFlat, [item] + spilled)
         self.change = True
 
     def dropGlowrock(self):
@@ -959,8 +956,7 @@ class gameManager():
             return
         rock = player.takeGlowrock()
         self.fitSelections()
-        spot = self.placeItems(self.playerPositionFlat, [rock])[0]
-        self.addPopup(f"Dropped {rock.name}", spot)
+        self.placeItems(self.playerPositionFlat, [rock])
         self.change = True
 
     # -------------------------------------------------------------- item piles
@@ -1077,7 +1073,6 @@ class gameManager():
         """True if there's ground nearby to spill things onto (popup if not)."""
         if any(self.roomFor(self.groundAt(p)) for p in self.spillOrder(self.playerPositionFlat)):
             return True
-        self.addPopup("No room to spill onto", self.playerPositionFlat)
         return False
 
     def spill(self, things):
@@ -1085,7 +1080,6 @@ class gameManager():
         inventory had no room for it) on the ground at your feet."""
         if things:
             self.placeItems(self.playerPositionFlat, things)
-            self.addPopup(f"{len(things)} spilled" if len(things) > 1 else f"{things[0].name} spilled", self.playerPositionFlat)
 
     def scrollInventory(self):
         """Scrolls the Inventory window just enough to keep the selected slot in view."""
@@ -1351,15 +1345,12 @@ class gameManager():
             spot = self.freeSpotBesidePlayer()
             self.grid[spot] = [7, 1, recipes.Station(recipe.station)]
             player.stationPlaced[recipe.station] = (mineshafts.floorKey(self), spot)
-            message = popup = f"{recipes.STATION_INFO[recipe.station]['name']} set up"
-            self.craftMessage = message
-            self.addPopup(popup, spot)
+            self.craftMessage = f"{recipes.STATION_INFO[recipe.station]['name']} set up"
             return
         if kind == "pack":
             spot = player.stationPlaced.pop(recipe.station)[1]
             self.grid[spot] = [0, self.grid[spot][1]]
             self.craftMessage = f"{recipes.STATION_INFO[recipe.station]['name']} packed away"
-            self.addPopup("Packed", spot)
             return
         player.spendMaterials(recipe.needs)
         if kind == "station":
@@ -1967,10 +1958,8 @@ class gameManager():
             tile = self.grid.get(position)
             if tile and tile[0] == 5 and len(tile) > 2 and getattr(tile[2], "name", None) == "Unsealed":
                 self.killEnemy(position, killer=None)
-        spot = self.placeSealedPatternChest()
+        self.placeSealedPatternChest()
         self.addPopup("The seal holds", self.playerPositionFlat)
-        if spot is not None:
-            self.addPopup("A relic chest appears", spot)
         self.change = True
 
     def floorCenter(self):
@@ -2127,7 +2116,6 @@ class gameManager():
             if loot.isRelicDrop(dropId):
                 relic = relics.make(dropId[6:])
                 stacks.append(relic)
-                self.addPopup(f"{relic.name} dropped!", position)
             else:
                 left = amount - self.give(dropId, amount, position)
                 if left:
@@ -2589,9 +2577,7 @@ class gameManager():
         if self.player.damageTaken > before and not self.player.fireImmune():
             dealt = max(0, giant.fireDamage - self.player.fireResistance())
             self.player.damageTaken += dealt
-            if dealt == 0:
-                self.addPopup("Resisted", self.playerPositionFlat)
-            elif BURN_DAMAGE > self.player.fireResistance() and rand.random() < giant.igniteChance:
+            if dealt > 0 and BURN_DAMAGE > self.player.fireResistance() and rand.random() < giant.igniteChance:
                 self.player.burnTurns = BURN_TURNS
 
     def stepMolten(self):
@@ -3288,8 +3274,7 @@ class gameManager():
         """Drinks a potion or eats a meal from the inventory (thrown ones go through startThrow instead)."""
         item = self.player.inventory[index]
         self.player.useConsumable(index)
-        if item.effect == "Meal":
-            self.addPopup(f"Ate {item.name}", self.playerPositionFlat)  # (it replaces any meal still working)
+        if item.effect == "Meal":  # (it replaces any meal still working)
             self.change = True
 
     # ---------------------------------------------------------------- throwing
@@ -3303,17 +3288,11 @@ class gameManager():
         look = self.PlayerLookPosition
         self.currentAimSpot = look if look in self.grid else self.playerPositionFlat
         self.refreshThrowAim()
-        if index == PITCH_BOLT:
-            key = self.settings.keyName(self.settings.hotkeys["pitch_bolt"])
-            self.addPopup(f"Aim, Enter or {key} to fire", self.playerPositionFlat)
-        else:
-            self.addPopup("Aim, Enter to throw", self.playerPositionFlat)
 
     def startPitchBolt(self):
         """The Pitch Bolt hotkey (F): with the Sealed Pattern on, aim a bolt of Pitch like a throw. It lands on the
         first enemy in its way and hits only that space; walls stop it unharmed."""
         if not self.player.hasEffect("sealed_pattern"):
-            self.addPopup("Only the Sealed Pattern can do that", self.playerPositionFlat)
             return
         self.startThrow(PITCH_BOLT)
 
@@ -3482,15 +3461,11 @@ class gameManager():
             if self.playerPositionFlat in area:  # too close: you burn too
                 hit += 1
                 self.firePlayer(shot["power"])
-            if not hit:
-                self.addPopup("Nothing burns", landing)
         elif shot["effect"] == "Pitch":  # the Sealed Pattern's Pitch Bolt: just the one space, and never the walls
             hit = 0
             for position, unit in occupancy.unitsInArea(self, area):
                 hit += 1
                 self.pitchEnemy(position, shot["power"], unit=unit)
-            if not hit:
-                self.addPopup("Nothing there", landing)
         elif shot["effect"] == "Magic":  # Demise Flask: magic damage, but Organizers take root instead
             hit = 0
             for position, unit in occupancy.unitsInArea(self, area):
@@ -3502,8 +3477,6 @@ class gameManager():
             if self.playerPositionFlat in area:  # too close: it hits you too
                 hit += 1
                 self.magicPlayer(shot["power"])
-            if not hit:
-                self.addPopup("Nothing there", landing)
         elif shot["effect"] == "Explosive":
             hit = 0
             if self.onScreen():
@@ -3531,15 +3504,12 @@ class gameManager():
             if rand.random() < FLOOR_BREAK_CHANCE:
                 hit += 1
                 self.collapseFloor(landing, radius)
-            if not hit:
-                self.addPopup("Boom",landing)
         else:
             for position in area:
                 self.smoke[position] = max(self.smoke.get(position, 0), shot["power"])
                 tile = self.grid[position]
                 if tile[0] == 5 and len(tile) > 2:
                     tile[2].lastPlayerPosition = None  # caught in the smoke: it loses track of you
-            self.addPopup("Smoke", landing)
         self.change = True
 
     # ------------------------------------------------------------- holes
@@ -3658,7 +3628,6 @@ class gameManager():
         player = self.player
         dealt = max(0, damage - player.fireResistance())
         if dealt == 0:
-            self.addPopup("Resisted", self.playerPositionFlat)
             return
         player.damageTaken += dealt
         self.bleed(self.playerPositionFlat)
@@ -3676,7 +3645,6 @@ class gameManager():
         enemy = unit if unit is not None else self.grid[position][2]
         dealt = self.enemyFireDamage(enemy, damage)
         if dealt == 0:
-            self.addPopup("Resisted", position)
             return
         enemy.hp -= dealt
         self.bleed(position)
@@ -3698,7 +3666,6 @@ class gameManager():
         dealt = max(0, damage - getattr(enemy, "pitchResistance", 0))
         dealt = round(dealt * (1 - getattr(enemy, "pitchResistPercent", 0)))
         if dealt == 0:
-            self.addPopup("Resisted", position)
             return
         enemy.hp -= dealt
         self.bleed(position)
@@ -3713,7 +3680,6 @@ class gameManager():
     def magicPlayer(self, damage):
         dealt = max(0, damage - self.player.magicResistance())
         if dealt == 0:
-            self.addPopup("Resisted", self.playerPositionFlat)
             return
         self.player.damageTaken += dealt
         self.bleed(self.playerPositionFlat)
@@ -3723,7 +3689,6 @@ class gameManager():
         dealt = max(0, damage - getattr(enemy, "magicResistance", 0))
         dealt = round(dealt * (1 - getattr(enemy, "magicResistPercent", 0)))
         if dealt == 0:
-            self.addPopup("Resisted", position)
             return
         enemy.hp -= dealt
         self.bleed(position)
@@ -3746,7 +3711,6 @@ class gameManager():
             self.bleed(self.playerPositionFlat)
         if plant.walkable:
             self.currentLocation = plantTile
-            self.addPopup(f"{plant.name} grows over you", self.playerPositionFlat)
             return
         free = [besidePlayer for besidePlayer in self.neighbors(self.playerPositionFlat)
                 if self.grid[besidePlayer][0] == 0 and besidePlayer not in self.EnemyPositions]
@@ -3756,7 +3720,6 @@ class gameManager():
             self.currentLocation = copy.copy(self.grid[spot])
             self.playerPositionFlat = spot
             self.grid[spot] = [1, self.grid[spot][1]]
-            self.addPopup(f"Pushed out by {plant.name}", spot)
         else:
             self.currentLocation = plantTile
             self.addPopup(f"Stuck in {plant.name}! Ctrl+{self.interactKeyName()} to break free", self.playerPositionFlat)
@@ -3774,7 +3737,6 @@ class gameManager():
                 hurt.add(id(unit))
                 unit.hp -= OVERGROWTH_DAMAGE
                 self.bleed(spot)
-                self.addPopup(f"{plantTile[2].name} grows under it", spot)
                 if unit.hp <= 0:
                     self.killEnemy(getattr(unit, "anchor", None) if self.isBig(unit) else spot, None, unit=unit)
             tile = self.grid[spot]
@@ -3807,7 +3769,8 @@ class gameManager():
                 stage = plant.pick()
                 self.currentLocation = [0, tile[1]]
                 if stage is None:
-                    self.addPopup("Broke free" if not plant.walkable else "Not ripe", self.playerPositionFlat)
+                    if plant.walkable:  # (pulling free of a plant that trapped you says nothing)
+                        self.addPopup("Not ripe", self.playerPositionFlat)
                 else:
                     self.collectDrops(loot.rollPick(plant, stage), loot.plantSource(plant, stage), self.playerPositionFlat)
             self.enemyMove = True
