@@ -35,6 +35,13 @@ class Body(items.ItemPile):
         self.pose = "down"
         self.rolledAtMs = None  # when it was rolled over (pygame ticks), for the roll animation
 
+    def __getstate__(self):
+        """Saved without its roll's start time: the clock starts over when the game loads, so a saved time could
+        come round again and play the roll a second time."""
+        state = dict(self.__dict__)
+        state["rolledAtMs"] = None
+        return state
+
     def age(self, worldTurn):
         return max(0, worldTurn - self.diedTurn)
 
@@ -71,6 +78,11 @@ class Body(items.ItemPile):
 
 def isBody(thing):
     return isinstance(thing, Body)
+
+
+def bodyUnder(thing):
+    """The body under a plant that sprouted where something died (gameManager.buryUnderPlant), or None."""
+    return getattr(thing, "bodyUnder", None)
 
 
 def decayStep(age):

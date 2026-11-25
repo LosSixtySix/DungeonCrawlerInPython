@@ -14,7 +14,7 @@ import pygame
 from cruel.core import gamemanager
 from cruel.entities.enemies import DireRat, Goblin, GoblinChief
 from cruel.inventory import items, relics
-from cruel.world import bodies, expansion, occupancy
+from cruel.world import bodies, expansion, occupancy, plants
 from tests.helpers.gamemanager import CHEST, ENEMY, FLOOR, PILE, RIGHT, keyDown, newGame, standInOpenFloor
 
 
@@ -223,6 +223,18 @@ class RollAnimationTests(unittest.TestCase):
         body.rollOver(50_000)
         self.assertEqual(body.poseAt(10), (body.pose, False), "(the clock starts over when the game loads)")
 
+    def test_a_saved_body_never_plays_its_roll_again(self):
+        import pickle
+        body = bodies.Body("Goblin", 0)
+        body.rollOver(50_000)
+        loaded = pickle.loads(pickle.dumps(body))
+        self.assertEqual(loaded.pose, body.pose)
+        self.assertIsNone(loaded.rolledAtMs)
+        for later in (50_000, 50_000 + bodies.ROLL_FRAME_MS):  # (when the new session's clock comes round to that time)
+            self.assertEqual(loaded.poseAt(later), (body.pose, False))
+            self.assertFalse(loaded.rolling(later))
+        self.assertFalse(loaded.rollOver(60_000), "and searching it again doesn't roll it")
+
     def test_the_screen_animates_while_a_searched_body_rolls(self):
         test = BodyTest("run")
         test.setUp()
@@ -300,6 +312,90 @@ class DecayTests(BodyTest):
             looks.append(painter.bodyLook(body))
             self.assertIn(painter.bodyPicture(body), painter.bodyPictures.values())
         self.assertEqual(len({look[3] for look in looks}), 5, "a different picture at each stage")
+
+
+class UnderAPlantTests(BodyTest):
+    """Overgrowth: a plant that kills a unit grows over its body (gameManager.buryUnderPlant). The body lies under it,
+    drawn beneath the plant, until the plant is gone (uncoverBodies)."""
+
+    def growOverBody(self):
+        game = self.game
+        body = self.killBesideYou()
+        body.items.append(potion())
+        plantTile = [8, 1, plants.Plant.grown("hearthmoss")]
+        game.buryUnderPlant(self.besideYou, plantTile)
+        game.grid[self.besideYou] = plantTile
+        return body, plantTile[2]
+
+    def test_the_body_lies_under_the_plant(self):
+        body, plant = self.growOverBody()
+        self.assertIs(plant.bodyUnder, body)
+        self.assertIsNone(self.game.bodyAt(self.besideYou))
+        self.game.uncoverBodies()
+        self.assertEqual(self.game.grid[self.besideYou][0], 8, "the plant stays while it's there")
+
+    def test_when_the_plant_is_gone_the_body_is_there_again(self):
+        game = self.game
+        body, _ = self.growOverBody()
+        game.grid[self.besideYou] = [FLOOR, 1]  # (picked, burnt or pulled up)
+        game.uncoverBodies()
+        self.assertIs(game.bodyAt(self.besideYou), body)
+        self.assertEqual([item.name for item in body.items], ["Healing Potion"])
+
+    def test_it_shows_at_once_after_picking_the_plant(self):
+        game = self.game
+        body, _ = self.growOverBody()
+        game.grid[self.besideYou] = [FLOOR, 1]
+        game.change = True
+        game.uncoverBodies()
+        game.draw()
+        self.assertIs(game.bodyAt(self.besideYou), body)
+
+    def test_it_is_found_again_after_loading(self):
+        game = self.game
+        body, _ = self.growOverBody()
+        saveFile = os.path.join(tempfile.mkdtemp(), "plant-body.pkl")
+        gamemanager.gameManager.saveGame(game, saveFile)
+        loaded = newGame()
+        self.assertTrue(loaded.loadGame(saveFile))
+        self.assertEqual(list(loaded.plantBodiesHere()), [self.besideYou])
+        loaded.grid[self.besideYou] = [FLOOR, 1]
+        loaded.uncoverBodies()
+        self.assertEqual(loaded.bodyAt(self.besideYou).unitName, "Goblin")
+
+    def test_it_is_drawn_beneath_the_plant(self):
+        game = self.game
+        body, plant = self.growOverBody()
+        painter = game.painter
+        with mock.patch.object(painter, "blitPile", wraps=painter.blitPile) as blitPile:
+            game.draw()
+        self.assertIn(body, [call.args[0] for call in blitPile.call_args_list])
+        before = painter.tileSignature(game.grid, self.besideYou, game.rooms, 0, self.here, 5, (0, 0, 1))[0]
+        game.worldTurn += bodies.SKELETAL_TURNS
+        game.draw()
+        after = painter.tileSignature(game.grid, self.besideYou, game.rooms, 0, self.here, 5, (0, 0, 1))[0]
+        self.assertNotEqual(before, after, "it's redrawn as the body under it decays")
+
+    def test_under_a_unit_still_standing_there_too(self):
+        game = self.game
+        body = self.killBesideYou()
+        self.putEnemy(self.besideYou, Goblin())
+        game.enemyOccupiedItemSpaces[self.besideYou] = [PILE, 1, body]
+        plantTile = [8, 1, plants.Plant.grown("hearthmoss")]
+        game.buryUnderPlant(self.besideYou, plantTile)
+        self.assertIs(plantTile[2].bodyUnder, body)
+
+    def test_a_body_under_a_plant_still_decays(self):
+        game = self.game
+        game.worldTurn = 0
+        body, plant = self.growOverBody()
+        game.worldTurn = bodies.DECAY_TURNS
+        game.stepBodies()
+        self.assertIsNone(plant.bodyUnder)
+        self.assertEqual(game.grid[self.besideYou][0], 8, "the plant stays")
+        grounds = [game.groundAt(spot) for spot in game.grid]
+        spilled = [item.name for ground in grounds if ground[0] == PILE for item in ground[2].items]
+        self.assertIn("Healing Potion", spilled, "what was on it spills beside the plant")
 
 
 if __name__ == "__main__":

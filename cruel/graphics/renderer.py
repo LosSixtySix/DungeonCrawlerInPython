@@ -1820,7 +1820,8 @@ class renderer():
         blood = self.blood.get(i) if self.blood else None
         extra = None
         if kind == 1:
-            extra = (playerDirection, getattr(obj, "look", None), getattr(obj, "kind", None), items.onlyGlowrocks(obj), self.bodyLook(obj))
+            extra = (playerDirection, getattr(obj, "look", None), getattr(obj, "kind", None), items.onlyGlowrocks(obj),
+                     self.bodyLook(bodies.bodyUnder(obj) or obj))
         elif kind == 2:
             glint = self.glintPhase(i, self.frameTicks) if not memorized and isinstance(obj, walls.OreVein) else None
             extra = (obj.name, len(obj.brokenPoints), getattr(obj, "corruptedBy", None), getattr(obj, "paint", None), glint)
@@ -1831,7 +1832,7 @@ class renderer():
         elif kind == 7:
             extra = (obj.id, obj.hp, obj.claimed)
         elif kind == 8:
-            extra = (obj.kind, getattr(obj, "stage", None), obj.ready if obj.staged else None)
+            extra = (obj.kind, getattr(obj, "stage", None), obj.ready if obj.staged else None, self.bodyLook(bodies.bodyUnder(obj)))
         elif kind == expansion.HOLE:
             extra = self.holeSides(grid, i)
         elif kind == expansion.CAMP:
@@ -2039,6 +2040,8 @@ class renderer():
                 standingIn = grid[i][2] if len(grid[i]) > 2 else None
                 if standingIn is not None and hasattr(standingIn, "look"):  # on an item pile (or a body): it's under your feet
                     self.blitPile(standingIn, x, y)
+                elif bodies.bodyUnder(standingIn) is not None:  # in a plant that grew over a body
+                    self.blitPile(bodies.bodyUnder(standingIn), x, y)
                 self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
                 if isinstance(standingIn, plants.Plant):  # in a plant: it's drawn over you, see-through (anything
                     #                                     else you stand on, like a door or a mineshaft, isn't drawn)
@@ -2078,6 +2081,8 @@ class renderer():
                     pygame.draw.rect(self.mapSurface, self.color("enemy"), pygame.Rect(x * ts + 1, y * ts + ts - 2, max(1, (ts - 2) * station.hp // station.maxHp), 1))
             case 8:  # A plant: the floor, then the plant (kept in full color when remembered, like chests)
                 self.floorFill(i, rooms, memorized, x, y)
+                if bodies.bodyUnder(grid[i][2]) is not None:  # it sprouted where something died: its body lies beneath
+                    self.blitPile(bodies.bodyUnder(grid[i][2]), x, y)
                 picture = self.plantPicture(grid[i][2])
                 if picture is not None:
                     self.mapSurface.blit(picture, (x * ts, y * ts))

@@ -2015,16 +2015,40 @@ class gameManager():
         self.setGround(spot, [9, ground[1], body])
         self.change = True
 
-    def moveBodyAside(self, spot):
-        """The body on spot is pushed onto the nearest tile that can hold it (a plant sprouting there takes the tile).
-        False if there's nowhere for it."""
+    def buryUnderPlant(self, spot, plantTile):
+        """A plant sprouts where a body lies (Overgrowth killed what was there): the body stays under it, drawn beneath
+        the plant, until the plant is gone (uncoverBodies)."""
         body = self.bodyAt(spot)
-        target = next((p for p in self.spillOrder(spot) if p != spot and self.canHoldBody(self.groundAt(p))), None)
-        if body is None or target is None:
-            return False
-        self.setGround(spot, [0, self.groundAt(spot)[1]])
-        self.layBody(target, body)
-        return True
+        if body is not None:
+            plantTile[2].bodyUnder = body
+            self.plantBodiesHere()[spot] = body
+
+    def plantBodiesHere(self):
+        """{spot: body} for the bodies under plants on this floor. Kept for the floor you're on, and found again by
+        looking at its plants when you come to it (or load a game)."""
+        cache = self.__dict__.setdefault("plantBodies", {"grid": None, "bodies": {}})
+        if cache["grid"] is not self.grid:
+            cache["grid"], cache["bodies"] = self.grid, {}
+            for spot in self.grid:
+                ground = self.groundAt(spot)
+                if ground[0] == 8 and len(ground) > 2 and bodies.bodyUnder(ground[2]) is not None:
+                    cache["bodies"][spot] = bodies.bodyUnder(ground[2])
+        return cache["bodies"]
+
+    def uncoverBodies(self):
+        """A plant with a body under it is gone (picked, burnt, pulled up...): the body lies there again, with what was
+        on it. If something else is on the tile now, it lies on the nearest floor that can hold it."""
+        underPlants = self.plantBodiesHere()
+        for spot, body in list(underPlants.items()):
+            ground = self.groundAt(spot)
+            if ground[0] == 8 and len(ground) > 2 and bodies.bodyUnder(ground[2]) is body:
+                continue
+            del underPlants[spot]
+            target = next((p for p in self.spillOrder(spot) if self.canHoldBody(self.groundAt(p))), None)
+            if target is not None:
+                self.layBody(target, body)
+            elif body.items or body.gold:
+                self.placeItems(spot, body.items, body.gold)
 
     @staticmethod
     def canHoldBody(ground):
@@ -2047,6 +2071,15 @@ class gameManager():
         plain pile."""
         spots = [p for p, tile in self.grid.items() if tile[0] in (1, 9) and len(tile) > 2 and bodies.isBody(tile[2])]
         spots += [p for p, ground in self.enemyOccupiedItemSpaces.items() if ground[0] == 9 and bodies.isBody(ground[2])]
+        underPlants = self.plantBodiesHere()
+        for spot, body in list(underPlants.items()):  # (one under a plant: the plant stays, what was on it spills)
+            if body.decayed(self.worldTurn):
+                ground = self.groundAt(spot)
+                if ground[0] == 8 and bodies.bodyUnder(ground[2]) is body:
+                    ground[2].bodyUnder = None
+                del underPlants[spot]
+                if body.items or body.gold:
+                    self.placeItems(spot, body.items, body.gold)
         for spot in spots:
             body = self.bodyAt(spot)
             if body is None or not body.decayed(self.worldTurn):
@@ -3738,9 +3771,11 @@ class gameManager():
             tile = self.grid[spot]
             if tile[0] == 5 and len(tile) > 2:
                 if not self.isBig(tile[2]):
+                    self.buryUnderPlant(spot, plantTile)  # (one that died here while another still stands on it)
                     self.enemyOccupiedItemSpaces[spot] = plantTile
-            elif tile[0] == 0 or (tile[0] == 9 and bodies.isBody(tile[2]) and self.moveBodyAside(spot)):
-                self.grid[spot] = plantTile  # (the body of what it killed is pushed aside)
+            elif tile[0] == 0 or (tile[0] == 9 and bodies.isBody(tile[2])):
+                self.buryUnderPlant(spot, plantTile)  # the body of what it killed lies under it
+                self.grid[spot] = plantTile
         self.change = True
 
     def stuckIn(self):
@@ -4122,6 +4157,7 @@ class gameManager():
     def enemyTurn(self):
         self.turnCount += 1
         self.worldTurn = getattr(self, "worldTurn", 0) + 1
+        self.uncoverBodies()
         self.stepBodies()
         self.player.stepWard()
         livingfloors.arrive(self)
@@ -5179,6 +5215,7 @@ class gameManager():
                 self.overlayChange = True
 
             if self.change:
+                self.uncoverBodies()  # (a plant with a body under it was just picked or burnt: it shows at once)
                 self.setLookPosition()
                 self.roomItems = self.getItemsFromGrid()
                 self.setPositionsVisible()
