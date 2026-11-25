@@ -1,6 +1,7 @@
 import math
 
 from cruel.inventory import items
+from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import dwellerwork
 from cruel.world import expansion
@@ -8,6 +9,7 @@ from cruel.world import farmhouses
 from cruel.world import metropolis
 from cruel.world import mineshafts
 from cruel.world import organizers
+from cruel.world import quelling
 from cruel.world import wall
 
 """
@@ -117,12 +119,12 @@ def findSite(game, position, worker, width, height, round_=False):
             margin = mineshafts.withClearance(rowLength, left, top, width, height) - site["box"]
             if not marginFits(game, margin, keepOff - set(getattr(worker, "fields", {}))):
                 continue
-            rock |= {spot for spot in margin if dwellerwork.mineable(game.grid[spot])}
+            rock |= {spot for spot in margin if clearable(game.grid[spot])}
             backWay = wayOut(game, site["backOutside"], reach, keepOff | site["box"])
             if backWay is None:
                 continue
             site["backWay"] = backWay
-            rock |= {spot for spot in backWay if dwellerwork.mineable(game.grid[spot])}
+            rock |= {spot for spot in backWay if clearable(game.grid[spot])}
             score = away + 3 * len(rock)
             if best is None or score < best[0]:
                 site["margin"], site["rock"] = margin, rock
@@ -132,7 +134,7 @@ def findSite(game, position, worker, width, height, round_=False):
 
 def wayOut(game, start, reach, keepOff):
     """The tiles from start (outside a back door) to ground in reach (that you can walk to from the shaft), through
-    floor or rock a miner could break, round keepOff: start's included, BACK_WAY_MOST long at most. [] if start is
+    floor, rock a miner could break or wild plants, round keepOff: start's included, BACK_WAY_MOST long at most. [] if start is
     already in reach; None if there's no way."""
     if start in reach:
         return []
@@ -150,22 +152,28 @@ def wayOut(game, start, reach, keepOff):
                         step = cameFrom[step]
                     return way
                 tile = game.grid[near]
-                if tile[0] == dwellerwork.FLOOR or dwellerwork.mineable(tile):
+                if tile[0] == dwellerwork.FLOOR or clearable(tile):
                     cameFrom[near] = spot
                     nextFrontier.append(near)
         frontier = nextFrontier
     return None
 
 
+def clearable(tile):
+    """Something a builder clears off a site: rock it can break, or a wild plant (it picks it; a planted crop it
+    leaves)."""
+    return dwellerwork.mineable(tile) or quelling.isWild(tile)
+
+
 def siteRock(game, site, keepOff):
-    """The rock to dig out of a site, or None if the site has anything else on it (a unit, a chest, a plant, a
-    city wall...)."""
+    """The rock and wild plants to clear off a site, or None if the site has anything else on it (a unit, a chest,
+    a crop, a city wall...)."""
     rock = set()
     for spot in site["box"]:
         tile = game.grid.get(spot)
         if tile is None or spot in keepOff:
             return None
-        if dwellerwork.mineable(tile):
+        if clearable(tile):
             rock.add(spot)
         elif tile[0] != dwellerwork.FLOOR:
             return None
@@ -267,8 +275,10 @@ def isBuilt(game, plan, spot):
 
 
 def pieces(game, plan):
-    """What's left to do, in order: ("dig", spot)s, then ("wall", spot)s, then ("chest", spot)s."""
-    toDig = sorted((spot for spot in plan["box"] | set(plan.get("backWay", ())) if dwellerwork.mineable(game.grid[spot])),
+    """What's left to do, in order: ("dig", spot)s (rock to break and wild plants to pick, on the site, its back
+    way and its margin), then ("wall", spot)s, then ("chest", spot)s."""
+    toDig = sorted((spot for spot in plan["box"] | set(plan.get("backWay", ())) | set(plan.get("margin", ()))
+                    if spot in game.grid and clearable(game.grid[spot])),
                    key=lambda spot: dwellers.distance(game, plan["outside"], spot))
     if toDig:
         return [("dig", spot) for spot in toDig]
@@ -301,7 +311,11 @@ def build(game, position, worker, plan):
         if not standing:
             return None
         return dwellerwork.walkTo(game, position, worker, min(standing, key=lambda near: dwellers.distance(game, position, near)))
-    if action == "dig":
+    if action == "dig" and quelling.isWild(game.grid[spot]):  # (a wild plant: picked, like a farmer picks a crop)
+        if getattr(worker, "materials", None) is None:
+            worker.materials = {}
+        dwellerfarming.pickCrop(game, spot, worker)
+    elif action == "dig":
         rock = game.grid[spot][2]
         game.chip(spot, position)
         rock.takeDamage(dwellerwork.MINE_SWING, game.tileSize)

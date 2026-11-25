@@ -8,6 +8,7 @@ from cruel.world import metropolis
 from cruel.world import occupancy
 from cruel.world import organizers
 from cruel.world import queen
+from cruel.world import quelling
 
 """
 The Metropolis's Dwellers at work (metropolis.py builds the city, enemies.Dweller and its four roles are the units).
@@ -485,8 +486,11 @@ def guardTurn(game, position, dweller):
 
 
 def calmTurn(game, position, dweller):
-    """Going about its day: workers work (dwellerwork.py); merchants stay put; the others stand about or walk
-    somewhere."""
+    """Going about its day: during Overgrowth it clears the plants off the buildings first (quelling.py); workers
+    work (dwellerwork.py); merchants stay put; the others stand about or walk somewhere."""
+    quelled = quelling.quellTurn(game, position, dweller)
+    if quelled is not None:
+        return quelled
     if dwellerwork.isWorker(dweller):
         worked = dwellerwork.workTurn(game, position, dweller)
         if worked is not None:
