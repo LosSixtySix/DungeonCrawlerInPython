@@ -6,6 +6,7 @@ from cruel.world import dwellers
 from cruel.world import dwellerfarming
 from cruel.world import dwellerwork
 from cruel.world import expansion
+from cruel.world import followers
 from cruel.world import livingfloors
 from cruel.world import metropolis
 from cruel.world import mineshafts
@@ -123,6 +124,7 @@ def enemyInReach(game, anchor, queen):
 def queenTurn(game, anchor, queen):
     """One action for the Queen: she never moves. She hits you if you're within reach and she's hostile, otherwise
     the nearest enemy of the city within reach. Returns her anchor."""
+    followers.crownMood(game, queen)  # (wearing the Pheromone Crown, she's hostile to you too)
     if youInReach(game, anchor, queen):
         game.hitPlayer(queen, anchor)
         return anchor
@@ -432,7 +434,7 @@ def census(game):
 def jobOf(unit):
     """What kind of unit this is to the city: "guard" (not royal), "carrier", "miner", "farmer", "citizen" (with
     no work, or on its way to it: a hatchling joining a works floor counts as what it will be), or its role."""
-    if not dwellers.isDweller(unit):
+    if not dwellers.isDweller(unit) or followers.isFollower(unit):
         return None
     if unit.role == "guard":
         return None if isRoyal(unit) else "guard"

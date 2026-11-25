@@ -1,4 +1,5 @@
 from cruel.inventory import items
+from cruel.inventory import relics
 import random as rand
 
 CLEAN_DODGE_BASE = 0.05  # (the player's starts the same; see playerClass.CLEAN_DODGE_BASE)
@@ -215,6 +216,11 @@ class DwellerQueen(Dweller):
         self.dew = 0               # Dew her carriers have fed her (queen.py)
         self.carriersAway = {}     # her carriers down on the farm now: {carrier: the turn it went}
         self.court = {}            # what her eggs need to hatch (metropolis.placeCourt): nests, posts, homes, wanted
+
+    @property
+    def loot(self):
+        """She always drops the Pheromone Crown, whoever kills her (followers.py)."""
+        return [relics.make("pheromone_crown")]
 
 
 class RoyalGuard(DwellerGuard):

@@ -3,6 +3,7 @@ import random
 
 from cruel.world import dwellerwork
 from cruel.world import expansion
+from cruel.world import followers
 from cruel.world import metropolis
 from cruel.world import occupancy
 from cruel.world import organizers
@@ -267,8 +268,10 @@ def attitudeLabel(enemy):
 
 def isCityEnemy(enemy):
     """Is this a monster the Dwellers are always hostile to: anything but a Dweller or the Gray Peddler (every
-    goblin included, a neutral faction's too)?"""
-    return enemy is not None and not isDweller(enemy) and not getattr(enemy, "merchant", False)
+    goblin included, a neutral faction's too), and a Dweller that follows you (followers.py)?"""
+    if enemy is not None and isDweller(enemy):
+        return followers.isFollower(enemy)
+    return enemy is not None and not getattr(enemy, "merchant", False)
 
 
 def isGoblin(enemy):
@@ -373,6 +376,9 @@ def takeTurn(game, position, dweller):
         return dwellerwork.grubTurn(game, position, dweller)
     if dweller.role in ("pupa", "egg"):  # it waits (queen.py)
         return position
+    if followers.isFollower(dweller):  # it follows you (followers.py)
+        return followers.followerTurn(game, position, dweller)
+    followers.crownMood(game, dweller)  # (while you wear the Pheromone Crown, every Dweller is hostile to you)
     dealtWith = dealWithEnemies(game, position, dweller)
     if dealtWith is not None:
         return dealtWith

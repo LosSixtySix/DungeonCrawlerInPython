@@ -74,6 +74,7 @@ class PlayerClass():
         self.lootFound = set()   # what the Loot Table window has revealed (see loot.discoveryKey)
         self.stations = set()    # crafting stations the player has made, e.g. {"workbench"} (see recipes.py)
         self.stationPlaced = {}  # heavy stations that are set up: station id -> (floor, map position)
+        self.followers = []  # Dwellers that follow you (followers.py: won with the Pheromone Crown)
         self.pouchLimit = resources.POUCH_LIMIT  # how many of each material fit (the Leather Pouch raises it)
         self.pouchFullShown = {}  # material id -> times "pouch full" has shown since it filled (gameManager.give)
         self.wardReady = True    # Warded Chainmail: the first hit on each floor does nothing
@@ -96,7 +97,8 @@ class PlayerClass():
 
     def getSpeed(self):
         """Actions each turn (a fraction builds up into an extra action now and then)."""
-        return 1 + SPEED_PER_DEX_BONUS * self.attributeBonuses["dexterity"] + relics.LIGHTNING_SPEED * self.countEffect("lightning")
+        return 1 + SPEED_PER_DEX_BONUS * self.attributeBonuses["dexterity"] + relics.LIGHTNING_SPEED * self.countEffect("lightning") \
+            + relics.PHEROMONE_SPEED * self.countEffect("pheromones")
 
     def evasion(self):
         """Chance (0..1) to evade an enemy's attack."""
