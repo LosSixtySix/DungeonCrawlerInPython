@@ -20,6 +20,11 @@ floor events and plants; nothing that's only round you, and nothing ever touches
                  but makes no spurt or flecks, and nothing there plays a sound, pops up a message or redraws your
                  screen. That keeps it from showing on yours, and keeps its turn cheap.
 
+Walking between floors: a Dweller beside a mineshaft can climb it (climb). It leaves its floor, and comes out by
+the shaft's other end at the start of that floor's next turn (arrive: on the free tile nearest the shaft), whether
+that's the floor you're on or one of those that keep going. Until then it waits in game.shaftArrivals ({floor key:
+[(unit, shaft position)]}, saved with the game).
+
 A new track: once you're on a floor with no door back up (gameManager.trackStarts), the floors above the latest
 such floor at or above you can never be reached again. dropUnreachable empties them (from memory and the save),
 and nothing simulates them.
@@ -239,7 +244,76 @@ def dropUnreachable(game):
         takeNumbered(game, level)
     for key in [key for key in game.floorsAside if key[0] < first]:
         del game.floorsAside[key]
+    for key in [key for key in arrivals(game) if mineshafts.floorNumber(key) < first]:
+        del arrivals(game)[key]
     for station, (floor, _) in list(game.player.stationPlaced.items()):
         if mineshafts.floorNumber(floor) < first:
             del game.player.stationPlaced[station]
     return dropped
+
+
+# ---------------------------------------------------------------- walking between floors
+
+def arrivals(game):
+    """{floor key: [(unit, shaft position)]}: who has climbed a shaft and will come out on that floor."""
+    if getattr(game, "shaftArrivals", None) is None:
+        game.shaftArrivals = {}
+    return game.shaftArrivals
+
+
+def otherEnd(game, shaftSpot):
+    """The floor key at the other end of the shaft at shaftSpot on the floor taking its turn: down a city's shaft,
+    its works floor; up a works floor's, the city."""
+    shaft = game.grid[shaftSpot][2]
+    return (game.level, shaftSpot) if getattr(shaft, "down", True) and getattr(game, "sideFloor", None) is None else game.level
+
+
+def climb(game, position, unit, shaftSpot):
+    """unit (lifted off position for its turn, beside the shaft at shaftSpot) climbs it: it leaves this floor
+    (position is left as if it had walked off it; leaving(unit) is true until it's put down) and comes out on the
+    other end's floor at its next turn."""
+    occupancy.leave(game, position)
+    unit.climbing = True
+    arrivals(game).setdefault(otherEnd(game, shaftSpot), []).append((unit, shaftSpot))
+    game.change = True
+
+
+def leaving(unit):
+    """Did this unit just climb a shaft (so it isn't put back on this floor)?"""
+    return getattr(unit, "climbing", False)
+
+
+def nearestFree(game, spot, reach=6):
+    """The open floor tile nearest spot (spot itself counts), within reach rings, or None."""
+    rowLength = game.rowLength
+    column, row = spot % rowLength, spot // rowLength
+    for ring in range(reach + 1):
+        ringTiles = [(column + stepColumn) + (row + stepRow) * rowLength for stepRow in range(-ring, ring + 1)
+                     for stepColumn in range(-ring, ring + 1) if max(abs(stepColumn), abs(stepRow)) == ring
+                     and 0 <= column + stepColumn < rowLength]
+        free = [tile for tile in ringTiles if tile in game.grid and game.grid[tile][0] == 0 and tile != game.playerPositionFlat]
+        if free:
+            return min(free, key=lambda tile: abs(tile % rowLength - column) + abs(tile // rowLength - row))
+    return None
+
+
+def arrive(game):
+    """The start of a floor's turn: everyone who climbed a shaft to it comes out on the free tile nearest the
+    shaft (one with nowhere to stand waits another turn). Returns how many came out."""
+    key = mineshafts.floorKey(game)
+    waiting = arrivals(game).pop(key, [])
+    stillWaiting, came = [], 0
+    for unit, shaftSpot in waiting:
+        spot = nearestFree(game, shaftSpot)
+        if spot is None:
+            stillWaiting.append((unit, shaftSpot))
+            continue
+        unit.climbing = False
+        game.grid[spot] = [5, game.grid[spot][1], unit]
+        game.EnemyPositions.add(spot)
+        came += 1
+    if stillWaiting:
+        arrivals(game)[key] = stillWaiting
+    if came:
+        game.change = True
+    return came

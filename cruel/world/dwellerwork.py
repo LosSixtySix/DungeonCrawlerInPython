@@ -12,6 +12,7 @@ from cruel.world import expansion
 from cruel.world import metropolis
 from cruel.world import organizers
 from cruel.world import plants
+from cruel.world import queen
 from cruel.world import wall
 
 """
@@ -70,7 +71,9 @@ def carrying(worker):
 
 def workTurn(game, position, worker):
     """A calm worker's turn at its work. Returns where it ends up, or None if there's nothing for it to do (it
-    wanders like any calm Dweller)."""
+    wanders like any calm Dweller). A Dew carrier's work is the Queen's (queen.carrierTurn)."""
+    if worker.work == "dew":
+        return queen.carrierTurn(game, position, worker)
     loaded = dwellerfarming.needsHauling(worker) if worker.work == "farm" else bool(toStore(worker))
     if loaded:  # (a farmer keeps its food and seeds, and takes the rest in once it's a load)
         moved = haul(game, position, worker)
@@ -89,12 +92,13 @@ def workTurn(game, position, worker):
     return None
 
 
-def walkTo(game, position, worker, goal):
+def walkTo(game, position, worker, goal, reach=None):
     """A step toward goal (a tile or the wall or chest beside where it's going). A worker that hasn't got any closer
     for GIVE_UP_TURNS turns forgets its target; one stuck for STUCK_SWAP_TURNS swaps past whoever is in its way. A
     farmer walks through any plant (like a goblin farmer)."""
     stuck = getattr(worker, "stuckTurns", 0) >= STUCK_SWAP_TURNS
-    newPosition = dwellers.stepToward(game, position, goal, forceSwap=stuck, throughPlants=worker.work == "farm", unit=worker)
+    newPosition = dwellers.stepToward(game, position, goal, forceSwap=stuck, throughPlants=worker.work == "farm", unit=worker,
+                                      reach=reach or dwellers.PATH_REACH)
     if newPosition == position:
         worker.stuckTurns = getattr(worker, "stuckTurns", 0) + 1
         if worker.stuckTurns >= GIVE_UP_TURNS:

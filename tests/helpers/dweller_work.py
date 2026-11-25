@@ -80,3 +80,29 @@ class FarmTest(WorkTest):
         farmer = self.worker(column, row, work="farm")
         farmer.fields = self.fields
         return farmer
+
+
+def dewMade(game):
+    """All the Dew the works have made so far: in this floor's storehouse chests, in the pockets of every Dweller on
+    the floors near you (and on their way up or down a shaft), and fed to the Queen (queen.py: her carriers take it
+    from the farm's chests to her)."""
+    from cruel.world import livingfloors
+    from cruel.world import mineshafts
+    from cruel.world import occupancy
+    from cruel.world import dwellerwork
+
+    def onThisFloor():
+        found = sum(stack.amount for spot in dwellerwork.storageChests(game) for stack in game.grid[spot][2]
+                    if stack.materialId == "dew")
+        for _, unit in occupancy.allUnits(game):
+            found += getattr(unit, "materials", {}).get("dew", 0) + getattr(unit, "dew", 0)
+        return found
+
+    total = onThisFloor()
+    for key in livingfloors.floorsInReach(game):
+        if livingfloors.floorData(game, key) is not None:
+            with livingfloors.awayFloor(game, key):
+                total += onThisFloor()
+    total += sum(getattr(unit, "materials", {}).get("dew", 0)
+                 for waiting in livingfloors.arrivals(game).values() for unit, _ in waiting)
+    return total

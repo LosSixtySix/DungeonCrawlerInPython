@@ -2,7 +2,10 @@ import random
 
 from cruel.entities import enemies
 from cruel.world import dwellers
+from cruel.world import dwellerfarming
+from cruel.world import dwellerwork
 from cruel.world import expansion
+from cruel.world import livingfloors
 from cruel.world import metropolis
 from cruel.world import occupancy
 
@@ -20,10 +23,21 @@ The Dweller Queen and her court (design sheet: https://claude.ai/artifact/8crUvV
                   each turn there's a PUPATE_CHANCE that the city guard nearest the Queen pupates where it stands
                   (one at a time): it becomes a Royal Pupa (enemies.RoyalPupa) that can't move or fight, and
                   PUPA_TURNS turns on comes out a Royal Guard (takeTurn), which goes to a free post beside the Queen.
+  Dew carriers    metropolis.CARRIERS of a city's citizens are set aside (work "dew") to feed the Queen Dew from the
+                  farm (carrierTurn). Empty-handed in the city, one walks to the farm's shaft and climbs down
+                  (livingfloors.climb), but only AT_ONCE are down on the farm at a time (Queen.carriersAway: so
+                  they don't crowd the farmers at the storehouse); on the farm it takes up to CARRY Dew from the storehouse chests, climbs back
+                  up, walks to the Queen and feeds it all to her (queen.dew). Finding no Dew there, it climbs back up
+                  and goes about the city for REST_TURNS before trying again (so they don't crowd the farm). On any
+                  other floor it climbs back up. It deals with the city's enemies like any citizen first.
 """
 
 PUPATE_CHANCE = 0.02
 PUPA_TURNS = 40
+CARRY = 10                  # Dew a carrier takes from the farm each trip
+REST_TURNS = 50             # a carrier that found no Dew on the farm waits this long in the city before going again
+AT_ONCE = 2                 # carriers down on the farm at a time...
+AWAY_LIMIT = 300            # ...not counting one that went down this long ago and hasn't come back (it may have died there)
 
 
 def isQueen(unit):
@@ -150,3 +164,72 @@ def takeTurn(game, position, unit):
     royal.hostile = unit.hostile
     game.change = True
     return position, royal
+
+
+# ---------------------------------------------------------------- the Dew carriers
+
+def shaftsHere(game, kind=None):
+    """Where this floor's mineshafts are (of kind, if given: the works kind each goes to)."""
+    return [spot for spot, tile in game.grid.items() if tile[0] == metropolis.MINESHAFT and len(tile) > 2
+            and (kind is None or getattr(tile[2], "kind", None) == kind)]
+
+
+def climbOrWalk(game, position, carrier, shaftSpot):
+    """Beside the shaft, the carrier climbs it; otherwise it takes a step toward it."""
+    if shaftSpot in game.neighbors(position):
+        livingfloors.climb(game, position, carrier, shaftSpot)
+        return position
+    return dwellerwork.walkTo(game, position, carrier, shaftSpot, reach=dwellers.FAR_PATH_REACH)
+
+
+def carriersAway(game, dwellerQueen):
+    """{carrier: the turn it went down}: the Queen's carriers down on the farm now (forgetting any gone longer than
+    AWAY_LIMIT)."""
+    away = getattr(dwellerQueen, "carriersAway", None)
+    if away is None:
+        away = dwellerQueen.carriersAway = {}
+    for carrier in [carrier for carrier, went in away.items() if game.turnCount - went > AWAY_LIMIT]:
+        del away[carrier]
+    return away
+
+
+def feed(dwellerQueen, carrier):
+    """The carrier feeds the Queen all the Dew it carries. Returns how much."""
+    dew = carrier.materials.pop("dew", 0)
+    dwellerQueen.dew = getattr(dwellerQueen, "dew", 0) + dew
+    return dew
+
+
+def carrierTurn(game, position, carrier):
+    """A Dew carrier's turn (see the top of this file). Returns where it ends up, or None with nothing to do (no
+    Queen, or no farm shaft: it wanders like any citizen)."""
+    dew = carrier.materials.get("dew", 0)
+    side = getattr(game, "sideFloor", None)
+    if side is None:  # the city
+        court = courtOf(game)
+        if court is None:
+            return None
+        anchor, dwellerQueen = court
+        away = carriersAway(game, dwellerQueen)
+        away.pop(carrier, None)  # (it's back)
+        if dew:
+            if game.reachOf(dwellerQueen, anchor, position) <= 1:
+                feed(dwellerQueen, carrier)
+                game.change = True
+                return position
+            return dwellerwork.walkTo(game, position, carrier, anchor, reach=dwellers.FAR_PATH_REACH)
+        farmShafts = shaftsHere(game, "farm")
+        if not farmShafts or game.turnCount < getattr(carrier, "restUntil", 0) or len(away) >= AT_ONCE:
+            return None
+        moved = climbOrWalk(game, position, carrier, dwellerwork.nearest(game, position, farmShafts))
+        if livingfloors.leaving(carrier):
+            away[carrier] = game.turnCount
+        return moved
+    kind, shaftSpot = side
+    if kind == "farm" and dew < CARRY:
+        fetched = dwellerfarming.fetch(game, position, carrier, {"dew"}, CARRY - dew)
+        if fetched is not None:
+            return fetched
+        if not dew:  # (none in the chests: back up, and it rests a while before trying again)
+            carrier.restUntil = game.turnCount + REST_TURNS
+    return climbOrWalk(game, position, carrier, shaftSpot)
