@@ -4209,6 +4209,7 @@ class gameManager():
             "cityAside": self.cityAside,
             "floorsAside": self.floorsAside,
             "shaftArrivals": livingfloors.arrivals(self),
+            "workShared": queen.sharedOf(self),
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -4239,6 +4240,7 @@ class gameManager():
             self.cityAside = data.get("cityAside")
             self.floorsAside = data.get("floorsAside", {})
             self.shaftArrivals = data.get("shaftArrivals", {})
+            self.workShared = data.get("workShared", {})
             self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
             self.patienceMs = 0
             self.forcedTheme = None
