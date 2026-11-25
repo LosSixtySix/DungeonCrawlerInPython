@@ -397,11 +397,6 @@ class gameManager():
         self.sound.playGameTheme()  # and the quiet in-game music comes in
         self.enemyMove = False
 
-        self.picker = {"ChangingColor": False, "ColorSelected": False}
-        self.pickerIndex = 0
-        self.selectedColor = "fog"
-        self.colorIndex = 0
-
         self.swap = None  # an equipment swap waiting for Enter (see startSwap)
         self.inventoryScroll = 0  # the Inventory window's top row (see scrollInventory)
         self.smoke = {}       # thrown Smoke Bomb clouds: {map position: turns left}
@@ -555,24 +550,23 @@ class gameManager():
             if windowId not in OPENED_BY_INTERACT and self.isAction(key, WINDOW_HOTKEY[windowId]):
                 return self.onWindowHotkey(windowId)
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT) and self.focus in ("inventory", "equipment")                     and not self.pickerActive():
+            if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT) and self.focus in ("inventory", "equipment"):
                 return self.dropFocusedItem()
-            if self.focus == "crafting" and not self.pickerActive():
+            if self.focus == "crafting":
                 return self.startCrafting(CRAFT_MORE if event.mod & pygame.KMOD_SHIFT else 1)
-            if self.focus == "shop" and not self.pickerActive():  # Ctrl+Enter on a material sells every whole lot
+            if self.focus == "shop":  # Ctrl+Enter on a material sells every whole lot
                 return self.shopEnter(everything=bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT)))
             return self.onEnter()
         if self.isAction(key, "interact"):
             if self.focus == "attack" and "attack" in self.openWindows:  # interact again hits the one marked
                 return self.onWindowEnter("attack")
-            if self.focus == "shop" and "shop" in self.openWindows and not self.pickerActive():
+            if self.focus == "shop" and "shop" in self.openWindows:
                 # in a shop, interact buys or sells (Ctrl + interact sells every whole lot of a material)
                 return self.shopEnter(everything=bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT)))
-            if not self.pickerActive():
-                if event.mod & pygame.KMOD_CTRL:
-                    self.interactHere()
-                else:
-                    self.onInteract(forceAttack=bool(event.mod & pygame.KMOD_SHIFT))
+            if event.mod & pygame.KMOD_CTRL:
+                self.interactHere()
+            else:
+                self.onInteract(forceAttack=bool(event.mod & pygame.KMOD_SHIFT))
             return
         if move is not None:
             self.onDirectionKey(*move)
@@ -581,9 +575,7 @@ class gameManager():
 
     def waitTurn(self):
         """The Wait hotkey (Space): you do nothing, and it spends your action like a step would, so the world
-        takes its turn. Not while picking a color."""
-        if self.pickerActive():
-            return
+        takes its turn."""
         self.enemyMove = True
 
     def onKeyUp(self, event):
@@ -604,9 +596,7 @@ class gameManager():
             self.change = True
 
     def onEscape(self):
-        if self.pickerActive():
-            self.picker = {"ChangingColor": False, "ColorSelected": False}
-        elif self.swapActive():
+        if self.swapActive():
             self.cancelSwap()
         elif self.focus in self.openWindows:
             self.closeWindow(self.focus)
@@ -1652,18 +1642,6 @@ class gameManager():
             return
         if event.y and pygame.key.get_mods() & pygame.KMOD_CTRL:  # Ctrl + wheel: zoom the map in (up) or out (down)
             return self.zoomMap(1 if event.y > 0 else -1)
-        if self.picker["ChangingColor"]:
-            keys = list(self.painter.colorDict.keys())
-            newIndex = self.pickerIndex - event.y
-            if 0 <= newIndex < len(keys):
-                self.pickerIndex = newIndex
-                self.selectedColor = keys[newIndex]
-        elif self.picker["ColorSelected"]:
-            color = self.painter.colorDict[self.selectedColor]
-            if 0 <= color[self.colorIndex] + event.y <= 255:
-                color[self.colorIndex] += event.y
-                self.painter.clearTileCaches()  # the theme's colors changed in place: redraw every tile
-                self.painter.drawnGrid = None
         self.change = True
 
     def zoomMap(self, step):
@@ -1678,15 +1656,8 @@ class gameManager():
 
     # ------------------------------------------------------------- gameplay
 
-    def pickerActive(self):
-        return True in self.picker.values()
-
     def onEnter(self):
         if self.aim:
-            return
-        if self.pickerActive():
-            if self.picker["ChangingColor"]:
-                self.picker = {"ChangingColor": False, "ColorSelected": True}
             return
         if self.focus in LIST_WINDOWS:
             self.onWindowEnter(self.focus)
@@ -1700,8 +1671,6 @@ class gameManager():
     def onDirectionKey(self, dx, dy, newDirection):
         if self.enemyMove:
             return
-        if self.picker["ColorSelected"]:
-            self.colorIndex = max(0, min(2, self.colorIndex + dx))
         if self.aim:
             start = self.playerPositionFlat if self.currentAimSpot is None else self.currentAimSpot
             if dx and not self.sameRow(start, start + dx):
@@ -1710,8 +1679,6 @@ class gameManager():
             self.aimLine = self.createARay(self.playerPositionFlat, self.currentAimSpot)
         elif self.rotate:
             self.player.playerDirection = newDirection
-        elif self.pickerActive():
-            return
         elif self.focus in LIST_WINDOWS:
             self.moveSelection(dx, dy)
         else:
@@ -2058,15 +2025,6 @@ class gameManager():
         latest = max((p[2] for p in self.popups if p[1] == position), default=now - POPUP_GAP)
         self.popups.append([text, position, max(now, latest + POPUP_GAP)])
         self.change = True
-
-    def onColorPickerKey(self):
-        if self.picker["ChangingColor"]:
-            self.picker["ChangingColor"] = False
-        elif self.picker["ColorSelected"]:
-            self.picker["ColorSelected"] = False
-        else:
-            self.picker["ChangingColor"] = True
-            self.pickerIndex = list(self.painter.colorDict.keys()).index(self.selectedColor)
 
     def onPickUpItem(self):
         if self.roomItems is None:
@@ -2493,7 +2451,6 @@ class gameManager():
         self.playerBloodSpot = None
         self.closeWindow("items")
         self.closeWindow("shop")
-        self.picker = {"ChangingColor": False, "ColorSelected": False}
         self.messageBools["floorLevelMessage"] = True
         self.painter.fade = 255
         self.landFallen()
@@ -4454,8 +4411,6 @@ class gameManager():
                             ("Room Type", self.getRoomType(self.playerPositionFlat, self.rooms) or "-"),
                             ("Floor", self.level), ("Event", events.name(self.activeEvent()) if self.activeEvent() else "-"),
                             ("Standing On", self.currentPosition), ("Looking At", self.lookingAt())]
-            if self.pickerActive():
-                spec["rows"].append(("Color Selected", self.selectedColor))
         elif windowId == "equipment":
             spec["rows"] = [(slot, getattr(item, "name", item)) for slot, item in player.equipment.items()]
             if self.swapActive():

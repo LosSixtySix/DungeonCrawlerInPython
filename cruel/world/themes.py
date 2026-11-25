@@ -681,7 +681,7 @@ class Theme():
         self.floorType = floorType
         fog = hexToRGB(data["fog"])
 
-        # One flat dictionary of [r, g, b] lists. The color picker edits these lists in place.
+        # One flat dictionary of [r, g, b] lists.
         self.colors = {}
         for key in ["fog", "panel", "font", "boxLine", "select", "player", "marker", "enemy", "chest", "doorNext", "doorPrev", "aim"]:
             self.colors[key] = hexToRGB(data[key])

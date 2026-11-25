@@ -100,7 +100,7 @@ class renderer():
 
         # The current floor's colors (a themes.Theme). Set by the game manager with setTheme().
         self.theme: themes.Theme = themes.randomTheme("Mixed")
-        # Same list objects as theme.colors, so the color picker edits the live colors.
+        # The theme's colors by name (the same dictionary as theme.colors).
         self.colorDict = self.theme.colors
 
         pygame.font.init()
