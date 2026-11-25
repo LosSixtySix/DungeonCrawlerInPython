@@ -697,20 +697,22 @@ FORGE = [
 ]
 FORGE_COLORS = {"G": (240, 202, 96), "g": (184, 140, 50), "f": (255, 132, 40), "F": (255, 220, 120)}
 
+# The cauldron seen from above: its iron rim around the green brew (with a bubble), and the coals glowing out
+# past the rim on every side.
 CAULDRON = [
-    "..........",
-    "..kkkkkk..",
-    ".kIiiiiIk.",
-    "kIgGggGgIk",
-    "kigggGggik",
-    "kIgGgggGIk",
-    ".kIiiiiIk.",
-    "..kkkkkk..",
-    "..kfFFfk..",
-    "...kkkk...",
+    "...Ff.....",
+    ".FkkkkkkFF",
+    ".kIIiiiikf",
+    "kIigGggiik",
+    "kigGwgggik",
+    "kiggggGgik",
+    "kiigGggiik",
+    "fkiiiiiikf",
+    "FFkkkkkkF.",
+    "...FfF....",
 ]
 CAULDRON_COLORS = {"i": (70, 74, 82), "I": (120, 126, 136), "g": (86, 168, 70), "G": (176, 236, 120),
-                   "f": (255, 132, 40), "F": (255, 220, 120)}
+                   "w": (226, 255, 200), "f": (255, 132, 40), "F": (255, 220, 120)}
 
 # ---------------------------------------------------------------- plants (colors in plants.PLANTS)
 PLANT_SPRITES = {  # all seen from above, like the rest of the map
