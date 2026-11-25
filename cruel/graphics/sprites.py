@@ -420,6 +420,23 @@ BONFIRE = [
 BONFIRE_COLORS = {"S": (146, 148, 156), "s": (100, 102, 110), "w": (112, 76, 44), "r": (196, 48, 28), "Y": (240, 128, 40), "y": (255, 222, 120)}
 BONFIRE_FRAME_MS = 180
 
+# The Sealed Pattern's Pitch Bolt (design sheet: https://claude.ai/artifact/Xxz2foLh7G9cirmmnwvetJ). In flight: a
+# bullet-sized drop of black pitch whose violet glint turns round it (the four frames loop, PITCH_BOLT_FRAME_MS each).
+# On a hit: it flattens, bursts into droplets and leaves a smear (the three frames play once, over the landing burst's time).
+PITCH_BOLT_FLIGHT = [
+    ["..........", "..........", "..........", "....kk....", "...kspk...", "...kPpk...", "....kk....", "..........", "..........", ".........."],
+    ["..........", "..........", "..........", "....kk....", "...kPsk...", "...kppk...", "....kk....", "..........", "..........", ".........."],
+    ["..........", "..........", "..........", "....kk....", "...kpPk...", "...kpsk...", "....kk....", "..........", "..........", ".........."],
+    ["..........", "..........", "..........", "....kk....", "...kppk...", "...ksPk...", "....kk....", "..........", "..........", ".........."],
+]
+PITCH_BOLT_HIT = [
+    ["..........", "..........", "..........", "...kkkk...", "..kpPspk..", "..kpppPk..", "...kkkk...", "..........", "..........", ".........."],
+    ["..........", "..........", "..p....p..", "....kk....", "...kPsk.p.", ".p.kppk...", "....kk....", "..p...p...", "..........", ".........."],
+    ["..........", "..........", "..........", "..........", "....p.....", "...pPp....", "....p..p..", "..........", "..........", ".........."],
+]
+PITCH_BOLT_COLORS = {"p": (24, 18, 30), "P": (58, 44, 76), "s": (150, 120, 190)}
+PITCH_BOLT_FRAME_MS = 100
+
 # Warcamp chest, top down: a rough plank crate with two iron bands, a strap of the faction's cloth across the middle.
 # (A floor chest is a lidded box with studs; this one is plainly goblin-made.)
 CAMP_CHEST = [
@@ -1090,7 +1107,19 @@ def buildSprites(colors, tileSize):
         "shopSigns": {kind: makeShadowed(SHOP_SIGN, enemyRoles(colors, shopSignColors(kind)), tileSize) for kind in SHOP_SIGN_COLORS},
         "campChests": {look: makeShadowed(CAMP_CHEST, enemyRoles(colors, campChestColors(look)), tileSize) for look in EXPANSION_LOOKS},
         "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],
+        "pitchBolt": [makeShadowed(rows, enemyRoles(colors, PITCH_BOLT_COLORS), tileSize) for rows in PITCH_BOLT_FLIGHT],
+        "pitchHit": [makeShadowed(rows, enemyRoles(colors, PITCH_BOLT_COLORS), tileSize) for rows in PITCH_BOLT_HIT],
     }
+
+
+def pitchBoltFrame(seconds):
+    """Which Pitch Bolt flight frame to show at this moment."""
+    return int(seconds * 1000 // PITCH_BOLT_FRAME_MS) % len(PITCH_BOLT_FLIGHT)
+
+
+def pitchHitFrame(age):
+    """Which Pitch Bolt hit frame to show, age 0 to 1 through the landing burst."""
+    return min(len(PITCH_BOLT_HIT) - 1, max(0, int(age * len(PITCH_BOLT_HIT))))
 
 
 def chestColorFor(position):

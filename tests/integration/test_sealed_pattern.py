@@ -13,6 +13,7 @@ from unittest import mock
 import pygame
 
 from cruel.core import gamemanager, settings
+from cruel.graphics import sprites
 from cruel.entities import enemies, playerClass
 from cruel.entities.enemies import Goblin, Unsealed
 from cruel.inventory import items, recipes, relics
@@ -397,6 +398,93 @@ class PitchBoltTests(SealedPatternTest):
         keyDown(game, pygame.K_RETURN)
         game.draw()
         self.assertEqual(game.painter.effectColor("Pitch"), game.painter.PITCH_SHEEN)
+
+
+class BoltAnimationTests(SealedPatternTest):
+    """The bolt glides along its path (gameManager.startGlide) and its hit plays once it gets there."""
+
+    def setUp(self):
+        super().setUp()
+        for step in range(1, 7):
+            self.game.grid[self.here + step] = [FLOOR, 1]
+        wearPattern(self.player)
+
+    def fireAt(self, spot, clock=1000):
+        game = self.game
+        game.startPitchBolt()
+        game.currentAimSpot = spot
+        game.refreshThrowAim()
+        with mock.patch("pygame.time.get_ticks", return_value=clock):
+            game.throw()
+
+    def test_a_close_bolt_glides_there_and_then_hits(self):
+        game = self.game
+        self.putEnemy(self.here + 3, Goblin()).hp = 50
+        self.fireAt(self.here + 3)
+        glideMs = 3 * gamemanager.GLIDE_MS_PER_TILE
+        self.assertEqual(game.glides, [{"from": self.here, "to": self.here + 3, "start": 1000, "ms": glideMs, "shot": None}])
+        landing, radius, effect, start = game.explosions[-1]
+        self.assertEqual((landing, effect, start), (self.here + 3, "Pitch", 1000 + glideMs), "the hit waits for the bolt")
+        with mock.patch("pygame.time.get_ticks", return_value=1000 + glideMs // 2):
+            view = game.throwView()
+        [(fromTile, toTile, progress)] = view["glides"]
+        self.assertEqual((fromTile, toTile), (self.here, self.here + 3))
+        self.assertAlmostEqual(progress, 0.5, places=1)
+        self.assertLess(view["explosions"][-1][3], 0, "not hit yet")
+
+    def test_a_far_bolt_glides_out_hangs_then_glides_onto_its_target(self):
+        game = self.game
+        goblin = self.putEnemy(self.here + 6, Goblin())
+        goblin.hp, goblin.speed = 50, 0
+        self.fireAt(self.here + 6)
+        shot = game.inFlight[0]
+        self.assertIs(game.glides[0]["shot"], shot)
+        self.assertEqual(game.glides[0]["to"], game.shotSpot(shot))
+        self.assertEqual(game.shotSpot(shot), self.here + 4, "halfway along its 6 tiles, for its 1 turn in the air")
+        with mock.patch("pygame.time.get_ticks", return_value=5000):
+            self.assertFalse(game.throwView()["flying"][0]["gliding"], "done gliding: it hangs there")
+            self.assertTrue(game.animating(), "still spinning")
+            for _ in range(3):
+                if game.inFlight:
+                    game.enemyTurn()
+        self.assertEqual(game.glides[-1]["to"], self.here + 6)
+        self.assertEqual(goblin.hp, 50 - relics.PITCH_BOLT_DAMAGE)
+
+    def test_it_is_drawn_as_the_bolt_sprite_on_its_way(self):
+        game = self.game
+        painter = game.painter
+        self.putEnemy(self.here + 3, Goblin()).hp = 50
+        game.messageBools = {name: False for name in game.messageBools}
+        self.fireAt(self.here + 3)
+        halfway = 1000 + 3 * gamemanager.GLIDE_MS_PER_TILE // 2
+        with mock.patch("pygame.time.get_ticks", return_value=halfway),                 mock.patch.object(painter, "drawGlidingBolt", wraps=painter.drawGlidingBolt) as drawGlidingBolt:
+            game.draw()
+        fromTile, toTile, progress, _ = drawGlidingBolt.call_args.args
+        self.assertEqual((fromTile, toTile), (self.here, self.here + 3))
+        self.assertAlmostEqual(progress, 0.5, places=1)
+
+    def test_the_hit_frames_draw_over_the_target_after_it_arrives(self):
+        game = self.game
+        self.putEnemy(self.here + 2, Goblin()).hp = 50
+        game.messageBools = {name: False for name in game.messageBools}
+        self.fireAt(self.here + 2)
+        arrives = game.explosions[-1][3]
+        for clock, expected in ((arrives - 10, []), (arrives + 10, [0]), (arrives + gamemanager.EXPLOSION_MS - 10, [2])):
+            with mock.patch("pygame.time.get_ticks", return_value=clock),                     mock.patch.object(sprites, "pitchHitFrame", wraps=sprites.pitchHitFrame) as pitchHitFrame:
+                game.draw()
+            self.assertEqual([frame for frame in (sprites.pitchHitFrame(call.args[0]) for call in pitchHitFrame.call_args_list)],
+                             expected, clock)
+
+    def test_bursts_of_other_throws_are_unchanged(self):
+        game = self.game
+        game.player.inventory = [recipes.RECIPES_BY_ID["fire_flask"].makeItem(0, 0)]
+        game.startThrow(0)
+        game.currentAimSpot = self.here + 2
+        game.refreshThrowAim()
+        with mock.patch("pygame.time.get_ticks", return_value=1000):
+            game.throw()
+        self.assertEqual(game.glides, [])
+        self.assertEqual(game.explosions[-1][2:], ["Fire", 1000])
 
 
 if __name__ == "__main__":

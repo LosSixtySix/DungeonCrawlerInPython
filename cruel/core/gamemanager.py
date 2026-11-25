@@ -166,6 +166,7 @@ PLANT_CATCH = 0.6          # chance a plant catches fire (from a flask, or each 
 FIREPROOF_CATCH = 0.1      # the same for plants used in fire recipes (recipes.FIRE_HERBS): they barely burn
 PLANT_FIRE_TURNS = 4       # a burning plant burns this long, then it's gone
 EXPLOSION_MS = 450         # how long a landing potion's burst animation plays
+GLIDE_MS_PER_TILE = 35     # a Pitch Bolt glides along its path this fast (8 tiles: about a quarter of a second)
 ANIM_FPS = 15              # flames and bursts animate at this rate
 SPURT_MS = 280             # a blood spurt's specks fly this long
 FLECK_MS = 300             # wall flecks fly this long
@@ -408,7 +409,8 @@ class gameManager():
         self.inFlight = []    # thrown potions still in the air: {"effect", "power", "path", "landing", "turns", "flight"}
         self.fires = {}       # burning tiles (ground or plants): {map position: turns left}
         self.freshFires = set()  # fires lit this turn: they don't hurt anyone standing in them until next turn
-        self.explosions = []  # landing bursts still playing: [landing, radius, effect, start ms]
+        self.explosions = []  # landing bursts still playing: [landing, radius, effect, start ms] (a Pitch Bolt's starts when it arrives)
+        self.glides = []      # Pitch Bolts gliding from one tile to another: {"from", "to", "start", "ms", "shot"} (see startGlide)
         self.animStep = -1    # which step of the flame/burst animation was last drawn
         self.blood = {}       # blood on the floor: {map position: amount, 0 to 1}
         self.bloodDry = {}
@@ -2542,6 +2544,7 @@ class gameManager():
         self.fires = {}
         self.freshFires = set()
         self.explosions = []
+        self.glides = []
         self.spurts = []
         self.flecks = []
         self.playerBloodSpot = None
@@ -3332,9 +3335,13 @@ class gameManager():
         turns = self.flightTurns(landing)
         shot = {"effect": effect, "power": power, "path": path, "landing": landing, "turns": turns, "flight": turns}
         if turns == 0:
+            if effect == "Pitch":
+                shot["arrives"] = self.startGlide(self.playerPositionFlat, landing)
             self.land(shot)
         else:
             self.inFlight.append(shot)
+            if effect == "Pitch":
+                self.startGlide(self.playerPositionFlat, self.shotSpot(shot), shot)
         self.enemyMove = True  # throwing takes your turn
 
     def land(self, shot):
@@ -3343,7 +3350,7 @@ class gameManager():
         radius = BLAST_RADIUS[shot["effect"]]
         area = self.blastArea(landing, radius)
         if self.onScreen():
-            self.explosions.append([landing, radius, shot["effect"], pygame.time.get_ticks()])
+            self.explosions.append([landing, radius, shot["effect"], shot.get("arrives", pygame.time.get_ticks())])
         if shot["effect"] == "Fire":
             self.igniteArea(area + [edgeSpot for edgeSpot in self.plantsAtEdge(landing, radius) if edgeSpot not in area])
             hit = 0
@@ -3864,6 +3871,8 @@ class gameManager():
     def animating(self):
         """True while something on screen moves: bursts, fire in view, something burning, or a throw that would
         land at once (its landing tile shows a little burst)."""
+        if any(shot["effect"] == "Pitch" for shot in self.inFlight):  # a Pitch Bolt hanging in the air keeps spinning
+            return True
         if self.explosions or self.spurts or self.flecks or any(self.grid[p][1] == 1 for p in self.fires) \
                 or any(self.grid[p][1] == 1 for p in expansion.bonfires(self)):
             return True
@@ -3875,13 +3884,36 @@ class gameManager():
                    for p in self.EnemyPositions if p in self.grid)
 
     def stepThrows(self):
-        """Potions in the air get one turn closer to landing."""
+        """Potions in the air get one turn closer to landing. A Pitch Bolt glides on to its next spot (or onto its
+        landing spot)."""
         landed = [shot for shot in self.inFlight if shot["turns"] <= 1]
         self.inFlight = [shot for shot in self.inFlight if shot["turns"] > 1]
         for shot in self.inFlight:
+            was = self.shotSpot(shot)
             shot["turns"] -= 1
+            if shot["effect"] == "Pitch":
+                self.startGlide(was, self.shotSpot(shot), shot)
         for shot in landed:
+            if shot["effect"] == "Pitch":
+                shot["arrives"] = self.startGlide(self.shotSpot(shot), shot["landing"])
             self.land(shot)
+
+    def shotSpot(self, shot):
+        """Where a shot still in the air is drawn: partway along its path, further each turn."""
+        path = shot["path"]
+        progress = (shot["flight"] - shot["turns"] + 1) / (shot["flight"] + 1)
+        return path[min(len(path) - 1, int(len(path) * progress))]
+
+    def startGlide(self, fromTile, toTile, shot=None):
+        """A Pitch Bolt glides from fromTile to toTile (GLIDE_MS_PER_TILE a tile); shot: the one in the air it is,
+        which isn't drawn standing still meanwhile. Returns when it gets there (ms), for its hit to play then."""
+        now = pygame.time.get_ticks()
+        distance = math.hypot(toTile % self.rowLength - fromTile % self.rowLength, toTile // self.rowLength - fromTile // self.rowLength)
+        if not self.onScreen() or distance == 0:
+            return now
+        duration = int(distance * GLIDE_MS_PER_TILE)
+        self.glides.append({"from": fromTile, "to": toTile, "start": now, "ms": duration, "shot": shot})
+        return now + duration
 
     def fadingHere(self):
         """This floor's fading remembered tiles: {tile: turns faded}."""
@@ -3945,13 +3977,13 @@ class gameManager():
 
     def throwView(self):
         """What the renderer needs to show aiming and potions in the air."""
+        now = pygame.time.get_ticks()
+        gliding = [glide for glide in self.glides if now - glide["start"] < glide["ms"]]
         flying = []
         for shot in self.inFlight:
-            path = shot["path"]
-            progress = (shot["flight"] - shot["turns"] + 1) / (shot["flight"] + 1)
             flying.append({"landing": shot["landing"], "turns": shot["turns"], "effect": shot["effect"],
                            "area": self.blastArea(shot["landing"], BLAST_RADIUS[shot["effect"]]),
-                           "at": path[min(len(path) - 1, int(len(path) * progress))]})
+                           "at": self.shotSpot(shot), "gliding": any(glide["shot"] is shot for glide in gliding)})
         aim = None
         if self.throwArea is not None:
             landing, area, turns = self.throwArea
@@ -3966,6 +3998,7 @@ class gameManager():
         if getattr(self.player, "burnTurns", 0) > 0:
             burning.append(self.playerPositionFlat)
         return {"aim": aim, "flying": flying, "smoke": smoke, "time": now / 1000,
+                "glides": [(glide["from"], glide["to"], (now - glide["start"]) / glide["ms"]) for glide in gliding],
                 "fires": [p for p in self.fires if self.grid[p][1] == 1], "burning": burning,
                 "explosions": [(landing, radius, effect, (now - start) / EXPLOSION_MS)
                                for landing, radius, effect, start in self.explosions if self.grid[landing][1] != 0],
@@ -5042,6 +5075,9 @@ class gameManager():
             # Flames and landing bursts animate at ANIM_FPS
             now = pygame.time.get_ticks()
             self.explosions = [e for e in self.explosions if now - e[3] < EXPLOSION_MS]
+            self.glides = [glide for glide in self.glides if now - glide["start"] < glide["ms"]]
+            if self.glides:  # a gliding Pitch Bolt moves smoothly: redrawn every frame, not just at ANIM_FPS
+                self.overlayChange = True
             self.spurts = [b for b in self.spurts if now - b[1] < SPURT_MS]
             self.flecks = [f for f in self.flecks if now - f[1] < FLECK_MS]
             if self.animating():
