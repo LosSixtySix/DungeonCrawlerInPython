@@ -2,6 +2,7 @@ import math
 import random
 
 from cruel.inventory import items
+from cruel.inventory import resources
 from cruel.world import plants
 from cruel.inventory import relics
 
@@ -193,6 +194,10 @@ RECIPES = [
            "A folding bench you carry with you. Works anywhere.", "Unlocks the Workbench", makes="workbench"),
     Recipe("handle", "Wooden Handle", "hand", 1, {"wood": 2}, "material",
            "Goes into every pick and weapon.", "1 Wooden Handle", makes="handle"),
+    Recipe("fibrous_cloth", "Fibrous Cloth", "hand", 1, {"shadowfern": 1, "emberroot": 1}, "material",
+           f"Fern fronds woven tight around stringy root. Any recipe that needs Hide takes "
+           f"{resources.FIBROUS_CLOTH_PER_HIDE} Fibrous Cloth in place of each one.", "1 Fibrous Cloth",
+           makes="fibrous_cloth"),
     Recipe("torch", "Torch", "hand", 1, {"wood": 1, "coal": 1}, "item",
            "Pushes your light out further.", "Hands  Vision +2", bonus=2, makeItem=gear("Light", "Torch", "Hands", None)),
     Recipe("glowrock", "Glowrock", "hand", 1, {"stone": 1, "glowcap": 1}, "potion",
