@@ -24,6 +24,8 @@ RELICS = {
     "thornward_gloves": {"name": "Thornward Gloves", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "demise_ward"},
     "vestigial_hand": {"name": "Discarded Vestigial Hand", "slot": "Back", "etype": "Unique", "bonus": 0, "power": "extra_hand"},
     "lightning_vambraces": {"name": "Lightning Vambraces", "slot": "Gloves", "etype": "Unique", "bonus": 0, "power": "lightning"},
+    # Only ever dropped by a Dweller Queen (queen.py; followers.py)
+    "pheromone_crown": {"name": "Pheromone Crown", "slot": "Head", "etype": "Defense", "bonus": 2, "power": "pheromones"},
     # Only ever in the chest at the middle of a Scorched Depths floor (not in CHEST_RELICS)
     "molten_blade": {"name": "Molten Blade", "slot": "Hands", "etype": "Damage", "bonus": 6, "power": "molten",
                      "scaling": ("strength", "intelligence")},
@@ -43,6 +45,7 @@ RELIC_CHEST_CHANCE = 0.25  # chance that a floor has one relic chest (if any rel
 
 # What each effect does, in a few words (shown in the Character window and on item descriptions)
 LIGHTNING_SPEED = 2  # Lightning Vambraces: added to your speed (actions each turn)
+PHEROMONE_SPEED = 0.5  # Pheromone Crown: added to your speed
 DARKVISION_RANGE = 12  # Potion Of Darkvision: how far you see without light
 MOLTEN_FIRE = 2              # Molten Blade: fire damage added to every hit...
 MOLTEN_IGNITE_CHANCE = 0.25  # ...and the chance that hit sets the enemy burning
@@ -69,6 +72,7 @@ EFFECTS = {
     "keen_eye": ("Keen Eye", "1 in 4 veins give an extra ore"),
     "extra_hand": ("Third Hand", "Grows another hand slot from your back"),
     "lightning": ("Lightning", f"+{LIGHTNING_SPEED} speed: more actions every turn"),
+    "pheromones": ("Pheromones", f"+{PHEROMONE_SPEED} speed. Every Dweller is hostile to you while you wear it, but now and then one beside you becomes your follower"),
     # Potions you drink that last a number of turns (PlayerClass.potionEffects)
     "darkvision": ("Darkvision", f"See {DARKVISION_RANGE} tiles in the dark, by no light: enemies aren't drawn to it, and walls still block it"),
     # Meals from the Cooking Pot (they last a number of turns; see recipes.MEALS and PlayerClass.buffs)
@@ -88,7 +92,7 @@ THORN_DAMAGE = 2  # Demise Stew's Thorn Blood: magic damage to whatever hits you
 SICK_TURNS = 8    # Demise Sickness: 1 HP lost this often
 
 # Powers that are the relic itself: the Gilded Forge can't rekindle them away (the Hand would be just a hand)
-BOUND_POWERS = {"extra_hand", "molten"}  # (the Molten Blade without its fire is just a blade)
+BOUND_POWERS = {"extra_hand", "molten", "pheromones"}  # (the Molten Blade without its fire is just a blade)
 
 # Powers the Gilded Forge can give (not Burrow: that one is the Burrower's Amulet's alone)
 FORGE_POWERS = ["half_swings", "goblin_fear", "seal_ward", "lifedrinker", "far_sight", "gold_double"]

@@ -21,7 +21,9 @@ https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
              at random. Buildings are built along the paths, BUILDING_CLEARANCE apart, with the ground that close
              round each cleared, each in the shape its theme builds (STYLES: hexagons,
              round towers, oblong domes, soft rounded cells or sharp squares), every one with its door facing a road:
-             the noble quarter's mansions nearest the plaza first, then the city's works (a mine and a farm, WORKS),
+             the noble quarter's mansions nearest the plaza first, then the Queen's Chamber (CHAMBER_SIZE), then the
+             city's works (a mine and a farm, WORKS), HATCHERIES hatcheries (NESTS nests each, for the Queen's
+             eggs),
              then SHOP_COUNT shops (each a different kind), then houses. Every building has two doors (its door, facing a
              road, and its back door, as far from it as can be: so a crowd at one door can go round to the other), each
              with a doorstep carved from it to the road, and you can walk to every door from where you arrive. The
@@ -34,7 +36,8 @@ https://claude.ai/artifact/538ySkNBUTYEUnSTVLSHii).
              they light round them, and anyone can stand under one without putting it out). Lamp posts stand
              round the plaza.
   Dwellers   citizens walk the roads, nobles stay near their mansions, guards stand at posts spread over the roads,
-             merchants keep a shop each (dwellers.py runs their turns, cityshops.py stocks their shops).
+             merchants keep a shop each (dwellers.py runs their turns, cityshops.py stocks their shops). The Queen
+             sits in the middle of her chamber with ROYAL_GUARDS Royal Guards round her (placeCourt, queen.py).
   Rooms      the floor's tiles are in the Street (roads, plaza and doorsteps), Yard (the rock between them: dig it
              out and it's Yard ground), House, Shop and Noble rooms (themes.CITY_ROOMS), each drawn in its own theme
              colors. Each is its own floor type for plants (plants.CITY_FLOORS), so they grow in a city too.
@@ -68,6 +71,10 @@ MANSION_SIZE = (10, 13)
 MANSIONS = (2, 4)
 BUILDING_CLEARANCE = 2      # buildings stand this far apart, the ground this close round each cleared of rock
 ROCK_DENSITIES = [round(0.15 + 0.05 * step, 2) for step in range(13)]  # (gameManager.WALL_DENSITIES: any floor's)
+CHAMBER_SIZE = (12, 14)     # the Queen's Chamber: room for her (2 x 2), her guards and her eggs
+HATCHERY_SIZE = (7, 9)
+HATCHERIES = 2
+NESTS = 6                   # nests a hatchery (one egg each), never next to each other or a door
 HOUSE_PASSES = 3            # times the land is gone over for room for another house
 SHOP_COUNT = (3, 5)         # never more than 5 shops, each a different kind
 ROUNDED_CORNER = 0.8        # how much a "rounded" building's corners are cut (smaller: rounder)
@@ -81,6 +88,10 @@ CITIZENS = (20, 30)
 NOBLES = (3, 6)
 GUARD_POSTS = (6, 10)
 NOBLES_ON_THE_PLAZA = 2
+CARRIERS = (5, 10)          # citizens set aside to carry Dew from the farm to the Queen (queen.py)
+ROYAL_GUARDS = 4            # round the Queen, ROYAL_POST_REACH tiles from her body
+WORKERS_WANTED = {"mine": 9, "farm": 8}  # workers the Queen's eggs make up a works floor to (mineshafts.WORKERS' most)
+ROYAL_POST_REACH = 2
 
 # The lights
 WALL_LAMP_SPACING = 6       # outside wall lamps along the roads, at least this far apart
@@ -121,8 +132,8 @@ def signName(kind):
 
 
 class Building:
-    """A building of the city: its kind ("house", "shop", "mansion", or a works kind: "mine" or "farm"), the tiles
-    of its walls and inside, its door and its back door."""
+    """A building of the city: its kind ("house", "shop", "mansion", "chamber" (the Queen's), "hatchery", or a
+    works kind: "mine" or "farm"), the tiles of its walls and inside, its door and its back door."""
 
     def __init__(self, kind, walls, inside, door, backDoor=None):
         self.kind = kind
@@ -143,6 +154,7 @@ class Building:
         self.shopKind = None    # a shop: cityshops.SHOP_KINDS
         self.sign = None        # a shop or works: where its sign is (in its wall beside the door)
         self.shaft = None       # a works: where its mineshaft is (in its middle)
+        self.nests = []         # a hatchery: where eggs are put to hatch
 
 
 class City:
@@ -163,6 +175,7 @@ class City:
         self.wallLamps = {}         # tile: WallLamp
         self.dwellers = {}          # tile: Dweller
         self.builtCells = set()     # every tile a building stands on (placeBuilding: the next keeps its distance)
+        self.queen = None           # the Dweller Queen (placeCourt), if her chamber found room
 
     def spot(self, column, row):
         return column + row * self.rowLength
@@ -178,6 +191,15 @@ class City:
     @property
     def mansions(self):
         return [(building.inside, building.door) for building in self.buildings if building.kind == "mansion"]
+
+    @property
+    def chamber(self):
+        """The Queen's Chamber (a Building), or None."""
+        return next((building for building in self.buildings if building.kind == "chamber"), None)
+
+    @property
+    def hatcheries(self):
+        return [building for building in self.buildings if building.kind == "hatchery"]
 
     @property
     def works(self):
@@ -455,7 +477,8 @@ def placeBuilding(city, kind, sizeRange, candidates, taken, nearRoad=True):
 def raiseBuilding(city, building):
     """Puts a placed building on the grid: its walls, its inside floor, its doors, its room."""
     room, wallKind = {"house": (HOUSE, wall.HouseWall), "shop": (SHOP, wall.ShopWall), "mansion": (NOBLE, wall.NobleWall),
-                      "mine": (SHOP, wall.ShopWall), "farm": (SHOP, wall.ShopWall)}[building.kind]
+                      "chamber": (NOBLE, wall.NobleWall), "hatchery": (HOUSE, wall.HouseWall), "mine": (SHOP, wall.ShopWall),
+                      "farm": (SHOP, wall.ShopWall)}[building.kind]
     for spot in building.walls:
         city.grid[spot] = [WALL, 0, wallKind()]
     for spot in building.inside | set(building.doors):
@@ -547,8 +570,9 @@ def removeUnreachable(city, playerSpot):
 
 
 def placeBuildings(city, playerSpot):
-    """Mansions on the open ground nearest the plaza that's big enough, then the shops, then houses wherever there's
-    room along the paths. Every building's door faces a road, with a doorstep carved to it; everything else inside
+    """Mansions on the open ground nearest the plaza that's big enough, then the Queen's Chamber (as near it as
+    there's room), then the works, the shops and the hatcheries, then houses wherever there's room along the
+    paths. Every building's door faces a road, with a doorstep carved to it; everything else inside
     the city wall is rock."""
     taken = set(city.roads)
     for near in [playerSpot] + neighborsOf(city, playerSpot):
@@ -558,6 +582,7 @@ def placeBuildings(city, playerSpot):
     nearestThePlaza = sorted(lattice, key=lambda corner: math.hypot(corner[0] - middleColumn, corner[1] - middleRow))
     for _ in range(random.randint(*MANSIONS)):
         placeBuilding(city, "mansion", MANSION_SIZE, nearestThePlaza, taken)
+    placeBuilding(city, "chamber", CHAMBER_SIZE, nearestThePlaza, taken)
     shuffled = lattice[:]
     random.shuffle(shuffled)
     for kind in WORKS:  # the works: as big as a shop
@@ -567,6 +592,8 @@ def placeBuildings(city, playerSpot):
         shop = placeBuilding(city, "shop", SHOP_SIZE, shuffled, taken)
         if shop is not None:
             shop.shopKind = kind
+    for _ in range(HATCHERIES):
+        placeBuilding(city, "hatchery", HATCHERY_SIZE, shuffled, taken)
     shuffled = [(left, top) for top in range(1, city.rowCount - 2) for left in range(1, city.rowLength - 2)]  # houses: try every spot
     for _ in range(HOUSE_PASSES):  # a few passes, each size tried in turn, so the gaps between buildings fill up
         random.shuffle(shuffled)
@@ -590,6 +617,25 @@ def placeBuildings(city, playerSpot):
         if building.kind in WORKS:  # a works' mineshaft: in its middle
             building.shaft = building.center
             city.grid[building.shaft] = [MINESHAFT, 0, Mineshaft(building.kind)]
+        if building.kind == "hatchery":
+            building.nests = nestsIn(city, building)
+
+
+def nestsIn(city, building):
+    """Up to NESTS nests in a hatchery: inside tiles, the ones nearest its middle first, none beside a door or
+    another nest (so you can walk between them)."""
+    rowLength = city.rowLength
+    nests = []
+    for spot in sorted(building.inside, key=lambda tile: (abs(tile % rowLength - building.center % rowLength)
+                                                          + abs(tile // rowLength - building.center // rowLength), tile)):
+        if len(nests) >= NESTS:
+            break
+        if any(door in neighborsOf(city, spot) for door in building.doors):
+            continue
+        if any(max(abs(spot % rowLength - nest % rowLength), abs(spot // rowLength - nest // rowLength)) <= 1 for nest in nests):
+            continue
+        nests.append(spot)
+    return nests
 
 
 # ---------------------------------------------------------------- chests
@@ -727,10 +773,66 @@ def openRoad(city, spot, taken):
     return city.grid[spot][0] == FLOOR and spot in city.roads and spot not in taken
 
 
+def bodyDistance(rowLength, anchor, size, spot):
+    """How many tiles spot is from the nearest tile of a size x size body anchored (top-left) at anchor (diagonals
+    count as 1; 0: on it). The same as gameManager.reachOf."""
+    column, row, anchorColumn, anchorRow = spot % rowLength, spot // rowLength, anchor % rowLength, anchor // rowLength
+    return max(max(0, anchorColumn - column, column - (anchorColumn + size - 1)),
+               max(0, anchorRow - row, row - (anchorRow + size - 1)))
+
+
+def bodyOf(rowLength, anchor, size=2):
+    return [anchor + column + row * rowLength for row in range(size) for column in range(size)]
+
+
+def placeCourt(city, taken):
+    """The Queen (enemies.DwellerQueen) in the middle of her chamber, her whole 2 x 2 body inside it, and her
+    ROYAL_GUARDS Royal Guards at posts spread round her, ROYAL_POST_REACH tiles from her body. Returns the Queen, or
+    None (no chamber, or no room in it)."""
+    chamber, rowLength = city.chamber, city.rowLength
+    if chamber is None:
+        return None
+    anchors = [spot for spot in chamber.inside if all(tile in chamber.inside for tile in bodyOf(rowLength, spot))]
+    if not anchors:
+        return None
+    middleColumn = sum(spot % rowLength for spot in chamber.inside) / len(chamber.inside)
+    middleRow = sum(spot // rowLength for spot in chamber.inside) / len(chamber.inside)
+    anchor = min(anchors, key=lambda spot: math.hypot(spot % rowLength + 0.5 - middleColumn, spot // rowLength + 0.5 - middleRow))
+    queen = enemies.DwellerQueen()
+    queen.anchor = queen.home = anchor
+    queen.chamber = frozenset(chamber.inside)
+    ring = [spot for spot in chamber.inside if bodyDistance(rowLength, anchor, queen.size, spot) == ROYAL_POST_REACH
+            and spot not in taken]
+    queen.royalPosts = spreadOutOnMap(ring, ROYAL_GUARDS, rowLength)
+    taken.update(bodyOf(rowLength, anchor, queen.size))
+    city.dwellers[anchor] = queen
+    for post in queen.royalPosts:
+        royal = enemies.RoyalGuard()
+        royal.home = post
+        city.dwellers[post] = royal
+        taken.add(post)
+    city.queen = queen
+    return queen
+
+
+def courtOf(city, carriers):
+    """What the Queen's eggs need to hatch (queen.py): the hatcheries' nests, the city's guard posts, a tile in each
+    house (a hatchling citizen's home), and how many of each the city wants (as many as it was built with)."""
+    roles = [dweller.role if dweller.work is None else dweller.work for dweller in city.dwellers.values()
+             if not getattr(dweller, "royal", False)]
+    return {"nests": [nest for hatchery in city.hatcheries for nest in hatchery.nests],
+            "posts": list(city.posts),
+            "homes": [building.center for building in city.buildings if building.kind == "house"],
+            "wanted": {"guard": roles.count("guard"), "citizen": roles.count("citizen"), "carrier": carriers,
+                       "miner": WORKERS_WANTED["mine"], "farmer": WORKERS_WANTED["farm"]}}
+
+
 def placeDwellers(city, playerSpot):
-    """Guards at posts spread over the roads, a merchant at each shop's counter, nobles in their mansions and on the
-    plaza, citizens on the roads (each with a house to go home to)."""
+    """The Queen and her Royal Guards in her chamber (placeCourt), guards at posts spread over the roads, a merchant
+    at each shop's counter, nobles in their mansions and on the plaza, citizens on the roads (each with a house to
+    go home to; CARRIERS of them set aside as the Queen's Dew carriers)."""
     taken = {playerSpot} | set(neighborsOf(city, playerSpot))
+    queen = placeCourt(city, taken)
     roadSpots = [spot for spot in city.roads if openRoad(city, spot, taken) and spot not in city.plaza]
     rowLength = city.rowLength
     posts = []
@@ -766,12 +868,19 @@ def placeDwellers(city, playerSpot):
 
     roads = [spot for spot in city.roads if openRoad(city, spot, taken)]
     houseInsides = [list(inside) for inside, _ in city.houses if inside]
-    for spot in random.sample(roads, min(len(roads), random.randint(*CITIZENS))):
+    carriers = random.randint(*CARRIERS) if queen is not None else 0
+    for index, spot in enumerate(random.sample(roads, min(len(roads), random.randint(*CITIZENS)))):
         citizen = enemies.DwellerCitizen()
         citizen.home = random.choice(random.choice(houseInsides)) if houseInsides else spot
+        if index < carriers:
+            citizen.work = "dew"  # (set aside to carry Dew to the Queen)
         city.dwellers[spot] = citizen
     for spot, dweller in city.dwellers.items():
         city.grid[spot] = [ENEMY, 0, dweller]
+    if queen is not None:
+        queen.court = courtOf(city, carriers)  # (the rest of her body: the same object on each tile, like a Fire Giant)
+        for tile in bodyOf(city.rowLength, queen.anchor, queen.size):
+            city.grid[tile] = [ENEMY, 0, queen]
 
 
 def spreadOutOnMap(spots, count, rowLength):

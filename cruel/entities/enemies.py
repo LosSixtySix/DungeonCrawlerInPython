@@ -1,4 +1,5 @@
 from cruel.inventory import items
+from cruel.inventory import relics
 import random as rand
 
 CLEAN_DODGE_BASE = 0.05  # (the player's starts the same; see playerClass.CLEAN_DODGE_BASE)
@@ -115,7 +116,7 @@ class Dweller(Enemy):
         self.lastSawYou = 0       # the turn it last saw you (a hostile one calms down FORGIVE_TURNS after)
         self.sawYouAt = None      # where it last saw you (what it tells a guard)
         self.enemyAt = None       # where it saw an enemy of the city: a guard heads there, anyone else tells a guard
-        self.work = None          # a citizen on a works floor: "mine" or "farm" (mineshafts.py, dwellerwork.py)
+        self.work = None          # a citizen on a works floor: "mine" or "farm" (mineshafts.py, dwellerwork.py); "dew": a Dew carrier (queen.py)
         self.target = None        # a worker: the wall it's mining (or what it's working on)
         self.materials = {}       # a worker: what it's carrying to the storehouse
         self.job = None           # a worker: "build" while it's putting up a building (dwellerbuilding.py)
@@ -195,6 +196,68 @@ class DewGrub(Dweller):
         self.name = self.GROWN_NAME
         self.hp += self.GROWN_HP - self.maxHp
         self.maxHp = self.GROWN_HP
+
+
+class DwellerQueen(Dweller):
+    """The Queen of a Metropolis (queen.py): one to a city, in the middle of the Queen's Chamber
+    (metropolis.placeCourt). A large unit like the Fire Giant (size 2: her anchor, the top-left tile on
+    gameManager.EnemyPositions, and three part tiles holding this same object), but she never moves: she hits
+    whatever comes within reach of her body."""
+    role = "queen"
+    unitSize = "large"
+
+    def __init__(self):
+        super().__init__(120, 16, 1, 8, 8, 150, "Dweller Queen")
+        self.size = 2              # tiles across (and down)
+        self.reach = 2             # she hits up to this many tiles from her body (1 = right beside it)
+        self.anchor = None         # her top-left tile
+        self.chamber = frozenset() # the inside of her chamber
+        self.royalPosts = []       # where her Royal Guards stand
+        self.dew = 0               # Dew her carriers have fed her (queen.py)
+        self.carriersAway = {}     # her carriers down on the farm now: {carrier: the turn it went}
+        self.court = {}            # what her eggs need to hatch (metropolis.placeCourt): nests, posts, homes, wanted
+
+    @property
+    def loot(self):
+        """She always drops the Pheromone Crown, whoever kills her (followers.py)."""
+        return [relics.make("pheromone_crown")]
+
+
+class RoyalGuard(DwellerGuard):
+    """One of the Queen's Royal Guards: a Dweller Guard in royal colors, stronger, that never goes more than leash
+    tiles from its post beside her (dwellers.py). Never hatched: a guard pupates into one (queen.py)."""
+    royal = True
+
+    def __init__(self):
+        Dweller.__init__(self, 30, 17, FAST, 7, 8, 15, "Royal Guard")
+        self.leash = 8             # it won't go further than this from its post, even hunting
+
+
+class DwellerEgg(Dweller):
+    """An egg the Queen laid (queen.py). It never moves or fights: citizens carry it to a nest in a hatchery
+    (nest), and hatchIn turns after it's put there it hatches into whatever the city needs most. court: what it
+    needs to know to hatch (the Queen's, kept even if she dies)."""
+    role = "egg"
+
+    def __init__(self, court=None):
+        super().__init__(4, 4, 1, 0, 0, 0, "Dweller Egg")
+        self.court = court if court is not None else {}
+        self.nest = None           # the nest it's in, once it's been carried there...
+        self.hatchIn = None        # ...and the turns until it hatches
+        self.carrier = None        # the citizen coming to carry it, and the turn it said so
+        self.claimedAt = None
+        self.nestTarget = None     # while it's carried: the nest it's going to
+
+
+class RoyalPupa(Dweller):
+    """A Dweller Guard turning into a Royal Guard (queen.py): it can't move or fight, and turnsLeft turns on it
+    comes out a Royal Guard, which goes to post (by the Queen)."""
+    role = "pupa"
+
+    def __init__(self, turnsLeft=40, post=None):
+        super().__init__(20, 10, 1, 0, 0, 0, "Royal Pupa")
+        self.turnsLeft = turnsLeft
+        self.post = post
 
 
 class GoblinBuilder(Enemy):

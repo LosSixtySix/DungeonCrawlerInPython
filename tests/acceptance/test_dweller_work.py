@@ -12,7 +12,7 @@ from cruel.world import expansion
 from cruel.world import mineshafts
 from tests.helpers.metropolis import cityGame
 from tests.helpers.mineshafts import climbDown
-from tests.helpers.dweller_work import PLANT
+from tests.helpers.dweller_work import PLANT, dewMade
 
 
 class MineFloorTests(unittest.TestCase):
@@ -69,9 +69,7 @@ class FarmFloorTests(unittest.TestCase):
     def test_a_farm_makes_dew(self):
         for _ in range(500):
             self.game.enemyTurn()
-        dew = sum(stack.amount for spot in dwellerwork.storageChests(self.game) for stack in self.game.grid[spot][2]
-                  if stack.materialId == "dew")
-        self.assertGreater(dew, 0)
+        self.assertGreater(dewMade(self.game), 0)
 
 
 if __name__ == "__main__":
