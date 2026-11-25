@@ -18,6 +18,7 @@ HOTKEY_ACTIONS = [
     ("move_left", "Move Left", pygame.K_a),
     ("move_right", "Move Right", pygame.K_d),
     ("interact", "Interact", pygame.K_e),
+    ("wait", "Wait a Turn", pygame.K_SPACE),
     ("cycle", "Cycle Windows", pygame.K_TAB),
     ("character", "Character", pygame.K_c),
     ("room", "Room Info", pygame.K_r),
