@@ -48,12 +48,6 @@ class WaitTests(WaitTest):
         keyDown(game, pygame.K_SPACE)
         self.assertTrue(game.enemyMove)
 
-    def test_not_while_picking_a_color(self):
-        game = self.game
-        game.picker = {"ChangingColor": True, "ColorSelected": False}
-        keyDown(game, pygame.K_SPACE)
-        self.assertFalse(game.enemyMove)
-
     def test_holding_it_keeps_waiting(self):
         game = self.game
         self.assertTrue(game.isRepeatable(pygame.K_SPACE))

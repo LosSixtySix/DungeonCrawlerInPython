@@ -334,5 +334,25 @@ class SaveAndLoadTests(unittest.TestCase):
         self.assertFalse(game.loadGame(self.saveFile))
 
 
+class NoColorPickerTests(unittest.TestCase):
+    """The color picker is gone: nothing changes the floor's colors while you play."""
+
+    def test_the_mouse_wheel_leaves_the_colors_alone(self):
+        game = newGame()
+        before = {name: list(color) for name, color in game.painter.colorDict.items()}
+        with mock.patch("pygame.key.get_mods", return_value=0):
+            for scroll in (1, -1, 3):
+                game.onMouseWheel(pygame.event.Event(pygame.MOUSEWHEEL, x=0, y=scroll))
+        self.assertEqual(game.painter.colorDict, before)
+        self.assertFalse(hasattr(game, "picker"))
+
+    def test_the_arrows_just_move_you(self):
+        game = newGame()
+        here = game.playerPositionFlat
+        game.grid[here + 1] = [FLOOR, 1]
+        game.onDirectionKey(1, 0, RIGHT)
+        self.assertEqual(game.playerPositionFlat, here + 1)
+
+
 if __name__ == "__main__":
     unittest.main()
