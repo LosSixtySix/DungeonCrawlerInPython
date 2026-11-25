@@ -360,7 +360,8 @@ class FightingTests(unittest.TestCase):
         goldBefore = game.player.gold
         game.killEnemy(self.traderSpot)
         self.assertGreaterEqual(game.player.gold - goldBefore, 200)
-        dropped = [item for tile in game.grid.values() if tile[0] == PILE for item in tile[2].items]
+        grounds = [game.groundAt(spot) for spot in game.grid]  # (on his body, and spilled anywhere: under you too)
+        dropped = [item for ground in grounds if ground[0] == PILE for item in ground[2].items]
         self.assertEqual(sorted(item.name for item in dropped), sorted(item.name for item in itemsInStock))
 
 

@@ -24,6 +24,8 @@ def everyMapPicture():
     pictures += [(f"Bonfire {number}", rows, sprites.BONFIRE_COLORS) for number, rows in enumerate(sprites.BONFIRE)]
     pictures += [(kind, rows, None) for kind, rows in sprites.PLANT_SPRITES.items()]
     pictures += [(f"Pitch Bolt {number}", rows, sprites.PITCH_BOLT_COLORS) for number, rows in enumerate(sprites.PITCH_BOLT_FLIGHT)]
+    pictures += [(f"{unit} body {pose}", rows, sprites.BODY_COLORS[unit])
+                 for unit, poses in sprites.BODY_SPRITES.items() for pose, rows in poses.items()]
     pictures += [(f"Pitch Hit {number}", rows, sprites.PITCH_BOLT_COLORS) for number, rows in enumerate(sprites.PITCH_BOLT_HIT)]
     return pictures
 
@@ -258,3 +260,82 @@ class PitchBoltTests(unittest.TestCase):
         built = sprites.buildSprites(themes.randomTheme("Mixed").colors, 20)
         self.assertEqual(len(built["pitchBolt"]), 4)
         self.assertEqual(len(built["pitchHit"]), 3)
+
+
+class BodyTests(unittest.TestCase):
+    """Dead bodies (bodies.py): the hand-drawn ones from the design sheet, the ones made from a unit's own picture,
+    and how they look as they decay."""
+
+    def test_the_drawn_units_have_every_pose(self):
+        self.assertEqual(set(sprites.BODY_SPRITES), {"Goblin", "Goblin Chieftain", "Dire Rat", "Dire Mole", "Unsealed"})
+        for unit, poses in sprites.BODY_SPRITES.items():
+            self.assertEqual(set(poses), {"down", "side", "up", "bones"}, unit)
+
+    def test_no_body_has_eyes(self):
+        for unit, colors in sprites.BODY_COLORS.items():
+            self.assertNotIn("e", colors, unit)
+
+    def test_the_poses_differ(self):
+        for unit, poses in sprites.BODY_SPRITES.items():
+            self.assertEqual(len({tuple(poses[pose]) for pose in ("down", "side", "up")}), 3, unit)
+
+    def test_enemy_names_find_their_bodies(self):
+        self.assertIs(sprites.bodyPictures("Goblin Chieftan")[0], sprites.BODY_SPRITES["Goblin Chieftain"])
+        self.assertIs(sprites.bodyPictures("Goblin Farmer")[0], sprites.BODY_SPRITES["Goblin"])
+
+    def test_other_units_get_a_body_made_from_their_picture(self):
+        rows, colors = sprites.ENEMY_SPRITES["Dweller Guard"]
+        poses, bodyColors = sprites.bodyPictures("Dweller Guard")
+        self.assertEqual(poses["down"], sprites.rotateClockwise(rows, 1))
+        self.assertEqual(poses["up"], sprites.rotateClockwise(rows, 2))
+        self.assertTrue(set("".join(poses["bones"])) <= {".", "o"})
+        self.assertIn("o", "".join(poses["bones"]))
+        self.assertLessEqual(set(colors), set(bodyColors))
+
+    def test_a_giant_is_shrunk_to_one_tile(self):
+        poses, _ = sprites.bodyPictures("Fire Giant")
+        self.assertEqual((len(poses["down"]), len(poses["down"][0])), (10, 10))
+
+    def test_anything_unknown_leaves_a_goblins_body(self):
+        self.assertIs(sprites.bodyPictures("Nobody")[0], sprites.BODY_SPRITES["Goblin"])
+
+    def test_fresh_it_looks_as_drawn(self):
+        rows, palette, solid = sprites.bodyLook("Goblin", "side", 0, 0)
+        self.assertEqual(rows, sprites.BODY_SPRITES["Goblin"]["side"])
+        self.assertEqual(palette["c"], sprites.BODY_COLORS["Goblin"]["c"])
+        self.assertEqual(solid, 1)
+
+    def test_it_rots_then_turns_to_bones_then_fades(self):
+        from cruel.world import bodies
+        fresh = sprites.BODY_COLORS["Goblin"]["c"]
+        rotted = sprites.bodyLook("Goblin", "down", bodies.ROT_FULL_TURNS, 0)[1]["c"]
+        self.assertNotEqual(rotted, fresh)
+        self.assertEqual(sprites.bodyLook("Goblin", "down", bodies.ROT_FULL_TURNS, 0)[1]["o"], sprites.BONE_COLORS["o"], "bones don't rot")
+        halfway = sprites.bodyLook("Goblin", "down", (bodies.ROT_FULL_TURNS + bodies.SKELETAL_TURNS) // 2, 0)[0]
+        down, bones = sprites.BODY_SPRITES["Goblin"]["down"], sprites.BODY_SPRITES["Goblin"]["bones"]
+        fromBones = sum(1 for y in range(10) for x in range(10) if down[y][x] != bones[y][x] and halfway[y][x] == bones[y][x])
+        differing = sum(1 for y in range(10) for x in range(10) if down[y][x] != bones[y][x])
+        self.assertTrue(0.3 * differing < fromBones < 0.7 * differing, (fromBones, differing))
+        self.assertEqual(sprites.bodyLook("Goblin", "down", bodies.SKELETAL_TURNS, 0)[0], bones)
+        self.assertEqual(sprites.bodyLook("Goblin", "down", bodies.CRUMBLE_TURNS, 0)[2], 1)
+        self.assertAlmostEqual(sprites.bodyLook("Goblin", "down", (bodies.CRUMBLE_TURNS + bodies.DECAY_TURNS) // 2, 0)[2], 0.5)
+
+    def test_variants_lose_different_pixels_first(self):
+        from cruel.world import bodies
+        age = (bodies.ROT_FULL_TURNS + bodies.SKELETAL_TURNS) // 2
+        looks = {tuple(sprites.bodyLook("Goblin", "down", age, variant)[0]) for variant in range(bodies.VARIANTS)}
+        self.assertEqual(len(looks), bodies.VARIANTS)
+
+    def test_it_is_drawn_turned_and_mirrored(self):
+        pygame.init()
+        colors = themes.randomTheme("Mixed").colors
+        plain = sprites.makeBody(colors, "Goblin", "down", 0, 0, 0, False, 10)
+        turned = sprites.makeBody(colors, "Goblin", "down", 0, 0, 1, False, 10)
+        mirrored = sprites.makeBody(colors, "Goblin", "down", 0, 0, 0, True, 10)
+        def pixels(surface):
+            return [tuple(surface.get_at((x, y))) for y in range(10) for x in range(10)]
+        self.assertNotEqual(pixels(plain), pixels(turned))
+        self.assertNotEqual(pixels(plain), pixels(mirrored))
+        from cruel.world import bodies
+        crumbling = sprites.makeBody(colors, "Goblin", "bones", (bodies.CRUMBLE_TURNS + bodies.DECAY_TURNS) // 2, 0, 0, False, 10)
+        self.assertEqual(crumbling.get_alpha(), 127)

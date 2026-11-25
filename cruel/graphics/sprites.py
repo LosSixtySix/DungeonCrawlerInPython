@@ -1,6 +1,7 @@
 import math
 import random
 import pygame
+from cruel.world import bodies
 from cruel.world import plants
 from cruel.world import themes
 
@@ -1020,6 +1021,103 @@ DWELLER_QUEEN = [
 DWELLER_QUEEN_COLORS = {"A": (236, 208, 151), "a": (184, 138, 68), "T": (138, 90, 42), "t": (94, 58, 26), "L": (106, 74, 36),
                         "C": (255, 214, 90), "c": (200, 150, 44), "H": (168, 116, 58), "E": (245, 233, 205), "m": (62, 40, 16)}
 GIANT_SPRITES = {"Fire Giant": (FIRE_GIANT, FIRE_GIANT_COLORS), "Dweller Queen": (DWELLER_QUEEN, DWELLER_QUEEN_COLORS)}
+
+# Dead bodies (design sheet: https://claude.ai/artifact/9MVevDdWTLwWfg1bo5AUEk), top-down. A body lies face down
+# ("down") until you loot it, then on its side or face up; "bones" is what the flesh gives way to as it decays
+# (bodies.py). Units without one here get a body made from their own picture (bodyPictures).
+BODY_SPRITES = {
+    "Goblin": {
+        "down": ["..........", ".h........", ".h.CCC....", "..HaCcc...", ".S.accccah", "..s.accc..", "...sacCc..", "...HaaHa..", "..HH.sCH..", ".....C.H.."],
+        "side": ["..........", "..........", "..........", ".CCCC.....", ".HCCC.....", ".hHCCc....", "...cHc....", "...hhc....", "...hCC....", "....H.H..."],
+        "up": [".....CC...", "...CCCC...", "...CHC....", "...CHC....", "..cCaCc...", "..HcHHah..", ".H.CCCCh..", "...CH.H...", "....H..H..", ".........."],
+        "bones": ["..........", "...o.o....", ".o.oo.o...", "..o..o....", "....o.o.o.", "...o.oo...", "....o.....", "...o..o...", "...o...o..", ".......o.."],
+    },
+    "Goblin Chieftain": {
+        "down": ["........I.", "..x.....I.", "...xffx.I.", "...rrrr...", "...rrrr...", "..rrrrrrh.", "..rriirr..", "..r.a..r..", "....h...a.", ".........."],
+        "side": ["..........", "..........", "...x......", "...xxfx...", "...rhhr...", "....aar...", "...hhrr...", "....iii...", "....arr...", "....h....."],
+        "up": ["..x.......", "..xxffxx..", "...fhhf...", "...rhhr...", "..hrrrrh..", ".haraara..", "...raarh..", "...rrrr...", "...r.hr...", ".........."],
+        "bones": [".x......I.", "..xoOox.I.", "...ooo..I.", "...ro.or..", "..o.oo.o..", "....oo..o.", "...rooi...", "...o..o...", "...o...o..", ".........."],
+    },
+    "Dire Rat": {
+        "down": ["..........", "..........", "..........", "..fFf.....", ".FFFff....", "..FfFFfF..", "..FFfffF..", "...FFFFf..", "......Fnn.", "........nt"],
+        "side": ["..........", "..........", "...FFFFF..", "..fFfffFF.", "..fffFffF.", ".FffllflFn", ".FFfFFffFn", ".....f.ftt", ".......F..", ".........."],
+        "up": ["..........", ".....FFF..", "...FllfF..", "..FFflFF..", "..FlflFF..", "..FlFffF..", "..FfllFF..", "..FFFFFF..", "..nn......", "tt........"],
+        "bones": ["..........", "..oo......", "..oO......", "...oo.....", "..o.o.....", "....oo....", "...o.oo...", "......o...", ".......oo.", ".........."],
+    },
+    "Dire Mole": {
+        "down": ["..........", "..........", "..Mlmm..Cc", "..Mllm..Cm", "mmmmmmmmmm", "CmMmMmMM..", "c.mMmm....", "cc.mmmmm..", "...mmmm...", ".........."],
+        "side": ["..........", "..........", "......m...", ".mmmmmmmm.", "mmMMmmmmm.", "mMMMMMMmm.", ".CMMllmMM.", ".cC...mMc.", ".cc.......", ".c........"],
+        "up": ["..........", "..MmmmmM.c", ".MMmllmMmc", "cMmllmlmCC", "cmlmlllmM.", "CmmlllmmM.", "CCmmmllMM.", ".MmmlmMM..", "..mmmmM...", "...MMM...."],
+        "bones": ["..........", "....oo....", "...o..o.oo", "....o...o.", "o.oo.o.o..", "oo...oo...", "....o.....", "..........", ".....o....", ".........."],
+    },
+    "Unsealed": {
+        "down": ["..........", ".Y........", "...kkk..y.", "..kVvvkk..", ".kVvvvvVk.", ".kVvwvvvVk", "..kVvvvVk.", "y..kkVkk..", ".....k..Y.", ".........."],
+        "side": ["..........", "........y.", "......kk..", "..kkkkVk..", ".kVvvvvVk.", "kVvwwvVk..", ".kVVvVk...", "..kkkk..Y.", ".y........", ".........."],
+        "up": ["..........", "...Y......", "...kkkk.y.", "..kVwwVk..", ".kVwcwvVk.", ".kVwccwVk.", "Y.kVwvVk..", "...kkkk...", "......y...", ".........."],
+        "bones": ["..........", ".y........", "........y.", "....V.....", "...VvV....", "....VvV...", ".....V....", "y.........", ".......y..", ".........."],
+    },
+}
+BODY_COLORS = {
+    "Goblin": {"C": (42, 35, 27), "H": (51, 64, 42), "O": (150, 140, 120), "S": (154, 160, 168), "a": (32, 39, 27), "c": (62, 52, 40), "h": (79, 96, 56), "o": (214, 204, 178), "s": (106, 110, 118)},
+    "Goblin Chieftain": {"I": (138, 116, 96), "O": (150, 140, 120), "a": (51, 64, 42), "f": (90, 78, 68), "h": (69, 88, 47), "i": (92, 74, 60), "o": (214, 204, 178), "r": (90, 30, 34), "x": (184, 174, 152)},
+    "Dire Rat": {"F": (52, 48, 44), "O": (150, 140, 120), "f": (78, 70, 64), "l": (106, 96, 90), "n": (62, 44, 40), "o": (214, 204, 178), "t": (94, 74, 68)},
+    "Dire Mole": {"C": (122, 112, 100), "M": (38, 32, 31), "O": (150, 140, 120), "c": (168, 156, 140), "l": (82, 69, 72), "m": (58, 48, 52), "n": (122, 80, 80), "o": (214, 204, 178)},
+    "Unsealed": {"O": (150, 140, 120), "V": (42, 30, 50), "Y": (192, 154, 64), "c": (242, 230, 184), "o": (214, 204, 178), "v": (20, 14, 24), "w": (232, 216, 160), "y": (138, 106, 42)},
+}
+BODY_UNITS = {"Goblin Chieftan": "Goblin Chieftain", "Goblin Builder": "Goblin", "Goblin Farmer": "Goblin"}  # (enemy names)
+BONE_COLORS = {"o": (214, 204, 178), "O": (150, 140, 120)}
+
+
+def pixelChance(x, y, variant):
+    """A number 0 to 1 for pixel x, y that's always the same for it (and different for each variant): which pixels of a
+    body give way to its bones first."""
+    value = (x * 374761393 + y * 668265263 + (variant + 1) * 2246822519) & 0xFFFFFFFF
+    value = ((value ^ (value >> 13)) * 1274126177) & 0xFFFFFFFF
+    return ((value ^ (value >> 16)) & 0xFFFFFFFF) / 0x100000000
+
+
+def bodyPictures(unitName):
+    """({pose: rows}, colors) for a unit's body: the hand-drawn one (BODY_SPRITES), or one made from the unit's own
+    picture: lying turned one way face down, the other way on its side, upside down face up, and some of its
+    pixels as bones. A giant's picture is shrunk to one tile. Anything with no picture leaves a Goblin's."""
+    key = BODY_UNITS.get(unitName, unitName)
+    if key in BODY_SPRITES:
+        return BODY_SPRITES[key], BODY_COLORS[key]
+    if unitName in ENEMY_SPRITES:
+        rows, colors = ENEMY_SPRITES[unitName]
+    elif unitName in GIANT_SPRITES:
+        rows, colors = GIANT_SPRITES[unitName]
+        rows = [row[::2] for row in rows[::2]]
+    else:
+        return BODY_SPRITES["Goblin"], BODY_COLORS["Goblin"]
+    down = rotateClockwise(rows, 1)
+    bones = ["".join("o" if letter not in ".k" and pixelChance(x, y, 0) < 0.5 else "." for x, letter in enumerate(row))
+             for y, row in enumerate(down)]
+    poses = {"down": down, "side": rotateClockwise(rows, 3), "up": rotateClockwise(rows, 2), "bones": bones}
+    return poses, {**(colors or {}), **BONE_COLORS}
+
+
+def bodyLook(unitName, pose, age, variant):
+    """(rows, colors, how solid 0 to 1) for a body age turns old (bodies.py): its flesh rotted toward
+    bodies.ROT_COLOR, the share of it that has given way to the bones swapped for them, fading as the bones crumble."""
+    poses, colors = bodyPictures(unitName)
+    flesh, bones, share = poses[pose], poses["bones"], bodies.boneShare(age)
+    rows = ["".join(bones[y][x] if pixelChance(x, y, variant) < share else flesh[y][x] for x in range(10)) for y in range(10)]
+    rot = bodies.rotShare(age)
+    palette = {letter: color if letter in BONE_COLORS else tuple(themes.mix(list(color), list(bodies.ROT_COLOR), rot))
+               for letter, color in colors.items()}
+    return rows, palette, bodies.fade(age)
+
+
+def makeBody(colors, unitName, pose, age, variant, quarterTurns, mirrored, tileSize):
+    """A body's picture for this theme: its look at age, mirrored and turned the way it fell."""
+    rows, palette, solid = bodyLook(unitName, pose, age, variant)
+    if mirrored:
+        rows = [row[::-1] for row in rows]
+    surface = makeShadowed(rotateClockwise(rows, quarterTurns), enemyRoles(colors, palette), tileSize)
+    if solid < 1:
+        surface.set_alpha(int(255 * solid))
+    return surface
 
 
 # Enemies turn to face the way they last moved (enemy.facing, the same numbers as the player's direction:

@@ -3,6 +3,7 @@ import random as rand
 
 from cruel.entities import enemies
 from cruel.inventory import loot
+from cruel.world import bodies
 from cruel.world import occupancy
 from cruel.world import organizers
 from cruel.world import plants
@@ -1177,7 +1178,7 @@ def takeFrom(gm, unit, t):
         tile[2][:] = left  # an empty chest stays, like when you loot one
     else:
         left, gold = take(unit, tile[2].items, tile[2].gold)
-        if left or gold:
+        if left or gold or bodies.isBody(tile[2]):  # (a body stays when it's emptied)
             tile[2].items, tile[2].gold = left, gold
         else:
             gm.grid[t] = [0, tile[1]]

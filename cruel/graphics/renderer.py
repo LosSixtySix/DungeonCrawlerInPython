@@ -3,6 +3,7 @@ import random
 import pygame
 import pygame.ftfont
 from cruel.core import paths
+from cruel.world import bodies
 from cruel.world import themes
 from cruel.graphics import sprites
 from cruel.world import wall as walls
@@ -158,6 +159,7 @@ class renderer():
             return
         ts = self.tileSize
         self.sprites = sprites.buildSprites(self.theme.colors, ts)
+        self.bodyPictures = {}  # (a body's look) -> its picture in this theme (see bodyPicture)
         self.pitCache = {}
         dark = themes.mix(self.theme.colors["fog"], [0, 0, 0], 0.1)
         self.shades = {}
@@ -275,7 +277,7 @@ class renderer():
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, messageSeconds=1, messageShade=255,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
              console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None, wallLamps=None,
-             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None, darkSight=None, sharedTiles=None):
+             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None, darkSight=None, sharedTiles=None, worldTurn=0):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -298,6 +300,7 @@ class renderer():
         window the mouse is over."""
         self.win.fill((0, 0, 0))  # past the floor's edges is black
         self.frameTicks = pygame.time.get_ticks()  # one clock reading for the whole frame (glints, bonfire flames)
+        self.worldTurn = worldTurn  # how old the dead bodies are (bodies.py)
         self.blood = blood or {}  # map position -> how much blood is on that floor tile (0-1)
         self.bloodDry = bloodDry or {}
         self.lightTime = lightTime  # also drives the Unsealed's circling shards
@@ -1707,6 +1710,8 @@ class renderer():
                 self.litTiles.append(i)
                 if tile[0] == 5 and len(tile) > 2 and tile[2].name == "Unsealed":
                     animated.append(i)
+                if tile[0] in (1, 9) and len(tile) > 2 and bodies.isBody(tile[2]) and tile[2].rolling(self.frameTicks):
+                    animated.append(i)  # a body rolling over
             if tile[0] == expansion.CAMP and tile[2].kind == "bonfire":  # its flames move, seen or remembered
                 animated.append(i)
             self.refreshTile(grid, i, rooms, playerDirection, playerPosition, visionRange, light)
@@ -1815,14 +1820,14 @@ class renderer():
         blood = self.blood.get(i) if self.blood else None
         extra = None
         if kind == 1:
-            extra = (playerDirection, getattr(obj, "look", None), getattr(obj, "kind", None), items.onlyGlowrocks(obj))
+            extra = (playerDirection, getattr(obj, "look", None), getattr(obj, "kind", None), items.onlyGlowrocks(obj), self.bodyLook(obj))
         elif kind == 2:
             glint = self.glintPhase(i, self.frameTicks) if not memorized and isinstance(obj, walls.OreVein) else None
             extra = (obj.name, len(obj.brokenPoints), getattr(obj, "corruptedBy", None), getattr(obj, "paint", None), glint)
         elif kind == 3:
             extra = (getattr(obj, "look", None), len(getattr(obj, "brokenPoints", ())))
         elif kind == 9:
-            extra = (obj.look, items.onlyGlowrocks(obj))
+            extra = (obj.look, items.onlyGlowrocks(obj), self.bodyLook(obj))
         elif kind == 7:
             extra = (obj.id, obj.hp, obj.claimed)
         elif kind == 8:
@@ -1871,7 +1876,7 @@ class renderer():
                 self.mapSurface.blit(self.shades[(level, x % 2, y % 2)], (x * ts, y * ts))
             if dark > 0:
                 self.mapSurface.blit(self.forgetShade(dark / 255), (x * ts, y * ts))
-            if grid[i][0] == 9 and items.onlyGlowrocks(grid[i][2]):  # the floor under it is lit like any other; the rock stays bright on top
+            if grid[i][0] == 9 and items.onlyGlowrocks(grid[i][2]) and not bodies.isBody(grid[i][2]):  # the floor under it is lit like any other; the rock stays bright on top
                 self.mapSurface.blit(self.sprites["glowrock"], (x * ts, y * ts))
 
     def drawMemoryFalloff(self, grid, playerPosition, keep):
@@ -1959,8 +1964,31 @@ class renderer():
         return cache[(alpha, self.tileSize)]
 
     def pilePicture(self, pile):
-        """A pile's picture: a small Glowrock if that's all it holds, otherwise its heap."""
+        """A pile's picture: a dead body (bodies.py), a small Glowrock if that's all it holds, otherwise its heap."""
+        if bodies.isBody(pile):
+            return self.bodyPicture(pile)
         return self.sprites["glowrock"] if items.onlyGlowrocks(pile) else self.sprites["piles"][pile.look]
+
+    def blitPile(self, pile, x, y):
+        """Draws a pile (or body) on map tile x, y. A body partway through rolling over is lifted a pixel."""
+        lift = self.tileSize // 10 if bodies.isBody(pile) and pile.poseAt(self.frameTicks)[1] else 0
+        self.mapSurface.blit(self.pilePicture(pile), (x * self.tileSize, y * self.tileSize - lift))
+
+    def bodyLook(self, pile):
+        """Everything a body's picture depends on right now (None for anything that isn't a body)."""
+        if not bodies.isBody(pile):
+            return None
+        pose, lifted = pile.poseAt(getattr(self, "frameTicks", 0))
+        age = bodies.decayStep(pile.age(getattr(self, "worldTurn", 0)))
+        return pile.unitName, pose, lifted, age, pile.variant, pile.quarterTurns, pile.mirrored
+
+    def bodyPicture(self, body):
+        unitName, pose, _, age, variant, quarterTurns, mirrored = self.bodyLook(body)
+        key = (unitName, pose, age, variant, quarterTurns, mirrored)
+        cache = self.__dict__.setdefault("bodyPictures", {})
+        if key not in cache:
+            cache[key] = sprites.makeBody(self.theme.colors, unitName, pose, age, variant, quarterTurns, mirrored, self.tileSize)
+        return cache[key]
 
     def drawTile(self, grid, i, x, y, rooms, playerDirection, memorized):
         self.drawTileContents(grid, i, x, y, rooms, playerDirection, memorized)
@@ -2009,8 +2037,8 @@ class renderer():
             case 1:  # Player: the Torchbearer facing the way it last moved, on the floor it stands on
                 self.floorFill(i, rooms, memorized, x, y)
                 standingIn = grid[i][2] if len(grid[i]) > 2 else None
-                if standingIn is not None and hasattr(standingIn, "look"):  # on an item pile: it's under your feet
-                    self.mapSurface.blit(self.pilePicture(standingIn), (x * ts, y * ts))
+                if standingIn is not None and hasattr(standingIn, "look"):  # on an item pile (or a body): it's under your feet
+                    self.blitPile(standingIn, x, y)
                 self.mapSurface.blit(self.sprites["player"][playerDirection], (x * ts, y * ts))
                 if isinstance(standingIn, plants.Plant):  # in a plant: it's drawn over you, see-through (anything
                     #                                     else you stand on, like a door or a mineshaft, isn't drawn)
@@ -2032,9 +2060,9 @@ class renderer():
                     self.mapSurface.blit(self.crackedPicture(self.sprites["campChests"][look], grid[i][2], ("chest", look)), (x * ts, y * ts))
                 else:
                     self.mapSurface.blit(self.sprites["chests"][sprites.chestColorFor(i)], (x * ts, y * ts))
-            case 9:  # An item pile: one of the pile pictures, picked when the pile was made
+            case 9:  # An item pile: one of the pile pictures, picked when the pile was made (or a dead body)
                 self.floorFill(i, rooms, memorized, x, y)
-                self.mapSurface.blit(self.pilePicture(grid[i][2]), (x * ts, y * ts))
+                self.blitPile(grid[i][2], x, y)
             case 4:  # Door to the next level: a pit in the floor, randomly an open pit or a collapsed grave
                 floor = self.floorColor(i, rooms, memorized)
                 self.fillTile(floor, x, y)
