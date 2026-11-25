@@ -12,10 +12,10 @@ from unittest import mock
 import pygame
 
 from cruel.core import gamemanager
-from cruel.entities.enemies import DireRat, Goblin, GoblinChief
+from cruel.entities.enemies import DireMole, DireRat, Goblin, GoblinChief
 from cruel.inventory import items, relics, resources
-from cruel.world import bodies, expansion, occupancy, plants
-from tests.helpers.gamemanager import CHEST, ENEMY, FLOOR, PILE, RIGHT, keyDown, newGame, standInOpenFloor
+from cruel.world import bodies, expansion, occupancy, plants, wall
+from tests.helpers.gamemanager import CHEST, ENEMY, FLOOR, PILE, RIGHT, WALL, keyDown, newGame, standInOpenFloor
 
 
 def potion():
@@ -368,7 +368,7 @@ class UnderAPlantTests(BodyTest):
         gamemanager.gameManager.saveGame(game, saveFile)
         loaded = newGame()
         self.assertTrue(loaded.loadGame(saveFile))
-        self.assertEqual(list(loaded.plantBodiesHere()), [self.besideYou])
+        self.assertEqual(list(loaded.coveredBodiesHere()), [self.besideYou])
         loaded.grid[self.besideYou] = [FLOOR, 1]
         loaded.uncoverBodies()
         self.assertEqual(loaded.bodyAt(self.besideYou).unitName, "Goblin")
@@ -407,6 +407,89 @@ class UnderAPlantTests(BodyTest):
         spilled = [item.name for ground in grounds if ground[0] == PILE for item in ground[2].items]
         self.assertIn("Healing Potion", spilled, "what was on it spills beside the plant")
         self.assertIn(("bone", 1), [stack for ground in grounds if ground[0] == PILE for stack in remainsOf(ground[2])], "with its bones")
+
+
+class InsideAWallTests(BodyTest):
+    """A burrower that dies inside a wall with nothing on it leaves its body inside the wall (gameManager.entomb).
+    Once the wall is broken, any way, the body falls to the floor there (uncoverBodies)."""
+
+    def killMoleInWall(self, drops=()):
+        game = self.game
+        self.wall = wall.StoneWall()
+        self.putEnemy(self.besideYou, DireMole())
+        game.enemyOccupiedItemSpaces[self.besideYou] = [WALL, 1, self.wall]
+        with mock.patch("cruel.inventory.loot.roll", return_value=list(drops)):
+            game.killEnemy(self.besideYou, killer="player")
+        return bodies.bodyInside(self.wall)
+
+    def bodiesOnTheFloor(self):
+        return [spot for spot in self.game.grid if self.game.bodyAt(spot) is not None]
+
+    def test_its_body_stays_inside_the_wall(self):
+        body = self.killMoleInWall()
+        self.assertEqual(self.game.grid[self.besideYou][:3], [WALL, 1, self.wall], "the wall still stands")
+        self.assertIsInstance(body, bodies.Body)
+        self.assertEqual(body.unitName, "Dire Mole")
+        self.game.uncoverBodies()
+        self.assertEqual(self.bodiesOnTheFloor(), [], "it isn't pushed out onto the floor")
+
+    def test_when_the_wall_breaks_the_body_falls_to_that_floor(self):
+        game = self.game
+        body = self.killMoleInWall()
+        game.breakWall(self.besideYou)
+        game.uncoverBodies()
+        self.assertIs(game.bodyAt(self.besideYou), body)
+
+    def test_any_way_the_wall_goes(self):
+        game = self.game
+        body = self.killMoleInWall()
+        game.grid[self.besideYou] = [FLOOR, 1]  # (blasted, dug through by an enemy...)
+        game.uncoverBodies()
+        self.assertIs(game.bodyAt(self.besideYou), body)
+
+    def test_with_loot_on_it_the_wall_crumbles_and_the_body_lies_there(self):
+        game = self.game
+        self.killMoleInWall(drops=[("relic:lantern", 1)])
+        self.assertIsNone(bodies.bodyInside(self.wall))
+        body = game.bodyAt(self.besideYou)
+        self.assertIsNotNone(body)
+        self.assertEqual(body.unitName, "Dire Mole")
+
+    def test_a_burrower_passing_through_keeps_it_inside(self):
+        game = self.game
+        body = self.killMoleInWall()
+        tunnel = game.grid[self.besideYou]
+        self.putEnemy(self.besideYou, DireMole())
+        game.enemyOccupiedItemSpaces[self.besideYou] = tunnel
+        game.uncoverBodies()
+        self.assertIs(bodies.bodyInside(self.wall), body)
+        self.assertEqual(self.bodiesOnTheFloor(), [])
+
+    def test_it_is_found_again_after_loading(self):
+        game = self.game
+        self.killMoleInWall()
+        saveFile = os.path.join(tempfile.mkdtemp(), "wall-body.pkl")
+        gamemanager.gameManager.saveGame(game, saveFile)
+        loaded = newGame()
+        self.assertTrue(loaded.loadGame(saveFile))
+        self.assertEqual(list(loaded.coveredBodiesHere()), [self.besideYou])
+        loaded.grid[self.besideYou] = [FLOOR, 1]
+        loaded.uncoverBodies()
+        self.assertEqual(loaded.bodyAt(self.besideYou).unitName, "Dire Mole")
+
+    def test_it_decays_inside_and_falls_out_as_bones(self):
+        game = self.game
+        game.worldTurn = 0
+        body = self.killMoleInWall()
+        game.worldTurn = bodies.DECAY_TURNS
+        game.stepBodies()
+        self.assertIs(bodies.bodyInside(self.wall), body, "the bones stay inside until the wall breaks")
+        game.grid[self.besideYou] = [FLOOR, 1]
+        game.uncoverBodies()
+        ground = game.groundAt(self.besideYou)
+        self.assertEqual(ground[0], PILE)
+        self.assertFalse(bodies.isBody(ground[2]))
+        self.assertEqual(remainsOf(ground[2]), [("bone", 1)])
 
 
 if __name__ == "__main__":
