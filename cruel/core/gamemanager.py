@@ -3834,7 +3834,9 @@ class gameManager():
         if self.throwArea is not None:
             landing, area, turns = self.throwArea
             effect = self.player.inventory[self.throwing].effect
-            aim = {"landing": landing, "area": area, "turns": turns, "effect": effect}
+            # target: the tile you're aiming at. It's past the landing spot when an enemy (or a wall) is in the way,
+            # and it's drawn too, so every key moves something you can see
+            aim = {"landing": landing, "area": area, "turns": turns, "effect": effect, "target": self.currentAimSpot}
         smoke = {p: turns for p, turns in self.smoke.items() if self.grid[p][1] != 0}  # over remembered tiles too: sight stops at its edge
         now = pygame.time.get_ticks()
         burning = [p for p in self.EnemyPositions if p in self.grid and self.grid[p][1] == 1 and len(self.grid[p]) > 2

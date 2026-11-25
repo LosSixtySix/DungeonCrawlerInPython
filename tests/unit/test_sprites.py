@@ -75,6 +75,27 @@ class CauldronTests(unittest.TestCase):
         self.assertIn("w", "".join(sprites.CAULDRON))
 
 
+class AnvilTests(unittest.TestCase):
+    """The anvil is drawn from above, like everything on the map: its face on a round stump, not its side."""
+
+    def test_the_stump_shows_above_and_below_the_face(self):
+        rows = sprites.ANVIL
+        self.assertIn("n", rows[0] + rows[1], "stump past the top of the face")
+        self.assertIn("n", rows[-2] + rows[-1], "stump past the bottom of the face")
+
+    def test_the_horn_points_out_of_the_middle_of_the_left_side(self):
+        leftColumn = [row[0] for row in sprites.ANVIL]
+        tipRows = [number for number, letter in enumerate(leftColumn) if letter != "."]
+        self.assertEqual(tipRows, [4], "only the horn's tip reaches the left edge")
+        self.assertIn(sprites.ANVIL[4][1], "iI", "metal just inside the tip")
+
+    def test_the_hardy_hole_is_in_the_face(self):
+        faceRow = sprites.ANVIL[4]
+        hole = faceRow.index("h")
+        self.assertIn(faceRow[hole - 1], "iI")
+        self.assertIn(faceRow[hole + 1], "iI")
+
+
 class TurningTests(unittest.TestCase):
     """Rotating pictures so the player and enemies face the way they're going."""
 
