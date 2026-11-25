@@ -373,6 +373,7 @@ class gameManager():
         self.sideFloor = None  # on a city's works floor (mineshafts.py): (works kind, where its shaft is); else None
         self.cityAside = None  # while on a works floor: the city's floor, put aside (mineshafts.putAside)
         self.floorsAside = {}  # (floor, shaft position) -> a works floor put aside while you're elsewhere
+        self.shaftArrivals = {}  # floor key -> [(unit, shaft position)]: Dwellers that climbed a shaft to it (livingfloors.py)
         self.enemyOccupiedItemSpaces = {}
         self.patienceMs = 0  # how long you've waited, untouched, on the first floor's center tile (stepPatience)
 
@@ -3841,6 +3842,7 @@ class gameManager():
 
     def enemyTurn(self):
         self.turnCount += 1
+        livingfloors.arrive(self)
         self.MoveEnemies()
         queen.stepCourt(self)
         self.checkShop()
@@ -3909,6 +3911,7 @@ class gameManager():
     def awayTurn(self):
         """A turn for a floor you're not on (livingfloors.py puts it in place of yours first): its units, goblin
         camps, burning, Demise, blood, floor event and plants. Nothing that's only round you."""
+        livingfloors.arrive(self)
         self.MoveEnemies()
         queen.stepCourt(self)
         expansion.stepCamp(self)
@@ -3946,11 +3949,15 @@ class gameManager():
                     self.faceToward(currentEnemy, before, position)
                 listOfNewPositions.add(position)
                 continue
-            listOfNewPositions.add(self.unitTurn(position, currentEnemy, organizerContext, campContext))
+            newPosition = self.unitTurn(position, currentEnemy, organizerContext, campContext)
+            if newPosition is not None:  # (None: it climbed a shaft off this floor)
+                listOfNewPositions.add(newPosition)
         for spot, unit in secondUnits:  # the second units on spaces (a small one sharing)
             if occupancy.sharedTiles(self).get(spot) is not unit:
                 continue  # it's not there now (it took the first one's place, or it's gone)
-            listOfNewPositions.add(self.unitTurn(spot, unit, organizerContext, campContext))
+            newPosition = self.unitTurn(spot, unit, organizerContext, campContext)
+            if newPosition is not None:
+                listOfNewPositions.add(newPosition)
         # leave out anyone an Organizer killed after it had already moved, and a big unit's other tiles (a small unit
         # that stepped onto one shares the space with it: it's kept as that space's second unit, occupancy.py)
         self.EnemyPositions = {p for p in listOfNewPositions if self.grid[p][0] == 5 and len(self.grid[p]) > 2
@@ -3963,12 +3970,14 @@ class gameManager():
     def unitTurn(self, position, currentEnemy, organizerContext, campContext):
         """A unit's actions this turn (a fast one sometimes acts twice): each time it's lifted off its space, acts,
         and is put down where it ends up (occupancy.settle: as a second unit, on a space it shares). Returns where
-        it is."""
+        it is, or None if it climbed a shaft off this floor (livingfloors.climb)."""
         for action in range(self.enemyActions(currentEnemy)):
             if not occupancy.lift(self, position, currentEnemy):
                 break  # it died (or something took its place) during its first action
             before = position
             position, currentEnemy = self.enemyAct(position, currentEnemy, organizerContext, campContext)
+            if livingfloors.leaving(currentEnemy):
+                return None
             self.faceToward(currentEnemy, before, position)
             occupancy.settle(self, position, currentEnemy)
         return position
@@ -4188,6 +4197,7 @@ class gameManager():
             "sideFloor": self.sideFloor,
             "cityAside": self.cityAside,
             "floorsAside": self.floorsAside,
+            "shaftArrivals": livingfloors.arrivals(self),
         }
         with open(filename,"wb") as f:
             pickle.dump(data,f)
@@ -4217,6 +4227,7 @@ class gameManager():
             self.sideFloor = data.get("sideFloor")
             self.cityAside = data.get("cityAside")
             self.floorsAside = data.get("floorsAside", {})
+            self.shaftArrivals = data.get("shaftArrivals", {})
             self.forcedOreFloor = None  # not saved (a console setting); a loaded game never ran newGame to set it
             self.patienceMs = 0
             self.forcedTheme = None

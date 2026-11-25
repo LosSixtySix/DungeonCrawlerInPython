@@ -9,6 +9,7 @@ from cruel.world import dwellerwork
 from cruel.world import mineshafts
 from tests.helpers.metropolis import cityGame
 from tests.helpers.mineshafts import climbDown
+from tests.helpers.dweller_work import dewMade
 
 
 # ---------------------------------------------------------------- whole floors
@@ -28,8 +29,7 @@ class GrowingFloorTests(unittest.TestCase):
         grubs = dwellerwork.grubsHere(game)
         self.assertGreater(len(grubs), sum(mineshafts.GRUBS_PER_PEN), "the herd has grown")
         self.assertTrue(all(grub.hunger < dwellerfarming.STARVE_TURNS for _, grub in grubs))
-        dew = sum(stack.amount for spot in dwellerwork.storageChests(game) for stack in game.grid[spot][2] if stack.materialId == "dew")
-        self.assertGreater(dew, 0)
+        self.assertGreater(dewMade(game), 0)
 
 
 if __name__ == "__main__":

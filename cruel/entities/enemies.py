@@ -115,7 +115,7 @@ class Dweller(Enemy):
         self.lastSawYou = 0       # the turn it last saw you (a hostile one calms down FORGIVE_TURNS after)
         self.sawYouAt = None      # where it last saw you (what it tells a guard)
         self.enemyAt = None       # where it saw an enemy of the city: a guard heads there, anyone else tells a guard
-        self.work = None          # a citizen on a works floor: "mine" or "farm" (mineshafts.py, dwellerwork.py)
+        self.work = None          # a citizen on a works floor: "mine" or "farm" (mineshafts.py, dwellerwork.py); "dew": a Dew carrier (queen.py)
         self.target = None        # a worker: the wall it's mining (or what it's working on)
         self.materials = {}       # a worker: what it's carrying to the storehouse
         self.job = None           # a worker: "build" while it's putting up a building (dwellerbuilding.py)
@@ -212,6 +212,8 @@ class DwellerQueen(Dweller):
         self.anchor = None         # her top-left tile
         self.chamber = frozenset() # the inside of her chamber
         self.royalPosts = []       # where her Royal Guards stand
+        self.dew = 0               # Dew her carriers have fed her (queen.py)
+        self.carriersAway = {}     # her carriers down on the farm now: {carrier: the turn it went}
 
 
 class RoyalGuard(DwellerGuard):

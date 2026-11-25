@@ -45,7 +45,8 @@ further away) does it fight back. None of this turns the city against you.
 IDLE_CHANCE = 0.4           # a calm Dweller stands still this often
 GO_HOME_CHANCE = 0.2        # when it picks somewhere to go, it goes home this often
 WANDER_REACH = {"citizen": 10, "noble": 6, "guard": 4, "merchant": 0}
-PATH_REACH = 40             # how far a path map reaches
+PATH_REACH = 40             # how far a path map reaches...
+FAR_PATH_REACH = 200        # ...or, for a Dweller crossing the whole floor (a Dew carrier, queen.py), this
 PATH_KEEP_TURNS = 20        # a path map is worked out again after this many turns (walls may have changed)
 PATH_CACHE_LIMIT = 200
 TELL_REACH = 2              # a fleeing Dweller tells a guard this close to it
@@ -66,14 +67,15 @@ def distance(game, spot, other):
 
 # ---------------------------------------------------------------- walking
 
-def pathMap(game, goal, throughPlants=False):
-    """{tile: steps to goal}, kept for PATH_KEEP_TURNS on this floor. throughPlants (a farmer): through any plant."""
+def pathMap(game, goal, throughPlants=False, reach=PATH_REACH):
+    """{tile: steps to goal} for up to reach steps, kept for PATH_KEEP_TURNS on this floor. throughPlants (a
+    farmer): through any plant."""
     cache = game.__dict__.setdefault("dwellerPaths", {})
-    key = (game.level, getattr(game, "sideFloor", None), game.turnCount // PATH_KEEP_TURNS, goal, throughPlants)
+    key = (game.level, getattr(game, "sideFloor", None), game.turnCount // PATH_KEEP_TURNS, goal, throughPlants, reach)
     if key not in cache:
         if len(cache) > PATH_CACHE_LIMIT:
             cache.clear()
-        cache[key] = expansion.walkingDistances(game, goal, PATH_REACH, plantsOpen=throughPlants)
+        cache[key] = expansion.walkingDistances(game, goal, reach, plantsOpen=throughPlants)
     return cache[key]
 
 
@@ -137,12 +139,13 @@ def swapPast(game, position, spot, force=False):
     return True
 
 
-def stepToward(game, position, goal, pushPast=False, forceSwap=False, throughPlants=False, unit=None):
+def stepToward(game, position, goal, pushPast=False, forceSwap=False, throughPlants=False, unit=None, reach=PATH_REACH):
     """One step along the path to goal, onto a free tile (or one unit, the Dweller moving, can share). Returns where
     it ends up (where it was if it can't move). pushPast (a hunting guard): a citizen, noble or merchant on the next
     tile of the path is nudged aside. forceSwap: a Dweller in the way swaps past even if it swapped lately
-    (swapPast). throughPlants (a farmer, like a goblin farmer): it walks through any plant."""
-    steps = pathMap(game, goal, throughPlants)
+    (swapPast). throughPlants (a farmer, like a goblin farmer): it walks through any plant. reach: how far the path
+    map goes (FAR_PATH_REACH to cross the floor)."""
+    steps = pathMap(game, goal, throughPlants, reach)
     here = steps.get(position, math.inf)
     if pushPast:
         ahead = [spot for spot in game.neighbors(position) if steps.get(spot, math.inf) < here]

@@ -79,6 +79,7 @@ CITIZENS = (20, 30)
 NOBLES = (3, 6)
 GUARD_POSTS = (6, 10)
 NOBLES_ON_THE_PLAZA = 2
+CARRIERS = (5, 10)          # citizens set aside to carry Dew from the farm to the Queen (queen.py)
 ROYAL_GUARDS = 4            # round the Queen, ROYAL_POST_REACH tiles from her body
 ROYAL_POST_REACH = 2
 
@@ -746,7 +747,7 @@ def placeCourt(city, taken):
 def placeDwellers(city, playerSpot):
     """The Queen and her Royal Guards in her chamber (placeCourt), guards at posts spread over the roads, a merchant
     at each shop's counter, nobles in their mansions and on the plaza, citizens on the roads (each with a house to
-    go home to)."""
+    go home to; CARRIERS of them set aside as the Queen's Dew carriers)."""
     taken = {playerSpot} | set(neighborsOf(city, playerSpot))
     queen = placeCourt(city, taken)
     roadSpots = [spot for spot in city.roads if openRoad(city, spot, taken) and spot not in city.plaza]
@@ -784,9 +785,12 @@ def placeDwellers(city, playerSpot):
 
     roads = [spot for spot in city.roads if openRoad(city, spot, taken)]
     houseInsides = [list(inside) for inside, _ in city.houses if inside]
-    for spot in random.sample(roads, min(len(roads), random.randint(*CITIZENS))):
+    carriers = random.randint(*CARRIERS) if queen is not None else 0
+    for index, spot in enumerate(random.sample(roads, min(len(roads), random.randint(*CITIZENS)))):
         citizen = enemies.DwellerCitizen()
         citizen.home = random.choice(random.choice(houseInsides)) if houseInsides else spot
+        if index < carriers:
+            citizen.work = "dew"  # (set aside to carry Dew to the Queen)
         city.dwellers[spot] = citizen
     for spot, dweller in city.dwellers.items():
         city.grid[spot] = [ENEMY, 0, dweller]
