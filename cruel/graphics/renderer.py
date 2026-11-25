@@ -761,8 +761,9 @@ class renderer():
 
     def drawShop(self, spec, rect, focused, body):
         """The Gray Peddler's shop: Buy and Sell tabs with your gold beside them, then the Inventory's slot grid with
-        a price in each slot's top corner, its scroll bar, and the Inventory's details panel on the right.
-        spec: tabs, tab (index), gold, slots [(name, price text, dim)], selected, scroll, detail."""
+        a price in each slot's top corner, its scroll bar, and the Inventory's details panel on the right. With
+        nothing in the open tab, its emptyText is beside the tabs (the slots stay clear).
+        spec: tabs, tab (index), gold, slots [(name, price text, dim)], selected, scroll, detail, emptyText."""
         win = self.win
         muted, select, boxLine, panel = self.color("muted"), self.color("select"), self.color("boxLine"), self.color("panel")
         highlight = themes.mix(panel, select, 0.14)
@@ -775,6 +776,8 @@ class renderer():
             pygame.draw.rect(win, select if chosen else boxLine, box, width=1)
             self.blitText(win, name, self.windowSmallFont, select if chosen else muted, tabX + 8, tabY)
             tabX += width + 6
+        if not spec["slots"]:
+            self.blitText(win, spec.get("emptyText", "Nothing here"), self.windowSmallFont, muted, tabX + 6, tabY)
         self.blitText(win, f"Gold {spec['gold']}", self.windowFont, self.COIN_COLOR, rect.x + self.PAD + 5 * self.BOX_W, tabY, align="right")
 
         gridX, gridY = rect.x + self.PAD, rect.y + self.WINDOW_HEAD + self.ROW + 6
@@ -796,8 +799,6 @@ class renderer():
             lines = self.wrapText(name, self.windowSmallFont, box.w - 14)[-2:]
             for lineIndex, line in enumerate(reversed(lines)):
                 self.blitText(win, line, self.windowSmallFont, nameColor, box.x + 8, box.bottom - 16 - lineIndex * 18)
-        if not slots:
-            self.blitText(win, spec.get("emptyText", "Nothing here"), self.windowSmallFont, muted, gridX + 12, gridY + self.BOX_H // 2)
         self.drawScrollBar(win, pygame.Rect(gridX + 5 * self.BOX_W + 3, gridY + 3, self.INV_SCROLL_W - 6, self.SHOP_ROWS * self.BOX_H - 6),
                            top, self.SHOP_ROWS, rowCount, focused)
         if spec.get("detail"):
