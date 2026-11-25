@@ -133,7 +133,7 @@ class FollowerTests(CrownTest):
     def test_it_fights_what_is_hostile_to_you_but_not_calm_dwellers(self):
         game = self.game
         goblin = self.addGoblin(33, 30)
-        goblin.move = False
+        goblin.speed = 0  # (it stays put)
         calm = self.addDweller(enemies.DwellerCitizen, 31, 31)
         before = goblin.hp
         self.assertTrue(self.runTurns(10, until=lambda: goblin.hp < before or goblin not in [unit for _, unit in occupancy.allUnits(game)]))

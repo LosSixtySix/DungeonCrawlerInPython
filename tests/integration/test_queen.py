@@ -76,7 +76,7 @@ class QueenTurnTests(QueenTest):
 
     def test_she_hits_an_enemy_of_the_city_within_her_reach(self):
         goblin = self.addGoblin(33, 20)  # two tiles from her body
-        goblin.move = False
+        goblin.speed = 0  # (it stays put)
         before = goblin.hp
         queen.queenTurn(self.game, self.anchor, self.queen)
         self.assertLess(goblin.hp, before)
@@ -151,10 +151,10 @@ class RoyalGuardTests(QueenTest):
         royal = self.addRoyal(28, 20)  # its post
         lookingFrom = self.spot(28, 25)  # (it has walked out a way)
         beyond = self.addGoblin(28, 30)  # in sight from there, but 10 from its post
-        beyond.move = False
+        beyond.speed = 0
         self.assertIsNone(dwellers.enemyInSight(game, lookingFrom, royal))
         near = self.addGoblin(28, 27)
-        near.move = False
+        near.speed = 0
         self.assertEqual(dwellers.enemyInSight(game, lookingFrom, royal), (self.spot(28, 27), near))
         guard = self.addDweller(enemies.DwellerGuard, 40, 20)
         guard.home = royal.home

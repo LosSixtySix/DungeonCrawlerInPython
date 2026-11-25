@@ -29,6 +29,7 @@ from cruel.world import dewgrubs
 from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import queen
+from cruel.world import sight
 from cruel.world import followers
 from cruel.world import cityshops
 from cruel.core import devconsole
@@ -174,25 +175,6 @@ BLOOD_DRY = 1 / 150       # blood dries away by this much a turn (a full puddle 
 
 
 SEE_THROUGH = (0, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.STREET_LIGHT)  # tile types sight passes over (plants depend on the plant)
-_RAYS = {}
-
-
-def rayOffsets(reach, start=0):
-    """The vision rays out to reach: one every 0.1 radians, each a list of (dx, dy) steps from the center, nearest
-    first and without repeats. Worked out once per reach (they're the same for every tile)."""
-    key = (reach, start)
-    if key not in _RAYS:
-        rays, t = [], 0
-        while t < 2 * math.pi:
-            ray = []
-            for r in range(start, reach + 1):
-                point = (round(r * math.cos(t)), round(r * math.sin(t)))
-                if point not in ray:
-                    ray.append(point)
-            rays.append(ray)
-            t += .1
-        _RAYS[key] = rays
-    return _RAYS[key]
 
 
 class gameManager():
@@ -2818,28 +2800,30 @@ class gameManager():
         return flatRays
 
     def rayCircleVision(self, position, visionRange, selfNum, tremorSense=False) -> set:
-        """The tiles seen from position: rays every 0.1 radians out to visionRange, each stopping after the first
-        tile that can't be seen through (see rayOffsets for the rays themselves)."""
-        positions = set()
-        add = positions.add
-        R, grid = self.rowLength, self.grid
-        h, k = position % R, position // R
+        """The tiles seen from position out to visionRange (sight.fieldOfView: symmetric shadowcasting). Open
+        floor, piles, short plants and thin posts don't block sight, nor do tiles of the looker's own kind
+        (selfNum: you, or other enemies for an enemy); anything else is seen and blocks what's behind it. Smoke is
+        seen into but not through (from inside it you only see the tiles beside you). Tremor sense feels through
+        everything but the map's edge."""
+        grid = self.grid
         smoke = self.smoke if not tremorSense else {}  # smoke blinds everyone (tremor sense feels through it)
-        for ray in rayOffsets(visionRange):
-            for dx, dy in ray:
-                flat = h + dx + (k + dy) * R
-                tile = grid.get(flat)
-                if tile is None:
-                    continue
-                add(flat)
-                if flat in smoke and flat != position:
-                    break  # sight goes into smoke but not through it, so from inside it you only see the tiles beside you
-                if tremorSense:
-                    continue
-                kind = tile[0]
-                if not (kind in SEE_THROUGH or kind == selfNum or (kind == 8 and not tile[2].blocksSight)):
-                    break
-        return positions
+
+        def blocks(spot):
+            tile = grid.get(spot)
+            if tile is None:
+                return True
+            if spot in smoke and spot != position:
+                return True
+            if tremorSense:
+                return False
+            kind = tile[0]
+            return not (kind in SEE_THROUGH or kind == selfNum or (kind == 8 and not tile[2].blocksSight))
+
+        def wholeFace(spot):  # (walls and things show their face; a unit is only seen if the line to it is clear)
+            tile = grid.get(spot)
+            return tile is not None and tile[0] not in (1, 5)
+
+        return sight.fieldOfView(position, visionRange, self.rowLength, len(grid) // self.rowLength, blocks, wholeFace)
 
     def seeThroughForPlayer(self, position):
         """The same rule your vision uses: open floor, item piles, short plants and thin posts (the Peddler's
@@ -2848,23 +2832,25 @@ class gameManager():
         return tile[0] in (0, 1, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.STREET_LIGHT) or             (tile[0] == 8 and not tile[2].blocksSight)
 
     def lightAround(self, fire, radius=FIRE_LIGHT_RADIUS):
-        """The tiles a fire lights: rays out to radius, stopping at (and lighting) the first thing that blocks
-        sight. The fire's own tile always lights, whatever is burning there."""
-        lit, R = set(), self.rowLength
-        fx, fy = fire % R, fire // R
-        for ray in rayOffsets(radius, start=1):
-            for dx, dy in ray:
-                x, y = fx + dx, fy + dy
-                if not 0 <= x < R:
-                    break
-                p = x + y * R
-                if p not in self.grid:
-                    break
-                lit.add(p)
-                if p != fire and not self.seeThroughForPlayer(p):
-                    break
-        lit.add(fire)
-        return lit
+        """The tiles a fire (or any light) lights out to radius, the way sight works (sight.fieldOfView): what
+        blocks your sight is lit and stops the light behind it. The fire's own tile always lights, whatever is
+        burning there."""
+        grid = self.grid
+        return sight.fieldOfView(fire, radius, self.rowLength, len(grid) // self.rowLength,
+                                 lambda spot: spot not in grid or not self.seeThroughForPlayer(spot))
+
+    def seenFromAfar(self, lit, visiblePositions):
+        """Of the lit tiles (by fire, lamps or Glowrocks), the ones you see from where you stand, however far: the
+        same sight as yours (sight.fieldOfView) out to the furthest of them. None from inside smoke."""
+        targets = [spot for spot in lit if spot not in visiblePositions]
+        if not targets or self.playerPositionFlat in self.smoke:
+            return set()
+        R, here = self.rowLength, self.playerPositionFlat
+        reach = math.ceil(max(math.hypot(spot % R - here % R, spot // R - here // R) for spot in targets))
+        grid = self.grid
+        view = sight.fieldOfView(here, reach, R, len(grid) // R,
+                                 lambda spot: spot not in grid or spot in self.smoke or not self.seeThroughForPlayer(spot))
+        return view.intersection(targets)
 
     def lineOfSight(self, start, end):
         """True if nothing that blocks your sight stands on the straight line between two tiles."""
@@ -2947,18 +2933,12 @@ class gameManager():
                     tile[1] = 2
         for position in visiblePositions:
             self.grid[position][1] = 1
-        # Firelight: tiles a fire lights are visible too, from any distance, if nothing blocks your line of sight
+        # Firelight and Glowrock light: tiles they light are visible too, from any distance you can see them from
+        # (from inside smoke you can't see light out there)
         self.updateFireLight()
-        if self.playerPositionFlat not in self.smoke:  # from inside smoke you can't see firelight out there
-            for position in self.fireLight:
-                if position not in visiblePositions and self.lineOfSight(self.playerPositionFlat, position):
-                    self.grid[position][1] = 1
-        # Glowrock light: the same, from any distance you have a clear line to
         self.updateGlowLight()
-        if self.playerPositionFlat not in self.smoke:
-            for position in self.glowLight:
-                if position not in visiblePositions and self.lineOfSight(self.playerPositionFlat, position):
-                    self.grid[position][1] = 1
+        for position in self.seenFromAfar(set(self.fireLight) | set(self.glowLight), visiblePositions):
+            self.grid[position][1] = 1
         if self.player.hasEffect("see_enemies"):
             for position in self.EnemyPositions:
                 if position in self.grid and self.grid[position][0] == 5:

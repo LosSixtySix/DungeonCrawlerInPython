@@ -95,9 +95,10 @@ def workTurn(game, position, worker):
 def walkTo(game, position, worker, goal, reach=None):
     """A step toward goal (a tile or the wall or chest beside where it's going). A worker that hasn't got any closer
     for GIVE_UP_TURNS turns forgets its target; one stuck for STUCK_SWAP_TURNS swaps past whoever is in its way. A
-    farmer walks through any plant (like a goblin farmer)."""
+    farmer walks through any plant (like a goblin farmer), and so does a Dew carrier (it fetches Dew from farmhouse
+    chests, among the crops)."""
     stuck = getattr(worker, "stuckTurns", 0) >= STUCK_SWAP_TURNS
-    newPosition = dwellers.stepToward(game, position, goal, forceSwap=stuck, throughPlants=worker.work == "farm", unit=worker,
+    newPosition = dwellers.stepToward(game, position, goal, forceSwap=stuck, throughPlants=worker.work in ("farm", "dew"), unit=worker,
                                       reach=reach or dwellers.PATH_REACH)
     if newPosition == position:
         worker.stuckTurns = getattr(worker, "stuckTurns", 0) + 1
