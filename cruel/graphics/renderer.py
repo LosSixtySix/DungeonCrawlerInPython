@@ -1567,6 +1567,19 @@ class renderer():
         aim = throws["aim"]
         if aim is not None:
             self.drawBlast(aim["landing"], aim["area"], aim["effect"], aim["turns"], 70, time)
+            if aim.get("target") not in (None, aim["landing"]):
+                self.drawAimCursor(aim["target"], aim["effect"])
+
+    def drawAimCursor(self, position, effect):
+        """Where you're aiming, when the throw would land short of it (an enemy or a wall in the way): four corner
+        brackets in the potion's color, so moving the aim always shows."""
+        color = self.effectColor(effect)
+        rect = self.screenTile(position)
+        arm = max(2, self.tileSize // 3)
+        for cornerX, cornerY, stepX, stepY in ((rect.left, rect.top, 1, 1), (rect.right - 1, rect.top, -1, 1),
+                                               (rect.left, rect.bottom - 1, 1, -1), (rect.right - 1, rect.bottom - 1, -1, -1)):
+            pygame.draw.line(self.win, color, (cornerX, cornerY), (cornerX + stepX * arm, cornerY), 2)
+            pygame.draw.line(self.win, color, (cornerX, cornerY), (cornerX, cornerY + stepY * arm), 2)
 
     def smokeTile(self):
         """A few see-through grey haze tiles with soft puffs, so a cloud doesn't look like a repeating stamp.
