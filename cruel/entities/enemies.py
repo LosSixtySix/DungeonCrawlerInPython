@@ -45,6 +45,22 @@ class Goblin(Enemy):
     def __init__(self):
         super().__init__(5, 10, 1, 1,1,"Goblin",5)
         self.inventory = [items.goblinEquipmentList[rand.randint(0,len(items.goblinEquipmentList)-1)]]
+class GoblinArcher(Enemy):
+    """Shoots from range (ranged.py): through units on its line, with a chance to hit them, never through walls.
+    Stats from its design sheet (https://claude.ai/artifact/VEw4fahAoyxWsSoPt9GykG)."""
+    unitSize = "small"
+    ranged = True
+
+    def __init__(self):
+        super().__init__(4, 9, 1, 1, 1, "Goblin Archer", 7)
+        self.visionRange = 6
+        self.arrowDamage = 2   # an arrow that lands (its damage is the hand-to-hand hit)
+        self.range = 5         # tiles it shoots
+        self.keepAway = 2      # it steps back from you when you're this close
+        self.strayChance = 20  # out of 100: an arrow strays onto a random neighbor of its target
+        self.lineShare = 20    # out of 100, for each unit on the line: the arrow hits that unit instead
+
+
 class GoblinChief(Enemy):
     def __init__(self):
         super().__init__(10,12,FAST,2,3,"Goblin Chieftan",15)
@@ -312,7 +328,7 @@ class PlantOrganizer(Organizer):
     def __init__(self):
         super().__init__("Plant Organizer")
 
-lowerFloorEnemies = [Goblin,GoblinChief,DireRat,DireMole]
+lowerFloorEnemies = [Goblin, GoblinChief, GoblinArcher, DireRat, DireMole]
 organizers = [SpiralOrganizer, CircleOrganizer, SquareOrganizer, PlantOrganizer]
 GIANT_COUNT = (2, 3)  # Fire Giants on each Scorched Depths floor
 GIANT_SPAWN = (4, 10)  # they start this many tiles from the center chest...

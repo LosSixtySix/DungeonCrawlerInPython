@@ -30,6 +30,7 @@ from cruel.world import dewgrubs
 from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import queen
+from cruel.world import ranged
 from cruel.world import sight
 from cruel.world import sightmemory
 from cruel.world import followers
@@ -1578,13 +1579,14 @@ class gameManager():
         else:
             enemy.facing = 3 if dy > 0 else 2
 
-    def hitPlayer(self, enemy, enemyPosition):
-        """An enemy attacks the player."""
+    def hitPlayer(self, enemy, enemyPosition, damage=None, arrow=False):
+        """An enemy attacks the player, for damage (its own hit when not given). arrow: an arrow (ranged.py), which
+        goblin fear doesn't stop and Demise thorns can't bite back at."""
         if self.peaceful:  # developer console /peaceful
             return
         self.faceToward(enemy, enemyPosition, self.playerPositionFlat)  # it turns to swing at you
         player = self.player
-        if enemy.name in ("Goblin", "Goblin Chieftan") and player.hasEffect("goblin_fear") and rand.random() < 0.3:
+        if not arrow and enemy.name in expansion.GOBLIN_NAMES and player.hasEffect("goblin_fear") and rand.random() < 0.3:
             enemy.lastPlayerPosition = None
             self.addPopup("Flees!", enemyPosition)
             return
@@ -1596,14 +1598,14 @@ class gameManager():
             player.blockWithWard()
             self.addPopup("Warded", self.playerPositionFlat)
             return
-        damage = player.hitDamage(enemy.damage)
+        damage = player.hitDamage(enemy.damage if damage is None else damage)
         if dodged == "partial":
             damage = math.ceil(damage / 2)
             self.addPopup("Grazed", self.playerPositionFlat)
         player.damageTaken += damage
         self.bleed(self.playerPositionFlat)
         tile = self.grid.get(enemyPosition)
-        if player.hasEffect("fed_thorns") and tile and tile[0] == 5 and len(tile) > 2 and tile[2] is enemy:
+        if not arrow and player.hasEffect("fed_thorns") and tile and tile[0] == 5 and len(tile) > 2 and tile[2] is enemy:
             self.magicEnemy(enemyPosition, relics.THORN_DAMAGE)  # Demise Stew: the thorns in your blood bite back
 
     def dodge(self, evasion, cleanDodge):
@@ -4362,6 +4364,10 @@ class gameManager():
         finalPosition = expansion.otherTurn(self, i, currentEnemy, campContext)  # fighting back, or drawn to a bonfire
         if finalPosition is not None:
             return finalPosition, currentEnemy
+        if ranged.isRanged(currentEnemy):  # an archer that sees you steps back or shoots (ranged.wildTurn)
+            finalPosition = ranged.wildTurn(self, i, currentEnemy)
+            if finalPosition is not None:
+                return finalPosition, currentEnemy
         finalPosition = i
         passes = 0
         moving = True
