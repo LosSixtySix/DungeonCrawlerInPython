@@ -27,7 +27,8 @@ def everyMapPicture():
     pictures += [(f"{unit} body {pose}", rows, sprites.BODY_COLORS[unit])
                  for unit, poses in sprites.BODY_SPRITES.items() for pose, rows in poses.items()]
     pictures += [(f"Pitch Hit {number}", rows, sprites.PITCH_BOLT_COLORS) for number, rows in enumerate(sprites.PITCH_BOLT_HIT)]
-    pictures += [("Arrow", sprites.ARROW, sprites.ARROW_COLORS)]
+    pictures += [(f"Arrow {frame} {direction}", sprites.arrowRows(frame, direction), sprites.ARROW_COLORS)
+                 for frame in sprites.ARROW_FRAMES for direction in range(8)]
     return pictures
 
 
@@ -222,16 +223,59 @@ class GoblinArcherTests(unittest.TestCase):
                 self.assertEqual(palette["c"], colors["goblin"]["c"])
                 self.assertEqual(palette["C"], colors["goblin"]["C"])
 
-    def test_the_arrow_points_right(self):
-        headColumns = [column for row in sprites.ARROW for column, letter in enumerate(row) if letter == "S"]
-        fletchingColumns = [column for row in sprites.ARROW for column, letter in enumerate(row) if letter == "f"]
-        self.assertGreater(min(headColumns), max(fletchingColumns))
 
-    def test_the_arrow_is_built_for_every_theme(self):
-        for floorType in ("Mixed", "All Gold", "Geode"):
-            theme = themes.randomTheme(floorType)
-            with self.subTest(theme=theme.name):
-                self.assertEqual(sprites.buildSprites(theme.colors, 20)["arrow"].get_size(), (20, 20))
+class ArrowTests(unittest.TestCase):
+    """A Goblin Archer's arrow: turned to the nearest of 8 directions, fletched in its archer's faction cloth."""
+
+    def headAndTail(self, rows):
+        """(where its arrowhead is, where its fletching is): the middle of each, as (column, row)."""
+        def middle(letter):
+            spots = [(column, row) for row, line in enumerate(rows) for column, found in enumerate(line) if found == letter]
+            return (sum(column for column, _ in spots) / len(spots), sum(row for _, row in spots) / len(spots))
+        return middle("S"), middle("f")
+
+    def test_the_eight_directions_go_clockwise_from_right(self):
+        neighbors = {(1, 0): 0, (1, 1): 1, (0, 1): 2, (-1, 1): 3, (-1, 0): 4, (-1, -1): 5, (0, -1): 6, (1, -1): 7}
+        for (columnStep, rowStep), direction in neighbors.items():
+            with self.subTest(step=(columnStep, rowStep)):
+                self.assertEqual(sprites.arrowDirection(5, 5, 5 + columnStep * 4, 5 + rowStep * 4), direction)
+
+    def test_an_odd_angle_takes_the_nearest_direction(self):
+        self.assertEqual(sprites.arrowDirection(0, 0, 5, 1), 0, "mostly right")
+        self.assertEqual(sprites.arrowDirection(0, 0, 4, 3), 1, "closer to down-right than to right")
+
+    def test_every_direction_points_the_way_it_flies(self):
+        steps = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+        for direction, (columnStep, rowStep) in enumerate(steps):
+            with self.subTest(direction=direction):
+                (headColumn, headRow), (tailColumn, tailRow) = self.headAndTail(sprites.arrowRows("flight", direction))
+                self.assertGreater((headColumn - tailColumn) * columnStep + (headRow - tailRow) * rowStep, 0)
+
+    def test_right_and_down_right_are_drawn_and_the_rest_are_turned(self):
+        self.assertEqual(sprites.arrowRows("flight", 0), sprites.ARROW_FLIGHT["straight"])
+        self.assertEqual(sprites.arrowRows("flight", 1), sprites.ARROW_FLIGHT["diagonal"])
+        self.assertEqual(sprites.arrowRows("miss2", 4), sprites.rotateClockwise(sprites.ARROW_MISS["straight"][1], 2))
+        self.assertEqual(sprites.arrowRows("hit1", 7), sprites.rotateClockwise(sprites.ARROW_HIT["diagonal"][0], 3))
+
+    def test_a_wild_archers_fletching_is_red(self):
+        self.assertEqual(sprites.arrowColors(None), sprites.ARROW_COLORS)
+
+    def test_a_faction_archers_fletching_is_its_cloth(self):
+        for look, colors in sprites.EXPANSION_LOOKS.items():
+            with self.subTest(look=look):
+                arrowColors = sprites.arrowColors(look)
+                self.assertEqual(arrowColors["f"], colors["goblin"]["c"])
+                self.assertEqual((arrowColors["a"], arrowColors["S"]), (sprites.ARROW_COLORS["a"], sprites.ARROW_COLORS["S"]))
+
+    def test_every_look_frame_and_direction_is_built(self):
+        arrows = sprites.buildSprites(themes.randomTheme("Mixed").colors, 20)["arrows"]
+        self.assertEqual(set(arrows), {None, *sprites.EXPANSION_LOOKS})
+        for look, frames in arrows.items():
+            with self.subTest(look=look):
+                self.assertEqual(set(frames), set(sprites.ARROW_FRAMES))
+                for pictures in frames.values():
+                    self.assertEqual(len(pictures), 8)
+                    self.assertEqual(pictures[0].get_size(), (20, 20))
 
 
 class PickerTests(unittest.TestCase):

@@ -168,6 +168,11 @@ FIREPROOF_CATCH = 0.1      # the same for plants used in fire recipes (recipes.F
 PLANT_FIRE_TURNS = 4       # a burning plant burns this long, then it's gone
 EXPLOSION_MS = 450         # how long a landing potion's burst animation plays
 GLIDE_MS_PER_TILE = 35     # a Pitch Bolt glides along its path this fast (8 tiles: about a quarter of a second)
+# A Goblin Archer's arrow (Arrow Flight sheet, https://claude.ai/artifact/BNNp7LDvdKoWz9GFCE2Nf7)
+ARROW_MS_PER_TILE = 20     # it flies this fast: a 5-tile shot takes a tenth of a second
+ARROW_HIT_FRAME_MS = 90    # each of its 2 hit frames (it sinks in and quivers), then it's gone
+ARROW_MISS_FRAME_MS = 110  # each of its 3 miss frames (it clatters onto the floor, skids and lies there)...
+ARROW_FADE_MS = 450        # ...then it fades out over this long
 ANIM_FPS = 15              # flames and bursts animate at this rate
 SPURT_MS = 280             # a blood spurt's specks fly this long
 FLECK_MS = 300             # wall flecks fly this long
@@ -186,6 +191,28 @@ BLOOD_DRY = 1 / 150       # blood dries away by this much a turn (a full puddle 
 
 SEE_THROUGH = (0, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.STREET_LIGHT)  # tile types sight passes over (plants depend on the plant)
 OPEN_TO_YOU = SEE_THROUGH + (1,)  # what your sight and light pass over (seeThroughForPlayer): you don't block them
+
+
+def arrowFrame(arrow, elapsedMs):
+    """What an arrow (see gameManager.startArrow) shows elapsedMs after it was shot: (frame, progress, alpha), or None
+    once it's gone. frame is a sprites.ARROW_FRAMES name; progress is how far along its flight it is (0 to 1, it
+    stays 1 once it has landed); alpha is 1, falling to 0 as a missed arrow fades on the floor."""
+    if elapsedMs < 0:
+        return None
+    flightMs = arrow["flightMs"]
+    if elapsedMs < flightMs:
+        return "flight", elapsedMs / flightMs, 1.0
+    landed = elapsedMs - flightMs
+    if arrow["hit"]:
+        frame = int(landed // ARROW_HIT_FRAME_MS)
+        return (f"hit{frame + 1}", 1.0, 1.0) if frame < 2 else None
+    frame = int(landed // ARROW_MISS_FRAME_MS)
+    if frame < 3:
+        return f"miss{frame + 1}", 1.0, 1.0
+    fading = landed - 3 * ARROW_MISS_FRAME_MS
+    if fading >= ARROW_FADE_MS:
+        return None
+    return "miss3", 1.0, 1.0 - fading / ARROW_FADE_MS
 
 
 class gameManager():
@@ -413,6 +440,7 @@ class gameManager():
         self.freshFires = set()  # fires lit this turn: they don't hurt anyone standing in them until next turn
         self.explosions = []  # landing bursts still playing: [landing, radius, effect, start ms] (a Pitch Bolt's starts when it arrives)
         self.glides = []      # Pitch Bolts gliding from one tile to another: {"from", "to", "start", "ms", "shot"} (see startGlide)
+        self.arrows = []      # arrows flying, sticking or fading: {"from", "to", "start", "flightMs", "hit", "look"} (see startArrow)
         self.animStep = -1    # which step of the flame/burst animation was last drawn
         self.blood = {}       # blood on the floor: {map position: amount, 0 to 1}
         self.bloodDry = {}
@@ -2651,6 +2679,7 @@ class gameManager():
         self.freshFires = set()
         self.explosions = []
         self.glides = []
+        self.arrows = []
         self.spurts = []
         self.flecks = []
         self.playerBloodSpot = None
@@ -4004,6 +4033,22 @@ class gameManager():
         self.glides.append({"from": fromTile, "to": toTile, "start": now, "ms": duration, "shot": shot})
         return now + duration
 
+    def startArrow(self, fromTile, toTile, hit, look=None):
+        """An arrow flies from fromTile to toTile (ARROW_MS_PER_TILE a tile), then plays its hit frames over what it
+        struck (hit True) or its miss frames where it lands. look: the archer's faction look (its fletching is dyed
+        in that cloth), or None for a wild archer. Returns when it gets there (ms), for the hit to land then."""
+        now = pygame.time.get_ticks()
+        if not self.onScreen():
+            return now
+        distance = math.hypot(toTile % self.rowLength - fromTile % self.rowLength, toTile // self.rowLength - fromTile // self.rowLength)
+        flightMs = int(distance * ARROW_MS_PER_TILE)
+        self.arrows.append({"from": fromTile, "to": toTile, "start": now, "flightMs": flightMs, "hit": hit, "look": look})
+        return now + flightMs
+
+    def arrowShows(self, arrow):
+        """Is any of the arrow's way in view (where it was shot from or where it lands)?"""
+        return any(tile in self.grid and self.grid[tile][1] == 1 for tile in (arrow["from"], arrow["to"]))
+
     def fadingHere(self):
         """This floor's fading remembered tiles: {tile: turns faded}."""
         if not hasattr(self, "memoryFade"):
@@ -4088,6 +4133,9 @@ class gameManager():
             burning.append(self.playerPositionFlat)
         return {"aim": aim, "flying": flying, "smoke": smoke, "time": now / 1000,
                 "glides": [(glide["from"], glide["to"], (now - glide["start"]) / glide["ms"]) for glide in gliding],
+                "arrows": [{"from": arrow["from"], "to": arrow["to"], "look": arrow["look"], "frame": frame}
+                           for arrow in self.arrows if self.arrowShows(arrow)
+                           for frame in [arrowFrame(arrow, now - arrow["start"])] if frame is not None],
                 "fires": [p for p in self.fires if self.grid[p][1] == 1], "burning": burning,
                 "explosions": [(landing, radius, effect, (now - start) / EXPLOSION_MS)
                                for landing, radius, effect, start in self.explosions if self.grid[landing][1] != 0],
@@ -5171,6 +5219,9 @@ class gameManager():
             self.explosions = [e for e in self.explosions if now - e[3] < EXPLOSION_MS]
             self.glides = [glide for glide in self.glides if now - glide["start"] < glide["ms"]]
             if self.glides:  # a gliding Pitch Bolt moves smoothly: redrawn every frame, not just at ANIM_FPS
+                self.overlayChange = True
+            self.arrows = [arrow for arrow in self.arrows if arrowFrame(arrow, now - arrow["start"]) is not None]
+            if self.arrows:  # so does an arrow, flying or fading
                 self.overlayChange = True
             self.spurts = [b for b in self.spurts if now - b[1] < SPURT_MS]
             self.flecks = [f for f in self.flecks if now - f[1] < FLECK_MS]

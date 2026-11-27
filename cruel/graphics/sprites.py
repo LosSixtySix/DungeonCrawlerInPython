@@ -208,22 +208,40 @@ GOBLIN_ARCHER = [
 ]
 GOBLIN_ARCHER_COLORS = {**GOBLIN_COLORS, "w": (110, 80, 52), "x": (200, 190, 160), "q": (90, 60, 36)}
 
-# An arrow in flight, drawn POINTING RIGHT (turned to the way it flies when drawn): red fletching, a wooden shaft,
-# an iron head.
+# A Goblin Archer's arrow, from its design sheet (https://claude.ai/artifact/BNNp7LDvdKoWz9GFCE2Nf7). Each frame is drawn
+# twice: "straight" points right and "diagonal" points down-right. An arrow turns to the nearest of 8 directions
+# (arrowDirection) and the other six are quarter turns of those two (arrowRows). In flight it's one frame; on a hit
+# it sinks in and quivers (ARROW_HIT, then it's gone); on a miss it clatters onto the floor, skids and lies there
+# (ARROW_MISS), fading. Its fletching is dyed in the archer's faction cloth (arrowColors); a wild archer's is red.
 #  f  fletching   a  shaft   S  arrowhead
-ARROW = [
-    "..........",
-    "..........",
-    "..........",
-    "..........",
-    ".f.....S..",
-    "ffaaaaaSS.",
-    ".f.....S..",
-    "..........",
-    "..........",
-    "..........",
-]
+ARROW_FLIGHT = {
+    "straight": ["..........", "..........", "..........", "..........", ".f.....S..", "ffaaaaaSS.", ".f.....S..", "..........", "..........", ".........."],
+    "diagonal": ["..........", ".f.f......", "..f.......", ".f.a......", "....a.....", ".....a.S..", "......S...", ".....S.S..", "..........", ".........."],
+}
+ARROW_HIT = {
+    "straight": [
+        ["..........", "..........", "..........", "..........", ".f........", "ffaaaa....", ".f........", "..........", "..........", ".........."],
+        ["..........", "..........", "..........", ".f........", "ffaa......", ".f..aa....", "..........", "..........", "..........", ".........."],
+    ],
+    "diagonal": [
+        ["..........", ".f.f......", "..f.......", ".f.a......", "....a.....", ".....a....", "..........", "..........", "..........", ".........."],
+        ["..f.f.....", "...f......", "..f.a.....", "..........", "....a.....", ".....a....", "..........", "..........", "..........", ".........."],
+    ],
+}
+ARROW_MISS = {
+    "straight": [
+        ["..........", "..........", "..........", "..........", "..f.....S.", ".ffaaaaaSS", "..f.....S.", "..........", "..........", ".........."],
+        ["..........", "..........", "..........", ".f........", "ffaaa.....", ".f..aaaSS.", ".......S..", "..........", "..........", ".........."],
+        ["..........", "..........", "..........", "..........", ".f........", "ffaaaaaSS.", ".f.....S..", "..........", "..........", ".........."],
+    ],
+    "diagonal": [
+        ["..........", "..........", "..f.f.....", "...a......", "..f.a.....", ".....a....", "......a.S.", ".......S..", "......S.S.", ".........."],
+        ["..f.f.....", "...f......", "..f.a.....", ".....a....", "....a.....", ".....a....", "......S...", ".....S.S..", "..........", ".........."],
+        ["..........", ".f.f......", "..f.......", ".f.a......", "....a.....", ".....a....", "......S...", ".....S.S..", "..........", ".........."],
+    ],
+}
 ARROW_COLORS = {"f": (180, 70, 58), "a": (150, 120, 78), "S": (154, 160, 168)}
+ARROW_FRAMES = ("flight", "hit1", "hit2", "miss1", "miss2", "miss3")  # the names arrowRows and buildSprites use
 
 # The Gray Peddler (peddler.py), drawn from his design sheet: a gray hooded robe with his pack on his back (the top
 # of the grid) and two pale eyes under the hood, facing down.
@@ -1244,13 +1262,41 @@ def buildSprites(colors, tileSize):
         "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],
         "pitchBolt": [makeShadowed(rows, enemyRoles(colors, PITCH_BOLT_COLORS), tileSize) for rows in PITCH_BOLT_FLIGHT],
         "pitchHit": [makeShadowed(rows, enemyRoles(colors, PITCH_BOLT_COLORS), tileSize) for rows in PITCH_BOLT_HIT],
-        "arrow": makeShadowed(ARROW, enemyRoles(colors, ARROW_COLORS), tileSize),  # pointing right: turn it to its flight
+        "arrows": {look: {frame: [makeShadowed(arrowRows(frame, direction), enemyRoles(colors, arrowColors(look)), tileSize)
+                                  for direction in range(8)] for frame in ARROW_FRAMES}
+                   for look in (None, *EXPANSION_LOOKS)},  # [look][frame][direction]; look None: a wild archer's
     }
 
 
 def pitchBoltFrame(seconds):
     """Which Pitch Bolt flight frame to show at this moment."""
     return int(seconds * 1000 // PITCH_BOLT_FRAME_MS) % len(PITCH_BOLT_FLIGHT)
+
+
+def arrowDirection(fromColumn, fromRow, toColumn, toRow):
+    """The nearest of 8 directions from one tile to another, clockwise from right (rows grow downward):
+    0 right, 1 down-right, 2 down, 3 down-left, 4 left, 5 up-left, 6 up, 7 up-right."""
+    return round(math.atan2(toRow - fromRow, toColumn - fromColumn) / (math.pi / 4)) % 8
+
+
+def arrowRows(frame, direction):
+    """An arrow frame ("flight", "hit1", "hit2", "miss1", "miss2" or "miss3") turned to face direction (0 to 7, see
+    arrowDirection): even directions are quarter turns of the straight picture, odd ones of the diagonal."""
+    shape = "straight" if direction % 2 == 0 else "diagonal"
+    if frame == "flight":
+        rows = ARROW_FLIGHT[shape]
+    elif frame.startswith("hit"):
+        rows = ARROW_HIT[shape][int(frame[3:]) - 1]
+    else:
+        rows = ARROW_MISS[shape][int(frame[4:]) - 1]
+    return rotateClockwise(rows, direction // 2)
+
+
+def arrowColors(look):
+    """An arrow's colors: its fletching in the faction's cloth (an expansion look), or red for a wild archer (None)."""
+    if look is None or look not in EXPANSION_LOOKS:
+        return ARROW_COLORS
+    return {**ARROW_COLORS, "f": EXPANSION_LOOKS[look]["goblin"]["c"]}
 
 
 def pitchHitFrame(age):
