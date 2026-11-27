@@ -324,6 +324,7 @@ class FightingTests(unittest.TestCase):
     def test_shift_interact_attacks_him_and_turns_him_hostile(self):
         game = self.game
         game.enemyDodge = lambda target, damage, position: damage  # the swing always lands
+        game.player.DealDamage = lambda: 3  # (and always does some damage)
         game.onInteract()
         self.assertEqual(game.focus, "shop")
         game.onInteract(forceAttack=True)
@@ -350,6 +351,7 @@ class FightingTests(unittest.TestCase):
         game = self.game
         peddler.provoke(game, self.trader, self.traderSpot)
         game.enemyDodge = lambda target, damage, position: damage
+        game.player.DealDamage = lambda: 3  # (a swing that always does some damage)
         game.onInteract()
         self.assertNotIn("shop", game.openWindows)
         self.assertLess(self.trader.hp, self.trader.maxHp)

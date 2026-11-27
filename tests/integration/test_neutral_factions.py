@@ -255,6 +255,7 @@ class ProvokingTests(NeutralFactionTest):
         goblin = addGoblin(game, self.neutralFaction, goblinSpot)
         standFacing(game, goblinSpot)
         game.enemyDodge = lambda target, damage, position: damage  # the swing always lands
+        game.player.DealDamage = lambda: 3  # (and always does some damage)
         game.onInteract()
         self.assertProvoked()
         self.assertIn("The goblins turn on you!", popupTexts(game))
