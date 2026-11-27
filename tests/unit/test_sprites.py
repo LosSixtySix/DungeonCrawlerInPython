@@ -27,6 +27,7 @@ def everyMapPicture():
     pictures += [(f"{unit} body {pose}", rows, sprites.BODY_COLORS[unit])
                  for unit, poses in sprites.BODY_SPRITES.items() for pose, rows in poses.items()]
     pictures += [(f"Pitch Hit {number}", rows, sprites.PITCH_BOLT_COLORS) for number, rows in enumerate(sprites.PITCH_BOLT_HIT)]
+    pictures += [("Arrow", sprites.ARROW, sprites.ARROW_COLORS)]
     return pictures
 
 
@@ -198,6 +199,39 @@ class BuildSpritesTests(unittest.TestCase):
 
     def test_every_plant_kind_has_a_picture(self):
         self.assertEqual(set(sprites.PLANT_SPRITES), set(plants.PLANTS))
+
+
+class GoblinArcherTests(unittest.TestCase):
+    """The Goblin Archer and its arrow, from the design sheet."""
+
+    def test_the_archer_is_drawn_like_any_other_enemy(self):
+        pictures = sprites.buildSprites(themes.randomTheme("Mixed").colors, 10)
+        for facing in sprites.FACINGS:
+            self.assertEqual(pictures["enemies"]["Goblin Archer"][facing].get_size(), (10, 10))
+
+    def test_its_bow_is_across_its_front(self):
+        frontRows = sprites.GOBLIN_ARCHER[7:]
+        self.assertTrue(any("w" in row for row in frontRows))
+        self.assertTrue(any("x" in row for row in frontRows))
+
+    def test_each_faction_dresses_it_in_its_own_leather(self):
+        for look, colors in sprites.EXPANSION_LOOKS.items():
+            with self.subTest(look=look):
+                rows, palette = sprites.factionPictures(look)["Goblin Archer"]
+                self.assertIs(rows, sprites.GOBLIN_ARCHER)
+                self.assertEqual(palette["c"], colors["goblin"]["c"])
+                self.assertEqual(palette["C"], colors["goblin"]["C"])
+
+    def test_the_arrow_points_right(self):
+        headColumns = [column for row in sprites.ARROW for column, letter in enumerate(row) if letter == "S"]
+        fletchingColumns = [column for row in sprites.ARROW for column, letter in enumerate(row) if letter == "f"]
+        self.assertGreater(min(headColumns), max(fletchingColumns))
+
+    def test_the_arrow_is_built_for_every_theme(self):
+        for floorType in ("Mixed", "All Gold", "Geode"):
+            theme = themes.randomTheme(floorType)
+            with self.subTest(theme=theme.name):
+                self.assertEqual(sprites.buildSprites(theme.colors, 20)["arrow"].get_size(), (20, 20))
 
 
 class PickerTests(unittest.TestCase):

@@ -190,6 +190,41 @@ GOBLIN_FARMER = [
 GOBLIN_FARMER_COLORS = {**GOBLIN_COLORS, "y": (186, 152, 80), "Y": (222, 192, 118), "b": (62, 52, 40),
                         "M": (150, 154, 162), "w": (110, 80, 52)}
 
+# Goblin Archer, from its design sheet (https://claude.ai/artifact/VEw4fahAoyxWsSoPt9GykG): a quiver over its back
+# (top left) and a bow drawn across its front, an arrow nocked and pointing down. It has no dark outline: its
+# leather edges it instead. Faction colors swap its leather ("c", "C") like the Goblin's.
+#  w  bow wood   x  bowstring   q  quiver   s  arrowhead
+GOBLIN_ARCHER = [
+    ".c.CCCC...",
+    "cqCCccCC..",
+    ".qccHHccC.",
+    ".hhHhhHhh.",
+    ".CcHHHHcC.",
+    ".CCcHHcCC.",
+    ".hCCCCCCh.",
+    ".wxxhhxxw.",
+    "..wwhwww..",
+    ".....s....",
+]
+GOBLIN_ARCHER_COLORS = {**GOBLIN_COLORS, "w": (110, 80, 52), "x": (200, 190, 160), "q": (90, 60, 36)}
+
+# An arrow in flight, drawn POINTING RIGHT (turned to the way it flies when drawn): red fletching, a wooden shaft,
+# an iron head.
+#  f  fletching   a  shaft   S  arrowhead
+ARROW = [
+    "..........",
+    "..........",
+    "..........",
+    "..........",
+    ".f.....S..",
+    "ffaaaaaSS.",
+    ".f.....S..",
+    "..........",
+    "..........",
+    "..........",
+]
+ARROW_COLORS = {"f": (180, 70, 58), "a": (150, 120, 78), "S": (154, 160, 168)}
+
 # The Gray Peddler (peddler.py), drawn from his design sheet: a gray hooded robe with his pack on his back (the top
 # of the grid) and two pale eyes under the hood, facing down.
 GRAY_PEDDLER = [
@@ -407,6 +442,7 @@ def factionPictures(look):
         "Goblin Builder": (GOBLIN_BUILDER, {**GOBLIN_BUILDER_COLORS, **colors["goblin"], "M": colors["mallet"]}),
         "Goblin Farmer": (GOBLIN_FARMER, {**GOBLIN_FARMER_COLORS, **colors["goblin"], "b": colors["goblin"]["c"],
                                           "M": colors["mallet"]}),
+        "Goblin Archer": (GOBLIN_ARCHER, {**GOBLIN_ARCHER_COLORS, **colors["goblin"]}),
     }
 
 
@@ -497,6 +533,7 @@ ENEMY_SPRITES = {
     "Goblin Chieftan": (GOBLIN_CHIEFTAIN, GOBLIN_CHIEFTAIN_COLORS),   # spelled as in enemies.py
     "Goblin Builder": (GOBLIN_BUILDER, GOBLIN_BUILDER_COLORS),
     "Goblin Farmer": (GOBLIN_FARMER, GOBLIN_FARMER_COLORS),
+    "Goblin Archer": (GOBLIN_ARCHER, GOBLIN_ARCHER_COLORS),
     "The Gray Peddler": (GRAY_PEDDLER, GRAY_PEDDLER_COLORS),
     "Dweller Citizen": (DWELLER_CITIZEN, DWELLER_CITIZEN_COLORS),
     "Dweller Noble": (DWELLER_NOBLE, DWELLER_NOBLE_COLORS),
@@ -1207,6 +1244,7 @@ def buildSprites(colors, tileSize):
         "bonfire": [makeShadowed(rows, enemyRoles(colors, BONFIRE_COLORS), tileSize) for rows in BONFIRE],
         "pitchBolt": [makeShadowed(rows, enemyRoles(colors, PITCH_BOLT_COLORS), tileSize) for rows in PITCH_BOLT_FLIGHT],
         "pitchHit": [makeShadowed(rows, enemyRoles(colors, PITCH_BOLT_COLORS), tileSize) for rows in PITCH_BOLT_HIT],
+        "arrow": makeShadowed(ARROW, enemyRoles(colors, ARROW_COLORS), tileSize),  # pointing right: turn it to its flight
     }
 
 
