@@ -55,11 +55,10 @@ class StartingGearTests(unittest.TestCase):
         self.assertIn(startingPick.bonus, (1, 2))
 
     def test_the_healing_potion_heals_one_to_five_scaled_by_wisdom(self):
-        healingPotion = items.HealingPotion
-        self.assertEqual(healingPotion.Etype, "Consume")
-        self.assertEqual(healingPotion.effect, "Heal")
-        self.assertEqual(healingPotion.attributeScaling, "wisdom")
-        self.assertTrue(1 <= healingPotion.bonus <= 5)
+        self.assertEqual(items.HealingPotion.Etype, "Consume")
+        self.assertEqual(items.HealingPotion.effect, "Heal")
+        self.assertEqual(items.HealingPotion.attributeScaling, "wisdom")
+        self.assertTrue(1 <= items.HealingPotion.bonus <= 5)
 
     def test_the_door_potion_locates_the_door(self):
         self.assertEqual(items.LocateDoorPotion.effect, "DoorLocate")

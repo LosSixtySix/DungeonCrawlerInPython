@@ -57,46 +57,42 @@ class WindowTests(unittest.TestCase):
         self.game.openWindow("crafting")
 
     def drawnTabs(self):
-        game = self.game
-        game.draw()
-        painter = game.painter
-        rect = game.windowRects["crafting"]
-        first, last = painter.craftTabsDrawn
+        self.game.draw()
+        rect = self.game.windowRects["crafting"]
+        first, last = self.game.painter.craftTabsDrawn
         names = [recipes.TAB_NAMES[station] for station in recipes.STATIONS]
-        left = rect.x + painter.PAD + painter.CRAFT_TAB_ARROW
-        right = left + sum(painter.craftTabWidth(name) for name in names[first:last + 1]) + painter.CRAFT_TAB_GAP * (last - first)
+        left = rect.x + self.game.painter.PAD + self.game.painter.CRAFT_TAB_ARROW
+        right = left + sum(self.game.painter.craftTabWidth(name) for name in names[first:last + 1]) \
+            + self.game.painter.CRAFT_TAB_GAP * (last - first)
         return rect, first, last, left, right
 
     def test_every_tab_stays_inside_the_window_and_the_selected_one_shows(self):
-        game = self.game
         for station in range(len(recipes.STATIONS)):
-            game.craftTab = station
+            self.game.craftTab = station
             rect, first, last, left, right = self.drawnTabs()
             self.assertTrue(first <= station <= last)
             self.assertGreaterEqual(left, rect.x)
-            self.assertLessEqual(right, rect.right - game.painter.PAD - game.painter.CRAFT_TAB_ARROW)
+            self.assertLessEqual(right, rect.right - self.game.painter.PAD - self.game.painter.CRAFT_TAB_ARROW)
 
     def test_moving_right_scrolls_the_strip_to_the_last_station_and_back(self):
-        game = self.game
-        game.focus = "crafting"
+        self.game.focus = "crafting"
         for _ in recipes.STATIONS:
-            game.moveSelection(RIGHT, 0)
+            self.game.moveSelection(RIGHT, 0)
             self.drawnTabs()
-        self.assertEqual(game.craftTab, len(recipes.STATIONS) - 1)
+        self.assertEqual(self.game.craftTab, len(recipes.STATIONS) - 1)
         _, first, last, _, _ = self.drawnTabs()
         self.assertEqual(last, len(recipes.STATIONS) - 1)
         for _ in recipes.STATIONS:
-            game.moveSelection(LEFT, 0)
+            self.game.moveSelection(LEFT, 0)
             self.drawnTabs()
         self.assertEqual(self.drawnTabs()[1], 0, "back at the first station")
 
     def test_there_are_more_tabs_than_fit_at_once(self):
         """(otherwise the strip never scrolls: this guards the other tests' worth)"""
-        painter = self.game.painter
         names = [recipes.TAB_NAMES[station] for station in recipes.STATIONS]
-        widths = [painter.craftTabWidth(name) for name in names]
-        room = painter.CRAFT_W - 2 * painter.PAD - 2 * painter.CRAFT_TAB_ARROW
-        self.assertGreater(sum(widths) + painter.CRAFT_TAB_GAP * (len(widths) - 1), room)
+        widths = [self.game.painter.craftTabWidth(name) for name in names]
+        room = self.game.painter.CRAFT_W - 2 * self.game.painter.PAD - 2 * self.game.painter.CRAFT_TAB_ARROW
+        self.assertGreater(sum(widths) + self.game.painter.CRAFT_TAB_GAP * (len(widths) - 1), room)
 
 
 if __name__ == "__main__":

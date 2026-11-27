@@ -26,24 +26,22 @@ class EnemyHitTests(OccupancyTest):
         self.assertEqual(hit, {id(first), id(second)})
 
     def test_a_goblin_hitting_a_shared_space_hits_the_weaker_and_kills_only_it(self):
-        game = self.game
         strong, weak = self.put(self.middle, enemies.DireRat()), self.put(self.middle, enemies.DireRat())
         strong.hp, weak.hp = 9, 1
         goblin = enemies.Goblin()
         goblin.damage = 5
-        with mock.patch.object(game, "enemyDodge", side_effect=lambda target, damage, position: damage):
-            expansion.attack(game, self.middle - 1, goblin, strong, self.middle)
+        with mock.patch.object(self.game, "enemyDodge", side_effect=lambda target, damage, position: damage):
+            expansion.attack(self.game, self.middle - 1, goblin, strong, self.middle)
         self.assertEqual(strong.hp, 9)
         self.assertEqual(self.at(self.middle), [strong])
 
     def test_an_organizer_hits_the_weaker_too(self):
-        game = self.game
         strong, weak = self.put(self.middle, enemies.Goblin()), self.put(self.middle, enemies.Goblin())
         strong.hp, weak.hp = 9, 3
         organizer = enemies.SquareOrganizer()
         organizer.aggro, organizer.damage = strong, 1
-        with mock.patch.object(game, "enemyDodge", side_effect=lambda target, damage, position: damage):
-            organizers.attack(game, self.middle - 1, organizer, self.middle)
+        with mock.patch.object(self.game, "enemyDodge", side_effect=lambda target, damage, position: damage):
+            organizers.attack(self.game, self.middle - 1, organizer, self.middle)
         self.assertEqual((strong.hp, weak.hp), (9, 2))
 
 
@@ -71,10 +69,9 @@ class AreaTests(OccupancyTest):
                         self.game.killEnemy(self.middle, killer=None, unit=unit)
 
     def test_a_bomb_hits_a_small_unit_under_a_giant_too(self):
-        game = self.game
         giant = enemies.FireGiant()
-        game.putGiant(game.grid, self.middle, giant)
-        game.EnemyPositions.add(self.middle)
+        self.game.putGiant(self.game.grid, self.middle, giant)
+        self.game.EnemyPositions.add(self.middle)
         rat = self.put(self.middle + 1, enemies.DireRat())
         rat.hp = 100
         with mock.patch("cruel.core.gamemanager.FLOOR_BREAK_CHANCE", 0):
@@ -82,11 +79,10 @@ class AreaTests(OccupancyTest):
         self.assertLess(rat.hp, 100)
 
     def test_a_second_unit_that_is_burning_burns(self):
-        game = self.game
         self.put(self.middle, enemies.Goblin())
         second = self.put(self.middle, enemies.Goblin())
         second.hp, second.burnTurns = 100, 3
-        game.stepBurning()
+        self.game.stepBurning()
         self.assertEqual(second.burnTurns, 2)
         self.assertLess(second.hp, 100)
 

@@ -14,11 +14,10 @@ class ArcherTest(unittest.TestCase):
     """You stand in open floor facing right; an archer stands five tiles to your left, on your row."""
 
     def setUp(self):
-        game = self.game = newGame()
-        self.here = standInOpenFloor(game, facing=RIGHT)
-        self.rowLength = game.rowLength
+        self.game = newGame()
+        self.here = standInOpenFloor(self.game, facing=RIGHT)
         for step in range(-6, 3):  # a clear, visible strip three rows tall from the archer to past you
-            clearAround(game, self.here + step)
+            clearAround(self.game, self.here + step)
         self.archerSpot = self.here - 5
         self.archer = self.putUnit(self.archerSpot, enemies.GoblinArcher())
 
@@ -110,11 +109,10 @@ class ArrowHitTests(ArcherTest):
             return ranged.shoot(self.game, self.archerSpot, self.archer, self.here)
 
     def test_an_arrow_that_hits_you_does_arrow_damage(self):
-        player = self.game.player
-        expected = player.hitDamage(self.archer.arrowDamage)
-        before = player.damageTaken
+        expected = self.game.player.hitDamage(self.archer.arrowDamage)
+        before = self.game.player.damageTaken
         self.assertEqual(self.shootLanding("target", self.here), "player")
-        self.assertEqual(player.damageTaken - before, expected)
+        self.assertEqual(self.game.player.damageTaken - before, expected)
 
     def test_the_arrow_flies_to_where_it_lands(self):
         self.shootLanding("target", self.here)
@@ -137,23 +135,22 @@ class ArrowHitTests(ArcherTest):
         self.assertIs(wildGoblin.foe, self.archer)
 
     def test_a_stray_onto_a_unit_hits_it(self):
-        neighbor = self.here + self.rowLength
+        neighbor = self.here + self.game.rowLength
         goblin = self.putUnit(neighbor, enemies.Goblin())
         goblin.hp = 10
         self.assertIs(self.shootLanding("stray", neighbor), goblin)
         self.assertEqual(goblin.hp, 10 - self.archer.arrowDamage)
 
     def test_a_stray_onto_empty_floor_is_wasted(self):
-        player = self.game.player
-        before = player.damageTaken
-        self.assertIsNone(self.shootLanding("stray", self.here - self.rowLength))
-        self.assertEqual(player.damageTaken, before)
+        before = self.game.player.damageTaken
+        self.assertIsNone(self.shootLanding("stray", self.here - self.game.rowLength))
+        self.assertEqual(self.game.player.damageTaken, before)
         self.assertFalse(self.game.arrows[0]["hit"])
 
     def test_a_stray_hits_a_neighbor_even_behind_a_wall(self):
-        neighbor = self.here + self.rowLength + 1
+        neighbor = self.here + self.game.rowLength + 1
         for step in range(-4, 1):  # a wall all along the row below, between the archer and that neighbor
-            self.putWall(self.here + self.rowLength + step)
+            self.putWall(self.here + self.game.rowLength + step)
         self.assertIsNone(ranged.shotLine(self.game, self.archerSpot, neighbor))
         goblin = self.putUnit(neighbor, enemies.Goblin())
         goblin.hp = 10
@@ -167,20 +164,18 @@ class ArrowHitTests(ArcherTest):
 
 class HitPlayerTests(ArcherTest):
     def test_goblin_fear_does_not_stop_an_arrow(self):
-        player = self.game.player
-        before = player.damageTaken
-        with mock.patch.object(player, "hasEffect", side_effect=lambda effect: effect == "goblin_fear"), \
+        before = self.game.player.damageTaken
+        with mock.patch.object(self.game.player, "hasEffect", side_effect=lambda effect: effect == "goblin_fear"), \
                 mock.patch.object(self.game, "dodge", return_value=None), mock.patch("random.random", return_value=0.0):
             self.game.hitPlayer(self.archer, self.archerSpot, damage=2, arrow=True)
-        self.assertGreater(player.damageTaken, before)
+        self.assertGreater(self.game.player.damageTaken, before)
 
     def test_goblin_fear_works_on_an_archer_up_close(self):
-        player = self.game.player
-        before = player.damageTaken
-        with mock.patch.object(player, "hasEffect", side_effect=lambda effect: effect == "goblin_fear"), \
+        before = self.game.player.damageTaken
+        with mock.patch.object(self.game.player, "hasEffect", side_effect=lambda effect: effect == "goblin_fear"), \
                 mock.patch("random.random", return_value=0.0):
             self.game.hitPlayer(self.archer, self.here - 1)
-        self.assertEqual(player.damageTaken, before)
+        self.assertEqual(self.game.player.damageTaken, before)
 
     def test_demise_thorns_do_not_bite_back_at_an_arrow(self):
         with mock.patch.object(self.game.player, "hasEffect", side_effect=lambda effect: effect == "fed_thorns"), \
@@ -217,7 +212,7 @@ class WildTurnTests(ArcherTest):
         besideSpot = self.here - 1
         self.game.grid[self.archerSpot] = [FLOOR, 1]
         self.putUnit(besideSpot, self.archer)
-        for wallSpot in (besideSpot - 1, besideSpot - self.rowLength, besideSpot + self.rowLength):
+        for wallSpot in (besideSpot - 1, besideSpot - self.game.rowLength, besideSpot + self.game.rowLength):
             self.putWall(wallSpot)
         self.assertIsNone(ranged.wildTurn(self.game, besideSpot, self.archer))
 
@@ -226,13 +221,12 @@ class WildTurnTests(ArcherTest):
         self.assertIsNone(ranged.wildTurn(self.game, self.archerSpot, self.archer))
 
     def test_its_turn_on_the_floor_shoots_you(self):
-        player = self.game.player
-        before = player.damageTaken
+        before = self.game.player.damageTaken
         with mock.patch.object(ranged, "rollShot", return_value=("target", self.here)), \
                 mock.patch.object(self.game, "dodge", return_value=None):
             position = self.game.unitTurn(self.archerSpot, self.archer, organizers.gather(self.game), expansion.beginTurn(self.game))
         self.assertEqual(position, self.archerSpot)
-        self.assertGreater(player.damageTaken, before)
+        self.assertGreater(self.game.player.damageTaken, before)
 
 
 class FactionArcherTests(ArcherTest):
@@ -270,7 +264,7 @@ class WildFoeTests(ArcherTest):
 class SpawnerTests(ArcherTest):
     def test_a_spawner_can_make_an_archer_who_joins_a_squad(self):
         faction = expansion.newFaction(self.game, "warpaint")
-        spot = self.here + self.rowLength * 2
+        spot = self.here + self.game.rowLength * 2
         self.game.grid[spot] = [FLOOR, 1]
         archer = expansion.spawn(self.game, spot, "Goblin Archer", faction)
         self.assertIsInstance(archer, enemies.GoblinArcher)

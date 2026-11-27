@@ -344,8 +344,7 @@ def factionOf(enemy):
 
 
 def dist(gm, a, b):
-    R = gm.rowLength
-    return math.hypot(a % R - b % R, a // R - b // R)
+    return math.hypot(a % gm.rowLength - b % gm.rowLength, a // gm.rowLength - b // gm.rowLength)
 
 
 def offsetTile(gm, center, dx, dy):
@@ -438,10 +437,9 @@ def isOre(tile):
 def beginTurn(gm):
     """Where every enemy is at the start of the enemy turn, bucketed by area so nearby searches are quick."""
     pos, buckets = {}, {}
-    R = gm.rowLength
     for p, e in occupancy.allUnits(gm):  # (two on a space included)
         pos[id(e)] = p
-        buckets.setdefault((p % R // 8, p // R // 8), []).append((p, e))
+        buckets.setdefault((p % gm.rowLength // 8, p // gm.rowLength // 8), []).append((p, e))
     updatePeace(gm)
     return {"pos": pos, "buckets": buckets, "squadTargets": {}, "fields": {}}
 
@@ -459,8 +457,7 @@ def find(gm, ctx, enemy):
 
 def near(gm, ctx, position, reach):
     """(position, enemy) for enemies within reach of position (by the turn's starting positions)."""
-    R = gm.rowLength
-    bx, by, span = position % R // 8, position // R // 8, int(reach) // 8 + 1
+    bx, by, span = position % gm.rowLength // 8, position // gm.rowLength // 8, int(reach) // 8 + 1
     for gx in range(bx - span, bx + span + 1):
         for gy in range(by - span, by + span + 1):
             for p, e in ctx["buckets"].get((gx, gy), ()):
@@ -3007,10 +3004,9 @@ def crack(gm, piece, damage):
     """A spawner or warcamp chest took damage: it cracks like a wall (wall.Wall.takeDamage), more of its picture
     chipped the bigger the share of its HP the hit took (renderer.crackedPicture draws them)."""
     maxHp = getattr(piece, "maxHp", None) or CHEST_HP
-    ts = gm.tileSize
-    share = int(min(damage, max(piece.hp, 0) + damage) / maxHp * ts * ts)
+    share = int(min(damage, max(piece.hp, 0) + damage) / maxHp * gm.tileSize * gm.tileSize)
     points = piece.__dict__.setdefault("brokenPoints", set())
-    points |= wall.getRandomPoints((1, ts - 1), (1, ts - 1), share)
+    points |= wall.getRandomPoints((1, gm.tileSize - 1), (1, gm.tileSize - 1), share)
 
 
 def hitStructure(gameManager, spot):

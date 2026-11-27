@@ -27,18 +27,17 @@ def isRanged(unit):
 
 
 def distance(gameManager, fromSpot, toSpot):
-    rowLength = gameManager.rowLength
-    return math.hypot(fromSpot % rowLength - toSpot % rowLength, fromSpot // rowLength - toSpot // rowLength)
+    return math.hypot(fromSpot % gameManager.rowLength - toSpot % gameManager.rowLength,
+                      fromSpot // gameManager.rowLength - toSpot // gameManager.rowLength)
 
 
 def shotLine(gameManager, fromSpot, toSpot):
     """The spots an arrow passes between fromSpot and toSpot (neither end), in order, or None when a wall, a station
     or a plant you can't see through is in the way."""
-    rowLength = gameManager.rowLength
     between = []
     for column, row in gameManager.linePoints(fromSpot, toSpot)[:-1]:
-        spot = column + row * rowLength
-        if not 0 <= column < rowLength or gameManager.blocksThrow(spot):
+        spot = column + row * gameManager.rowLength
+        if not 0 <= column < gameManager.rowLength or gameManager.blocksThrow(spot):
             return None
         between.append(spot)
     return between
@@ -118,11 +117,10 @@ def seesPlayer(gameManager, spot, shooter):
     """Can shooter, on spot, see you (the way gameManager.enemyAct decides it)?"""
     if gameManager.peaceful:
         return False
-    player = gameManager.playerPositionFlat
-    if not shooter.allSight and player not in gameManager.rayCircleVision(spot, shooter.visionRange, ENEMY_SIGHT_KIND,
-                                                                          shooter.tremorSense):
+    if not shooter.allSight and gameManager.playerPositionFlat not in \
+            gameManager.rayCircleVision(spot, shooter.visionRange, ENEMY_SIGHT_KIND, shooter.tremorSense):
         return False
-    return not (gameManager.playerHidden() and player not in gameManager.neighbors(spot))
+    return not (gameManager.playerHidden() and gameManager.playerPositionFlat not in gameManager.neighbors(spot))
 
 
 def stepBack(gameManager, spot, shooter, foeSpot):
@@ -140,18 +138,17 @@ def stepBack(gameManager, spot, shooter, foeSpot):
 def wildTurn(gameManager, spot, shooter):
     """A wild archer's turn when it sees you: step back if you're too close, else shoot if it can. Returns where it
     is now, or None for its usual turn (coming at you, or hitting you when it's right beside you)."""
-    player = gameManager.playerPositionFlat
     if not seesPlayer(gameManager, spot, shooter):
         return None
-    shooter.lastPlayerPosition = player
-    if distance(gameManager, spot, player) <= shooter.keepAway:
-        away = stepBack(gameManager, spot, shooter, player)
+    shooter.lastPlayerPosition = gameManager.playerPositionFlat
+    if distance(gameManager, spot, gameManager.playerPositionFlat) <= shooter.keepAway:
+        away = stepBack(gameManager, spot, shooter, gameManager.playerPositionFlat)
         if away is not None:
             return away
-    if player in gameManager.neighbors(spot):
+    if gameManager.playerPositionFlat in gameManager.neighbors(spot):
         return None  # nowhere to go and right beside you: it fights
-    if canShoot(gameManager, spot, player, shooter):
-        shoot(gameManager, spot, shooter, player)
+    if canShoot(gameManager, spot, gameManager.playerPositionFlat, shooter):
+        shoot(gameManager, spot, shooter, gameManager.playerPositionFlat)
         return spot
     return None
 
@@ -162,10 +159,10 @@ def factionTarget(gameManager, spot, shooter, turnContext):
     """The nearest foe a faction archer on spot can shoot: you (when its faction fights you and it sees you) or a
     unit it's hostile to. Its spot, or None."""
     targets = []
-    player = gameManager.playerPositionFlat
-    if expansion.huntsPlayer(gameManager, shooter) and distance(gameManager, spot, player) <= shooter.range \
+    if expansion.huntsPlayer(gameManager, shooter) \
+            and distance(gameManager, spot, gameManager.playerPositionFlat) <= shooter.range \
             and seesPlayer(gameManager, spot, shooter):
-        targets.append(player)
+        targets.append(gameManager.playerPositionFlat)
     for nearSpot, unit in expansion.near(gameManager, turnContext, spot, shooter.range):
         if unit is shooter or unit.hp <= 0 or not expansion.hostile(shooter, unit):
             continue

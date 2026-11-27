@@ -64,14 +64,13 @@ class EggTest(unittest.TestCase):
 
 class LayingTests(EggTest):
     def test_fed_enough_dew_she_lays_a_clutch_touching_her(self):
-        game = self.game
         self.queen.dew = queen.DEW_TO_LAY + 3
-        self.assertEqual(queen.layEggs(game, self.anchor, self.queen), queen.CLUTCH)
+        self.assertEqual(queen.layEggs(self.game, self.anchor, self.queen), queen.CLUTCH)
         self.assertEqual(self.queen.dew, 3)
         eggs = self.eggs()
         self.assertEqual(len(eggs), queen.CLUTCH)
         for spot, egg in eggs:
-            self.assertEqual(game.reachOf(self.queen, self.anchor, spot), 1)
+            self.assertEqual(self.game.reachOf(self.queen, self.anchor, spot), 1)
             self.assertIs(egg.court, self.queen.court)
 
     def test_not_before(self):
@@ -80,13 +79,12 @@ class LayingTests(EggTest):
         self.assertEqual(self.eggs(), [])
 
     def test_with_no_room_round_her_she_waits(self):
-        game = self.game
-        for tile in game.footprint(self.anchor, 2):
-            for spot in game.neighbors(tile):
-                if game.grid[spot][0] == FLOOR:
-                    dewgrubs.placeUnit(game, spot, enemies.DwellerNoble())
+        for tile in self.game.footprint(self.anchor, 2):
+            for spot in self.game.neighbors(tile):
+                if self.game.grid[spot][0] == FLOOR:
+                    dewgrubs.placeUnit(self.game, spot, enemies.DwellerNoble())
         self.queen.dew = queen.DEW_TO_LAY
-        self.assertEqual(queen.layEggs(game, self.anchor, self.queen), 0)
+        self.assertEqual(queen.layEggs(self.game, self.anchor, self.queen), 0)
         self.assertEqual(self.queen.dew, queen.DEW_TO_LAY)
 
 
@@ -102,41 +100,38 @@ class CarryingTests(EggTest):
             self.assertIsNotNone(egg.hatchIn)
 
     def test_with_every_nest_taken_eggs_wait_where_they_were_laid(self):
-        game = self.game
         for nest in self.queen.court["nests"]:  # (eggs already in every nest, a long way from hatching)
-            if game.grid[nest][0] == FLOOR:
+            if self.game.grid[nest][0] == FLOOR:
                 nested = enemies.DwellerEgg(self.queen.court)
                 nested.nest, nested.hatchIn = nest, 10 ** 6
-                dewgrubs.placeUnit(game, nest, nested)
+                dewgrubs.placeUnit(self.game, nest, nested)
         self.queen.dew = queen.DEW_TO_LAY
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0):
             self.runTurns(60, until=lambda: False)
-        waiting = queen.waitingEggs(game)
+        waiting = queen.waitingEggs(self.game)
         self.assertEqual(len(waiting), queen.CLUTCH)
-        self.assertTrue(all(game.reachOf(self.queen, self.anchor, spot) == 1 for spot, _ in waiting))
-        self.assertEqual(queen.heldEggs(game), [])
+        self.assertTrue(all(self.game.reachOf(self.queen, self.anchor, spot) == 1 for spot, _ in waiting))
+        self.assertEqual(queen.heldEggs(self.game), [])
 
     def test_a_citizen_killed_carrying_an_egg_drops_it(self):
-        game = self.game
         self.queen.dew = queen.DEW_TO_LAY
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0):
-            self.assertTrue(self.runTurns(200, until=lambda: queen.heldEggs(game)))
-        carrier, egg = queen.heldEggs(game)[0]
-        where = next(spot for spot, unit in dwellers.cityDwellers(game) if unit is carrier)
-        game.killEnemy(where, killer=None, unit=carrier)
-        found = [spot for spot, unit in dwellers.cityDwellers(game) if unit is egg]
+            self.assertTrue(self.runTurns(200, until=lambda: queen.heldEggs(self.game)))
+        carrier, egg = queen.heldEggs(self.game)[0]
+        where = next(spot for spot, unit in dwellers.cityDwellers(self.game) if unit is carrier)
+        self.game.killEnemy(where, killer=None, unit=carrier)
+        found = [spot for spot, unit in dwellers.cityDwellers(self.game) if unit is egg]
         self.assertEqual(len(found), 1)
-        self.assertLessEqual(dwellers.distance(game, found[0], where), 1)
+        self.assertLessEqual(dwellers.distance(self.game, found[0], where), 1)
         self.assertIsNone(egg.nestTarget)
 
 
 class HatchingTests(EggTest):
     def eggInNest(self, hatchIn=1):
-        game = self.game
-        nest = next(nest for nest in self.queen.court["nests"] if game.grid[nest][0] == FLOOR)
+        nest = next(nest for nest in self.queen.court["nests"] if self.game.grid[nest][0] == FLOOR)
         egg = enemies.DwellerEgg(self.queen.court)
         egg.nest, egg.hatchIn = nest, hatchIn
-        dewgrubs.placeUnit(game, nest, egg)
+        dewgrubs.placeUnit(self.game, nest, egg)
         return nest, egg
 
     def hatchAs(self, kind):
@@ -151,28 +146,25 @@ class HatchingTests(EggTest):
         self.before = [unit for _, unit in dwellers.cityDwellers(self.game)]
 
     def test_in_its_nest_an_egg_hatches_after_its_time(self):
-        game = self.game
         nest, egg = self.eggInNest(hatchIn=3)
-        game.enemyTurn()
-        game.enemyTurn()
-        self.assertIn(egg, [unit for _, unit in dwellers.cityDwellers(game)])
-        game.enemyTurn()
-        self.assertNotIn(egg, [unit for _, unit in dwellers.cityDwellers(game)])
+        self.game.enemyTurn()
+        self.game.enemyTurn()
+        self.assertIn(egg, [unit for _, unit in dwellers.cityDwellers(self.game)])
+        self.game.enemyTurn()
+        self.assertNotIn(egg, [unit for _, unit in dwellers.cityDwellers(self.game)])
 
     def test_an_egg_out_of_a_nest_never_hatches(self):
-        game = self.game
         egg = enemies.DwellerEgg(self.queen.court)
         egg.hatchIn = 1
-        spot = next(spot for spot in game.neighbors(self.queen.court["nests"][0]) if game.grid[spot][0] == FLOOR)
-        dewgrubs.placeUnit(game, spot, egg)
+        spot = next(spot for spot in self.game.neighbors(self.queen.court["nests"][0]) if self.game.grid[spot][0] == FLOOR)
+        dewgrubs.placeUnit(self.game, spot, egg)
         with mock.patch.object(dwellers, "IDLE_CHANCE", 1):  # (and nobody carries it off)
             for _ in range(3):
-                queen.takeTurn(game, spot, egg)
+                queen.takeTurn(self.game, spot, egg)
         self.assertEqual(egg.hatchIn, 1)
 
     def test_a_guard_goes_to_the_post_with_fewest_guards(self):
-        game = self.game
-        guarded = [unit.home for _, unit in dwellers.cityDwellers(game) if queen.jobOf(unit) == "guard"]
+        guarded = [unit.home for _, unit in dwellers.cityDwellers(self.game) if queen.jobOf(unit) == "guard"]
         _, guard = self.hatchAs("guard")
         self.assertIsInstance(guard, enemies.DwellerGuard)
         self.assertIn(guard.home, self.queen.court["posts"])
@@ -184,34 +176,32 @@ class HatchingTests(EggTest):
         self.assertIn(carrier.home, self.queen.court["homes"])
 
     def test_a_miner_walks_down_the_mine_shaft_and_joins_the_workers_there(self):
-        game = self.game
         _, miner = self.hatchAs("miner")
         self.assertEqual((miner.joining, miner.work), ("mine", None))
-        mineShaft = queen.shaftsHere(game, "mine")[0]
-        mineKey = (game.level, mineShaft)
+        mineShaft = queen.shaftsHere(self.game, "mine")[0]
+        mineKey = (self.game.level, mineShaft)
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0):
             for _ in range(300):
-                game.enemyTurn()
+                self.game.enemyTurn()
                 if miner.work == "mine":
                     break
         self.assertEqual((miner.work, miner.joining), ("mine", None))
-        with livingfloors.awayFloor(game, mineKey):
-            workers = [unit for _, unit in dwellers.cityDwellers(game) if unit.work == "mine"]
+        with livingfloors.awayFloor(self.game, mineKey):
+            workers = [unit for _, unit in dwellers.cityDwellers(self.game) if unit.work == "mine"]
             self.assertIn(miner, workers)
             self.assertIs(miner.plans, next(unit for unit in workers if unit is not miner).plans)
 
     def test_a_farmer_keeps_grubs_or_grows_crops_whichever_there_are_fewer_of(self):
-        game = self.game
-        game.enemyTurn()  # (the city's works floors are made on its first turn)
-        farmKey = (game.level, queen.shaftsHere(game, "farm")[0])
-        with livingfloors.awayFloor(game, farmKey):
-            workers = [unit for _, unit in dwellers.cityDwellers(game) if unit.work == "farm"]
+        self.game.enemyTurn()  # (the city's works floors are made on its first turn)
+        farmKey = (self.game.level, queen.shaftsHere(self.game, "farm")[0])
+        with livingfloors.awayFloor(self.game, farmKey):
+            workers = [unit for _, unit in dwellers.cityDwellers(self.game) if unit.work == "farm"]
             for everyone, expected in (("keeper", "grower"), ("grower", "keeper")):
                 for worker in workers:
                     worker.farmRole = everyone
                 hatchling = enemies.DwellerCitizen()
                 hatchling.joining = "farm"
-                queen.joinWorks(game, game.sideFloor[1], hatchling)
+                queen.joinWorks(self.game, self.game.sideFloor[1], hatchling)
                 self.assertEqual(hatchling.farmRole, expected)
                 self.assertIs(hatchling.fields, workers[0].fields)
                 self.assertIs(hatchling.pens, workers[0].pens)
@@ -219,24 +209,22 @@ class HatchingTests(EggTest):
 
 class CensusTests(EggTest):
     def test_the_city_counts_its_works_floors_from_their_census(self):
-        game = self.game
-        game.enemyTurn()  # (each works floor counts itself on its turn)
-        records = game.workCensus
-        shafts = queen.shaftsHere(game)
-        self.assertEqual(set(records), {(game.level, shaft) for shaft in shafts})
-        counts = queen.cityCounts(game)
-        city = queen.census(game)
+        self.game.enemyTurn()  # (each works floor counts itself on its turn)
+        records = self.game.workCensus
+        shafts = queen.shaftsHere(self.game)
+        self.assertEqual(set(records), {(self.game.level, shaft) for shaft in shafts})
+        counts = queen.cityCounts(self.game)
+        city = queen.census(self.game)
         self.assertEqual(counts["miner"], city["miner"] + sum(record["miner"] for record in records.values()))
         self.assertEqual(counts["guard"], city["guard"], "the works' guards are their own")
 
     def test_someone_on_their_way_up_or_down_counts(self):
-        game = self.game
-        game.enemyTurn()
-        before = queen.cityCounts(game)["farmer"]
+        self.game.enemyTurn()
+        before = queen.cityCounts(self.game)["farmer"]
         hatchling = enemies.DwellerCitizen()
         hatchling.joining = "farm"
-        livingfloors.arrivals(game)[(game.level, queen.shaftsHere(game, "farm")[0])] = [(hatchling, 0)]
-        self.assertEqual(queen.cityCounts(game)["farmer"], before + 1)
+        livingfloors.arrivals(self.game)[(self.game.level, queen.shaftsHere(self.game, "farm")[0])] = [(hatchling, 0)]
+        self.assertEqual(queen.cityCounts(self.game)["farmer"], before + 1)
 
 
 class StorageChestCacheTests(unittest.TestCase):

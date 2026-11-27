@@ -69,9 +69,8 @@ def targets(game):
     cache = game.__dict__.setdefault("quellTargets", {})
     if key not in cache:
         cache.clear()
-        grid = game.grid
         cache[key] = [spot for spot in nearBuildings(game)
-                      if spot in grid and (isWild(grid[spot]) or isCorrupted(grid[spot]))]
+                      if spot in game.grid and (isWild(game.grid[spot]) or isCorrupted(game.grid[spot]))]
     return cache[key]
 
 

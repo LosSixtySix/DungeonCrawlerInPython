@@ -27,36 +27,32 @@ class PlayingFrameTests(unittest.TestCase):
         self.game.setPositionsVisible()
 
     def test_a_frame_draws_and_shows_more_than_one_color(self):
-        game = self.game
-        game.draw()
-        self.assertGreater(len(distinctColors(game.win)), 3)
+        self.game.draw()
+        self.assertGreater(len(distinctColors(self.game.win)), 3)
 
     def test_the_player_tile_is_drawn_in_the_middle_of_the_screen(self):
-        game = self.game
-        game.grid[game.playerPositionFlat][0] = 1  # the game loop marks the player's tile
-        game.draw()
-        playerTile = game.painter.tileOnScreen(game.playerPositionFlat)
-        screenWidth, screenHeight = game.win.get_size()
-        self.assertLessEqual(abs(playerTile.centerx - screenWidth // 2), game.tileSize)
-        self.assertLessEqual(abs(playerTile.centery - screenHeight // 2), game.tileSize)
-        tileColors = {tuple(game.win.get_at((pixelX, pixelY)))[:3] for pixelX in range(playerTile.left, playerTile.right)
+        self.game.grid[self.game.playerPositionFlat][0] = 1  # the game loop marks the player's tile
+        self.game.draw()
+        playerTile = self.game.painter.tileOnScreen(self.game.playerPositionFlat)
+        screenWidth, screenHeight = self.game.win.get_size()
+        self.assertLessEqual(abs(playerTile.centerx - screenWidth // 2), self.game.tileSize)
+        self.assertLessEqual(abs(playerTile.centery - screenHeight // 2), self.game.tileSize)
+        tileColors = {tuple(self.game.win.get_at((pixelX, pixelY)))[:3] for pixelX in range(playerTile.left, playerTile.right)
                       for pixelY in range(playerTile.top, playerTile.bottom)}
         self.assertGreater(len(tileColors), 1)  # the player sprite, not a flat floor tile
 
     def test_standing_on_a_mineshaft_draws_you_like_standing_on_a_door(self):
-        game = self.game
-        game.grid[game.playerPositionFlat] = [1, 1, metropolis.Mineshaft("mine")]  # (the shaft rides along under you)
-        with mock.patch.object(renderer.renderer, "plantPicture", wraps=game.painter.plantPicture) as plantPicture:
-            game.draw()  # (a mineshaft has a kind, like a plant: it used to be drawn as one, and that crashed)
+        self.game.grid[self.game.playerPositionFlat] = [1, 1, metropolis.Mineshaft("mine")]  # (the shaft rides along under you)
+        with mock.patch.object(renderer.renderer, "plantPicture", wraps=self.game.painter.plantPicture) as plantPicture:
+            self.game.draw()  # (a mineshaft has a kind, like a plant: it used to be drawn as one, and that crashed)
         plantPicture.assert_not_called()
 
     def test_neither_end_of_either_mineshaft_is_ever_drawn_as_a_plant(self):
-        game = self.game
         for kind in metropolis.WORKS:
             for down in (True, False):
-                game.grid[game.playerPositionFlat] = [1, 1, metropolis.Mineshaft(kind, down)]
-                with mock.patch.object(renderer.renderer, "plantPicture", wraps=game.painter.plantPicture) as plantPicture:
-                    game.draw()
+                self.game.grid[self.game.playerPositionFlat] = [1, 1, metropolis.Mineshaft(kind, down)]
+                with mock.patch.object(renderer.renderer, "plantPicture", wraps=self.game.painter.plantPicture) as plantPicture:
+                    self.game.draw()
                 plantPicture.assert_not_called()
 
     def test_walking_onto_a_citys_mineshafts_and_the_shafts_up_from_their_floors(self):
@@ -80,21 +76,19 @@ class PlayingFrameTests(unittest.TestCase):
                 self.assertFalse([thing for thing in drawnAsPlants if not isinstance(thing, plants.Plant)], (kind, climb))
 
     def test_a_plant_you_stand_in_is_still_drawn_over_you(self):
-        game = self.game
-        game.grid[game.playerPositionFlat] = [1, 1, plants.Plant.grown("bloodcap")]
-        with mock.patch.object(renderer.renderer, "plantPicture", wraps=game.painter.plantPicture) as plantPicture:
-            game.draw()
+        self.game.grid[self.game.playerPositionFlat] = [1, 1, plants.Plant.grown("bloodcap")]
+        with mock.patch.object(renderer.renderer, "plantPicture", wraps=self.game.painter.plantPicture) as plantPicture:
+            self.game.draw()
         plantPicture.assert_called()
 
     def test_every_floor_theme_draws(self):
-        game = self.game
         for floorType in FLOOR_TYPES:
             for themeData in themes.THEMES[floorType]:
                 with self.subTest(theme=themeData["name"]):
-                    game.setTheme(themes.Theme(floorType, themeData))
-                    game.draw()
-                    self.assertEqual(game.painter.colorDict, game.theme.colors)
-                    self.assertGreater(len(distinctColors(game.win)), 3)
+                    self.game.setTheme(themes.Theme(floorType, themeData))
+                    self.game.draw()
+                    self.assertEqual(self.game.painter.colorDict, self.game.theme.colors)
+                    self.assertGreater(len(distinctColors(self.game.win)), 3)
 
     def test_deeper_floors_draw(self):
         game = newGame(level=2)
@@ -102,94 +96,82 @@ class PlayingFrameTests(unittest.TestCase):
         game.draw()
 
     def test_each_zoom_level_draws(self):
-        game = self.game
         for zoom in gamemanager.MAP_ZOOMS:
-            game.settings.mapZoom = zoom
-            game.draw()
-            self.assertEqual(game.painter.zoom, max(1, int(zoom)))
+            self.game.settings.mapZoom = zoom
+            self.game.draw()
+            self.assertEqual(self.game.painter.zoom, max(1, int(zoom)))
 
     def test_every_light_style_draws(self):
-        game = self.game
         for style in gamemanager.LIGHT_STYLES:
-            game.settings.lightStyle = style
-            game.lightStep += 3
-            game.draw()
-            game.draw(lightOnly=True)
-        game.menuOptions["Animated Light"] = False
-        game.draw()
+            self.game.settings.lightStyle = style
+            self.game.lightStep += 3
+            self.game.draw()
+            self.game.draw(lightOnly=True)
+        self.game.menuOptions["Animated Light"] = False
+        self.game.draw()
 
     def test_every_window_draws_open_and_focused(self):
-        game = self.game
         for windowId in gamemanager.WINDOW_ORDER:
             if windowId != "items":
-                game.openWindow(windowId)
-                game.draw()
-        self.assertEqual(set(game.windowRects), set(game.openWindows))
-        for windowId, windowRect in game.windowRects.items():
+                self.game.openWindow(windowId)
+                self.game.draw()
+        self.assertEqual(set(self.game.windowRects), set(self.game.openWindows))
+        for windowId, windowRect in self.game.windowRects.items():
             if windowId == "loot":
                 continue  # the Loot Table's Walls tab is taller than a 768-pixel screen (reported, not tested)
-            self.assertTrue(game.win.get_rect().contains(windowRect), windowId)
+            self.assertTrue(self.game.win.get_rect().contains(windowRect), windowId)
 
     def test_the_items_here_window_draws_for_the_starting_chest(self):
-        game = self.game
-        game.player.playerDirection = 0  # facing the chest on the left
-        game.setLookPosition()
-        game.roomItems = game.getItemsFromGrid()
-        game.openWindow("items")
-        game.draw()
-        self.assertIn("items", game.windowRects)
+        self.game.player.playerDirection = 0  # facing the chest on the left
+        self.game.setLookPosition()
+        self.game.roomItems = self.game.getItemsFromGrid()
+        self.game.openWindow("items")
+        self.game.draw()
+        self.assertIn("items", self.game.windowRects)
 
     def test_the_hud_can_be_hidden(self):
-        game = self.game
-        game.menuOptions["Mini HUD"] = False
-        game.draw()
+        self.game.menuOptions["Mini HUD"] = False
+        self.game.draw()
 
     def test_the_pause_menu_and_hotkeys_page_draw(self):
-        game = self.game
         for page in ("journal", "hotkeys"):
-            game.pausePage = page
-            game.draw()
-        game.rebinding = "interact"
-        game.draw()
-        game.rebinding = None
+            self.game.pausePage = page
+            self.game.draw()
+        self.game.rebinding = "interact"
+        self.game.draw()
+        self.game.rebinding = None
 
     def test_the_developer_console_draws(self):
-        game = self.game
-        game.console.toggle()
-        game.draw()
-        game.console.toggle()
+        self.game.console.toggle()
+        self.game.draw()
+        self.game.console.toggle()
 
     def test_a_floor_message_draws_and_fades(self):
-        game = self.game
-        game.messageBools["floorLevelMessage"] = True
-        painter = game.painter
-        painter.fade, painter.messageTicks = 255, None
+        self.game.messageBools["floorLevelMessage"] = True
+        self.game.painter.fade, self.game.painter.messageTicks = 255, None
         with mock.patch("pygame.time.get_ticks", return_value=1000) as clock:  # (two frames 0.1s apart)
-            game.draw()
+            self.game.draw()
             clock.return_value = 1100
-            game.draw()
-        self.assertLess(painter.fade, 255)
+            self.game.draw()
+        self.assertLess(self.game.painter.fade, 255)
 
     def test_the_message_canvas_covers_the_screen(self):
-        painter = self.game.painter
-        canvas = painter.drawMessage("Floor 3\nGranite Hall")
-        self.assertEqual(canvas.get_size(), (painter.screenWidth, painter.screenHeight))
+        canvas = self.game.painter.drawMessage("Floor 3\nGranite Hall")
+        self.assertEqual(canvas.get_size(), (self.game.painter.screenWidth, self.game.painter.screenHeight))
 
     def test_an_aim_line_draws_and_is_cleaned_up(self):
-        game = self.game
-        target = game.playerPositionFlat + 3
-        game.aimLine = game.createARay(game.playerPositionFlat, target)
-        game.draw()
-        self.assertEqual(game.painter.aimDrawn, set(game.aimLine))
-        game.aimLine = None
-        game.draw()
-        self.assertEqual(game.painter.aimDrawn, set())
+        target = self.game.playerPositionFlat + 3
+        self.game.aimLine = self.game.createARay(self.game.playerPositionFlat, target)
+        self.game.draw()
+        self.assertEqual(self.game.painter.aimDrawn, set(self.game.aimLine))
+        self.game.aimLine = None
+        self.game.draw()
+        self.assertEqual(self.game.painter.aimDrawn, set())
 
     def test_popups_and_blood_draw(self):
-        game = self.game
-        game.addPopup("+2 Wood", game.playerPositionFlat)
-        game.addBlood(game.playerPositionFlat + 1, 0.8)
-        game.draw()
+        self.game.addPopup("+2 Wood", self.game.playerPositionFlat)
+        self.game.addBlood(self.game.playerPositionFlat + 1, 0.8)
+        self.game.draw()
 
 
 if __name__ == "__main__":

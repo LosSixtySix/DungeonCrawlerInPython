@@ -15,16 +15,14 @@ def keyDown(game, key, modifierKeys=0):
 
 def middleSpot(game):
     """A tile well away from the map's edges."""
-    rowLength = game.rowLength
-    return (game.painter.columnLength // 2) * rowLength + rowLength // 2
+    return (game.painter.columnLength // 2) * game.rowLength + game.rowLength // 2
 
 
 def clearAround(game, spot):
     """Turns the 5x5 block around spot into plain, visible floor, so nothing nearby gets in the way."""
-    rowLength = game.rowLength
     for rowOffset in range(-2, 3):
         for columnOffset in range(-2, 3):
-            tile = spot + columnOffset + rowOffset * rowLength
+            tile = spot + columnOffset + rowOffset * game.rowLength
             game.grid[tile] = [FLOOR, 1]
             game.EnemyPositions.discard(tile)
 

@@ -21,15 +21,13 @@ class ReachTests(unittest.TestCase):
         self.game = support.newGame(level=5)
 
     def test_two_floors_above_and_two_below_nearest_first(self):
-        game = self.game
-        game.changeLevel(2)
-        self.assertEqual(livingfloors.floorsInReach(game), [1, 3, 0, 4])
+        self.game.changeLevel(2)
+        self.assertEqual(livingfloors.floorsInReach(self.game), [1, 3, 0, 4])
 
     def test_only_floors_that_exist(self):
-        game = self.game
-        self.assertEqual(livingfloors.floorsInReach(game), [4, 3], "nothing below the deepest floor yet")
-        game.changeLevel(0)
-        self.assertEqual(livingfloors.floorsInReach(game), [1, 2])
+        self.assertEqual(livingfloors.floorsInReach(self.game), [4, 3], "nothing below the deepest floor yet")
+        self.game.changeLevel(0)
+        self.assertEqual(livingfloors.floorsInReach(self.game), [1, 2])
 
 
 class StaggeredGrowthTests(unittest.TestCase):
@@ -60,47 +58,44 @@ class AwayTurnTests(unittest.TestCase):
         self.yourGrid = self.game.grid
 
     def test_units_on_a_floor_you_are_not_on_take_their_turns(self):
-        game = self.game
-        data = game.levelGrids[1]
+        data = self.game.levelGrids[1]
         grid = data[0]
-        spot = next(spot for spot, tile in grid.items() if tile[0] == FLOOR and all(grid[near][0] == FLOOR for near in game.neighbors(spot)))
+        spot = next(spot for spot, tile in grid.items()
+                    if tile[0] == FLOOR and all(grid[near][0] == FLOOR for near in self.game.neighbors(spot)))
         rat = enemies.DireRat()
         rat.lastPlayerPosition = spot + 3
         grid[spot] = [ENEMY, 0, rat]
         data[3].add(spot)
         for _ in range(4):
-            game.enemyTurn()
-        self.assertIn(rat, unitsOn(game.levelGrids[1]))
-        self.assertNotEqual(unitsOn(game.levelGrids[1])[rat], spot, "it moved")
-        self.assertIs(game.grid, self.yourGrid)
+            self.game.enemyTurn()
+        self.assertIn(rat, unitsOn(self.game.levelGrids[1]))
+        self.assertNotEqual(unitsOn(self.game.levelGrids[1])[rat], spot, "it moved")
+        self.assertIs(self.game.grid, self.yourGrid)
 
     def test_nothing_on_a_floor_you_are_not_on_ever_touches_you(self):
-        game = self.game
-        data = game.levelGrids[1]
-        for near in game.neighbors(game.playerPositionFlat):  # Organizers after you, right where you'd be on the floor above
+        data = self.game.levelGrids[1]
+        for near in self.game.neighbors(self.game.playerPositionFlat):  # Organizers after you, right where you'd be on the floor above
             organizer = enemies.SquareOrganizer()
             organizer.aggro, organizer.rest = "player", 0
             data[0][near] = [ENEMY, 1, organizer]
             data[3].add(near)
-        before = game.player.damageTaken
+        before = self.game.player.damageTaken
         for _ in range(10):
-            game.enemyTurn()
-        self.assertEqual(game.player.damageTaken, before)
+            self.game.enemyTurn()
+        self.assertEqual(self.game.player.damageTaken, before)
 
     def test_your_floor_is_just_as_it_was_after_the_others_take_their_turn(self):
-        game = self.game
-        level, theme, peaceful = game.level, game.theme, game.peaceful
-        game.enemyTurn()
-        self.assertIs(game.grid, self.yourGrid)
-        self.assertEqual((game.level, game.theme, game.peaceful, game.simulatingAway), (level, theme, peaceful, False))
+        level, theme, peaceful = self.game.level, self.game.theme, self.game.peaceful
+        self.game.enemyTurn()
+        self.assertIs(self.game.grid, self.yourGrid)
+        self.assertEqual((self.game.level, self.game.theme, self.game.peaceful, self.game.simulatingAway), (level, theme, peaceful, False))
 
     def test_an_event_starting_on_another_floor_shows_you_nothing(self):
-        game = self.game
-        game.floorEvents[1] = {"id": "overgrowth", "turnsLeft": 1, "active": False}
-        game.messageBools["eventMessage"] = False
-        game.enemyTurn()
-        self.assertTrue(game.floorEvents[1]["active"], "it started there")
-        self.assertFalse(game.messageBools["eventMessage"])
+        self.game.floorEvents[1] = {"id": "overgrowth", "turnsLeft": 1, "active": False}
+        self.game.messageBools["eventMessage"] = False
+        self.game.enemyTurn()
+        self.assertTrue(self.game.floorEvents[1]["active"], "it started there")
+        self.assertFalse(self.game.messageBools["eventMessage"])
 
 
 class NothingShownFromAwayTests(unittest.TestCase):
@@ -136,26 +131,24 @@ class NothingShownFromAwayTests(unittest.TestCase):
         self.assertEqual(len(game.spurts), 1, "on your own floor a hit does spurt")
 
     def test_an_explosion_there_is_neither_seen_nor_heard_here(self):
-        game = self.game
         landing = self.awayFloorSpot()
-        with mock.patch.object(game.sound, "playExplosion") as playExplosion:
-            with livingfloors.awayFloor(game, 1):
-                game.land({"effect": "Explosive", "power": 1, "path": [landing], "landing": landing, "turns": 0, "flight": 0})
-        self.assertEqual(game.explosions, [])
+        with mock.patch.object(self.game.sound, "playExplosion") as playExplosion:
+            with livingfloors.awayFloor(self.game, 1):
+                self.game.land({"effect": "Explosive", "power": 1, "path": [landing], "landing": landing, "turns": 0, "flight": 0})
+        self.assertEqual(self.game.explosions, [])
         playExplosion.assert_not_called()
 
     def test_a_floor_you_are_not_on_changing_does_not_redraw_yours(self):
-        game = self.game
-        data = game.levelGrids[1]
+        data = self.game.levelGrids[1]
         spot = self.awayFloorSpot()
         rat = enemies.DireRat()
         rat.lastPlayerPosition = spot + 3
         data[0][spot] = [ENEMY, 0, rat]
         data[3].add(spot)
-        game.change = False
-        livingfloors.simulate(game)
-        self.assertNotEqual(unitsOn(game.levelGrids[1]).get(rat), spot, "it took its turn")
-        self.assertFalse(game.change)
+        self.game.change = False
+        livingfloors.simulate(self.game)
+        self.assertNotEqual(unitsOn(self.game.levelGrids[1]).get(rat), spot, "it took its turn")
+        self.assertFalse(self.game.change)
 
 
 class NewTrackTests(unittest.TestCase):

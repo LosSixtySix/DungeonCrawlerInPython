@@ -64,8 +64,7 @@ def isDweller(enemy):
 
 
 def distance(game, spot, other):
-    rowLength = game.rowLength
-    return math.hypot(spot % rowLength - other % rowLength, spot // rowLength - other // rowLength)
+    return math.hypot(spot % game.rowLength - other % game.rowLength, spot // game.rowLength - other // game.rowLength)
 
 
 # ---------------------------------------------------------------- walking
@@ -180,13 +179,12 @@ def pickGoal(game, position, dweller):
         return dweller.home
     reach = WANDER_REACH[dweller.role]
     anchor = dweller.home if dweller.role == "guard" and dweller.home is not None else position
-    rowLength = game.rowLength
     choices = []
     for rowOffset in range(-reach, reach + 1):
         for columnOffset in range(-reach, reach + 1):
-            column = anchor % rowLength + columnOffset
-            spot = anchor + columnOffset + rowOffset * rowLength
-            if 0 <= column < rowLength and spot in game.grid and spot != position and organizers.passable(game.grid[spot]):
+            column = anchor % game.rowLength + columnOffset
+            spot = anchor + columnOffset + rowOffset * game.rowLength
+            if 0 <= column < game.rowLength and spot in game.grid and spot != position and organizers.passable(game.grid[spot]):
                 choices.append(spot)
     return random.choice(choices) if choices else None
 

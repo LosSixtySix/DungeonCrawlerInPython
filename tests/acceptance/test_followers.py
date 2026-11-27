@@ -12,24 +12,23 @@ PILE = 9
 
 class CrownTests(BesideTheQueen):
     def test_her_crown_is_where_she_fell_and_wearing_it_the_city_comes_for_you(self):
-        game = self.game
         self.queen.hp = 1
-        game.player.DealDamage = lambda: 5
-        game.enemyDodge = lambda target, damage, position: damage
-        game.onInteract()
-        self.assertIsNone(queen.courtOf(game), "she's dead")
-        piles = [game.grid[tile][2] for tile in game.footprint(self.anchor, 2) if game.grid[tile][0] == PILE]
+        self.game.player.DealDamage = lambda: 5
+        self.game.enemyDodge = lambda target, damage, position: damage
+        self.game.onInteract()
+        self.assertIsNone(queen.courtOf(self.game), "she's dead")
+        piles = [self.game.grid[tile][2] for tile in self.game.footprint(self.anchor, 2) if self.game.grid[tile][0] == PILE]
         crowns = [thing for pile in piles for thing in pile.items if getattr(thing, "relicId", None) == "pheromone_crown"]
         self.assertEqual(len(crowns), 1)
-        game.player.equipment["Head"] = crowns[0]
-        self.assertTrue(game.player.hasEffect("pheromones"))
-        game.player.evasion = lambda: 0
-        game.player.damageTaken = 0
+        self.game.player.equipment["Head"] = crowns[0]
+        self.assertTrue(self.game.player.hasEffect("pheromones"))
+        self.game.player.evasion = lambda: 0
+        self.game.player.damageTaken = 0
         for _ in range(60):
-            game.enemyTurn()
-            if game.player.damageTaken:
+            self.game.enemyTurn()
+            if self.game.player.damageTaken:
                 break
-        self.assertGreater(game.player.damageTaken, 0, "the city's guards came for you")
+        self.assertGreater(self.game.player.damageTaken, 0, "the city's guards came for you")
 
 
 if __name__ == "__main__":

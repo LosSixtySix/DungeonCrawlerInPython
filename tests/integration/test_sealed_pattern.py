@@ -111,37 +111,34 @@ class TriggerTests(SealedPatternTest):
         self.assertEqual(self.patternChests(), [])
 
     def test_the_200th_kill_kills_every_unsealed_and_brings_the_chest(self):
-        game = self.game
-        game.addUnsealed = True
-        others = [self.here + 3 * game.rowLength, self.here - 3 * game.rowLength]
+        self.game.addUnsealed = True
+        others = [self.here + 3 * self.game.rowLength, self.here - 3 * self.game.rowLength]
         for spot in others:
             self.putEnemy(spot, Unsealed())
         goblinSpot = self.here - 2
         goblin = self.putEnemy(goblinSpot, Goblin())
         self.killUnsealed(KILLS)
-        self.assertTrue(game.unsealedBanished)
+        self.assertTrue(self.game.unsealedBanished)
         self.assertEqual(self.unsealedOnFloor(), [])
-        self.assertIs(game.grid[goblinSpot][2], goblin, "only the Unsealed die")
-        self.assertFalse(game.addUnsealed)
+        self.assertIs(self.game.grid[goblinSpot][2], goblin, "only the Unsealed die")
+        self.assertFalse(self.game.addUnsealed)
         self.assertEqual(len(self.patternChests()), 1)
 
     def test_a_second_unsealed_sharing_a_space_dies_too(self):
-        game = self.game
-        spot = self.here + 3 * game.rowLength
+        spot = self.here + 3 * self.game.rowLength
         self.putEnemy(spot, Unsealed())
         second = Unsealed()
-        occupancy.sharedTiles(game)[spot] = second
+        occupancy.sharedTiles(self.game)[spot] = second
         self.killUnsealed(KILLS)
-        self.assertNotIn(second, occupancy.sharedTiles(game).values())
+        self.assertNotIn(second, occupancy.sharedTiles(self.game).values())
         self.assertEqual(self.unsealedOnFloor(), [])
 
     def test_the_chest_is_at_the_floors_center(self):
-        game = self.game
-        placePlayer(game, self.here + 4)  # (off the center: the test map puts you right on it)
-        center = game.floorCenter()
-        rows = game.numberOfSpots // game.rowLength
-        self.assertEqual((center % game.rowLength, center // game.rowLength), (game.rowLength // 2, rows // 2))
-        game.grid[center] = [WALL, 0, wall.GoldWall()]
+        placePlayer(self.game, self.here + 4)  # (off the center: the test map puts you right on it)
+        center = self.game.floorCenter()
+        rows = self.game.numberOfSpots // self.game.rowLength
+        self.assertEqual((center % self.game.rowLength, center // self.game.rowLength), (self.game.rowLength // 2, rows // 2))
+        self.game.grid[center] = [WALL, 0, wall.GoldWall()]
         self.killUnsealed(KILLS)
         self.assertEqual(self.patternChests(), [center])
 
@@ -165,29 +162,26 @@ class TriggerTests(SealedPatternTest):
         self.assertEqual(self.game.unsealedKills, 0)
 
     def test_no_more_unsealed_come_and_gold_walls_dont_wake_them(self):
-        game = self.game
-        game.proportion = "All Gold"
+        self.game.proportion = "All Gold"
         self.killUnsealed(KILLS)
-        game.addUnsealed = True  # (as if something set it again)
-        game.grid[self.here + 3] = [WALL, 1, wall.GoldWall()]
-        game.enemyTurn()
+        self.game.addUnsealed = True  # (as if something set it again)
+        self.game.grid[self.here + 3] = [WALL, 1, wall.GoldWall()]
+        self.game.enemyTurn()
         self.assertEqual(self.unsealedOnFloor(), [])
-        game.goldWallCount = 20
-        game.addUnsealed = False
-        game.breakWall(self.here + 3)
-        self.assertFalse(game.addUnsealed)
+        self.game.goldWallCount = 20
+        self.game.addUnsealed = False
+        self.game.breakWall(self.here + 3)
+        self.assertFalse(self.game.addUnsealed)
 
     def test_the_count_starts_over_on_a_new_floor(self):
-        game = self.game
         self.killUnsealed(KILLS)
-        game.goToNewLevel()
-        self.assertEqual((game.unsealedKills, game.unsealedBanished), (0, False))
+        self.game.goToNewLevel()
+        self.assertEqual((self.game.unsealedKills, self.game.unsealedBanished), (0, False))
 
     def test_the_count_is_saved(self):
-        game = self.game
         self.killUnsealed(5)
         saveFile = os.path.join(tempfile.mkdtemp(), "sealed-save.pkl")
-        gamemanager.gameManager.saveGame(game, saveFile)
+        gamemanager.gameManager.saveGame(self.game, saveFile)
         loaded = newGame()
         self.assertTrue(loaded.loadGame(saveFile))
         self.assertEqual((loaded.unsealedKills, loaded.unsealedBanished), (5, False))
@@ -200,39 +194,35 @@ class WearingTests(SealedPatternTest):
         self.assertEqual(self.player.getMaxHealth(), max(1, before - PATTERN_HEALTH))
 
     def test_max_health_stops_at_1(self):
-        player = self.player
-        wearPattern(player)
-        self.assertEqual(player.getMaxHealth(), 1, "a fresh character has under 16")
-        player.equipment["Chest"] = items.equipment("Health", "Big Coat", "Chest", 30, "")
-        self.assertEqual(player.getMaxHealth(), 10 + player.attributeBonuses["constitution"] + 30 - PATTERN_HEALTH)
+        wearPattern(self.player)
+        self.assertEqual(self.player.getMaxHealth(), 1, "a fresh character has under 16")
+        self.player.equipment["Chest"] = items.equipment("Health", "Big Coat", "Chest", 30, "")
+        self.assertEqual(self.player.getMaxHealth(), 10 + self.player.attributeBonuses["constitution"] + 30 - PATTERN_HEALTH)
 
     def test_putting_it_on_hurt_never_kills_you(self):
-        player = self.player
-        player.damageTaken = 5
-        wearPattern(player)
-        self.assertEqual(player.getCurrentHealth(), 1)
+        self.player.damageTaken = 5
+        wearPattern(self.player)
+        self.assertEqual(self.player.getCurrentHealth(), 1)
 
     def test_each_free_hand_gives_speed_and_pitch(self):
-        player = self.player
-        baseSpeed = player.getSpeed()
-        self.assertEqual(player.pitchDamage(), 0)
-        wearPattern(player)
-        self.assertEqual(player.freeHands(), 2)
-        self.assertAlmostEqual(player.getSpeed(), baseSpeed + 2 * relics.SEALED_PATTERN_SPEED)
-        self.assertEqual(player.pitchDamage(), 2 * relics.SEALED_PATTERN_PITCH)
-        player.equipment["Right Hand"] = sword()
-        self.assertAlmostEqual(player.getSpeed(), baseSpeed + relics.SEALED_PATTERN_SPEED)
-        self.assertEqual(player.pitchDamage(), relics.SEALED_PATTERN_PITCH)
-        player.equipment["Left Hand"] = sword()
-        self.assertAlmostEqual(player.getSpeed(), baseSpeed)
-        self.assertEqual(player.pitchDamage(), 0)
+        baseSpeed = self.player.getSpeed()
+        self.assertEqual(self.player.pitchDamage(), 0)
+        wearPattern(self.player)
+        self.assertEqual(self.player.freeHands(), 2)
+        self.assertAlmostEqual(self.player.getSpeed(), baseSpeed + 2 * relics.SEALED_PATTERN_SPEED)
+        self.assertEqual(self.player.pitchDamage(), 2 * relics.SEALED_PATTERN_PITCH)
+        self.player.equipment["Right Hand"] = sword()
+        self.assertAlmostEqual(self.player.getSpeed(), baseSpeed + relics.SEALED_PATTERN_SPEED)
+        self.assertEqual(self.player.pitchDamage(), relics.SEALED_PATTERN_PITCH)
+        self.player.equipment["Left Hand"] = sword()
+        self.assertAlmostEqual(self.player.getSpeed(), baseSpeed)
+        self.assertEqual(self.player.pitchDamage(), 0)
 
     def test_a_third_hand_counts_when_free(self):
-        player = self.player
-        player.equipment["Back"] = relics.make("vestigial_hand")
-        wearPattern(player)
-        self.assertEqual(player.freeHands(), 3)
-        self.assertEqual(player.pitchDamage(), 3 * relics.SEALED_PATTERN_PITCH)
+        self.player.equipment["Back"] = relics.make("vestigial_hand")
+        wearPattern(self.player)
+        self.assertEqual(self.player.freeHands(), 3)
+        self.assertEqual(self.player.pitchDamage(), 3 * relics.SEALED_PATTERN_PITCH)
 
 
 class PitchHitTests(SealedPatternTest):
@@ -296,9 +286,8 @@ class PitchHitTests(SealedPatternTest):
 class PitchBoltTests(SealedPatternTest):
     def setUp(self):
         super().setUp()
-        game = self.game
         for step in range(1, 7):
-            game.grid[self.here + step] = [FLOOR, 1]
+            self.game.grid[self.here + step] = [FLOOR, 1]
 
     def test_f_is_the_pitch_bolt_by_default(self):
         self.assertEqual(settings.DEFAULT_HOTKEYS["pitch_bolt"], pygame.K_f)
@@ -310,94 +299,87 @@ class PitchBoltTests(SealedPatternTest):
         self.assertFalse(self.game.enemyMove)
 
     def test_f_aims_and_enter_fires_at_the_first_enemy_in_the_way(self):
-        game = self.game
         wearPattern(self.player)
         goblin = self.putEnemy(self.here + 2, Goblin())
         goblin.hp = 50
         behind = self.putEnemy(self.here + 3, Goblin())
         behind.hp = 50
-        keyDown(game, pygame.K_f)
-        self.assertEqual(game.throwing, gamemanager.PITCH_BOLT)
-        self.assertEqual(game.throwView()["aim"]["effect"], "Pitch")
-        self.assertEqual(game.throwView()["aim"]["area"], [self.here + 1], "one space, nothing around it")
-        keyDown(game, pygame.K_RIGHT)
-        keyDown(game, pygame.K_RIGHT)
-        self.assertEqual(game.throwView()["aim"]["area"], [self.here + 2])
+        keyDown(self.game, pygame.K_f)
+        self.assertEqual(self.game.throwing, gamemanager.PITCH_BOLT)
+        self.assertEqual(self.game.throwView()["aim"]["effect"], "Pitch")
+        self.assertEqual(self.game.throwView()["aim"]["area"], [self.here + 1], "one space, nothing around it")
+        keyDown(self.game, pygame.K_RIGHT)
+        keyDown(self.game, pygame.K_RIGHT)
+        self.assertEqual(self.game.throwView()["aim"]["area"], [self.here + 2])
         inventoryBefore = list(self.player.inventory)
-        keyDown(game, pygame.K_RETURN)
-        self.assertIsNone(game.throwing)
+        keyDown(self.game, pygame.K_RETURN)
+        self.assertIsNone(self.game.throwing)
         self.assertEqual(goblin.hp, 50 - relics.PITCH_BOLT_DAMAGE)
         self.assertEqual(behind.hp, 50, "no splash")
         self.assertEqual(self.player.inventory, inventoryBefore, "it uses nothing up")
 
     def test_f_again_fires(self):
-        game = self.game
         wearPattern(self.player)
         goblin = self.putEnemy(self.here + 1, Goblin())
         goblin.hp = 50
-        keyDown(game, pygame.K_f)
-        keyDown(game, pygame.K_f)
-        self.assertIsNone(game.throwing)
+        keyDown(self.game, pygame.K_f)
+        keyDown(self.game, pygame.K_f)
+        self.assertIsNone(self.game.throwing)
         self.assertEqual(goblin.hp, 50 - relics.PITCH_BOLT_DAMAGE)
 
     def test_unsealed_resist_the_bolt(self):
-        game = self.game
         wearPattern(self.player)
         unsealed = self.putEnemy(self.here + 1, Unsealed())
         unsealed.hp = 50
-        keyDown(game, pygame.K_f)
-        keyDown(game, pygame.K_RETURN)
+        keyDown(self.game, pygame.K_f)
+        keyDown(self.game, pygame.K_RETURN)
         self.assertEqual(unsealed.hp, 50 - round(relics.PITCH_BOLT_DAMAGE * (1 - enemies.PITCH_RESIST_UNSEALED)))
 
     def test_it_never_harms_walls(self):
-        game = self.game
         wearPattern(self.player)
         stone = wall.StoneWall()
-        game.grid[self.here + 2] = [WALL, 1, stone]
+        self.game.grid[self.here + 2] = [WALL, 1, stone]
         hpBefore = stone.hp
-        keyDown(game, pygame.K_f)
-        keyDown(game, pygame.K_RIGHT)
-        keyDown(game, pygame.K_RIGHT)
-        keyDown(game, pygame.K_RETURN)
-        self.assertEqual(game.grid[self.here + 2][0], WALL)
+        keyDown(self.game, pygame.K_f)
+        keyDown(self.game, pygame.K_RIGHT)
+        keyDown(self.game, pygame.K_RIGHT)
+        keyDown(self.game, pygame.K_RETURN)
+        self.assertEqual(self.game.grid[self.here + 2][0], WALL)
         self.assertEqual(stone.hp, hpBefore)
 
     def test_a_far_bolt_flies_like_a_throw(self):
-        game = self.game
         wearPattern(self.player)
         goblin = self.putEnemy(self.here + 5, Goblin())
         goblin.hp = 50
         goblin.speed = 0  # (it stays put while the bolt flies)
-        game.startPitchBolt()
-        game.currentAimSpot = self.here + 5
-        game.refreshThrowAim()
-        game.throw()
+        self.game.startPitchBolt()
+        self.game.currentAimSpot = self.here + 5
+        self.game.refreshThrowAim()
+        self.game.throw()
         self.assertEqual(goblin.hp, 50, "still in the air")
-        self.assertEqual(game.throwView()["flying"][0]["effect"], "Pitch")
+        self.assertEqual(self.game.throwView()["flying"][0]["effect"], "Pitch")
         for _ in range(3):
-            game.enemyTurn()
+            self.game.enemyTurn()
             if goblin.hp < 50:
                 break
         self.assertEqual(goblin.hp, 50 - relics.PITCH_BOLT_DAMAGE)
 
     def test_esc_puts_it_away(self):
-        game = self.game
         wearPattern(self.player)
-        keyDown(game, pygame.K_f)
-        keyDown(game, pygame.K_ESCAPE)
-        self.assertIsNone(game.throwing)
-        self.assertFalse(game.enemyMove)
+        keyDown(self.game, pygame.K_f)
+        keyDown(self.game, pygame.K_ESCAPE)
+        self.assertIsNone(self.game.throwing)
+        self.assertFalse(self.game.enemyMove)
 
     def test_it_draws(self):
-        game = self.game
         wearPattern(self.player)
         self.putEnemy(self.here + 1, Goblin()).hp = 50
-        game.messageBools = {name: False for name in game.messageBools}
-        keyDown(game, pygame.K_f)
-        game.draw()
-        keyDown(game, pygame.K_RETURN)
-        game.draw()
-        self.assertEqual(game.painter.effectColor("Pitch"), game.painter.PITCH_SHEEN)
+        self.game.messageBools = {name: False for name in self.game.messageBools}
+        keyDown(self.game, pygame.K_f)
+        self.game.draw()
+        keyDown(self.game, pygame.K_RETURN)
+        self.game.draw()
+        self.assertEqual(self.game.painter.effectColor("Pitch"), self.game.painter.PITCH_SHEEN)
 
 
 class BoltAnimationTests(SealedPatternTest):
@@ -410,81 +392,74 @@ class BoltAnimationTests(SealedPatternTest):
         wearPattern(self.player)
 
     def fireAt(self, spot, clock=1000):
-        game = self.game
-        game.startPitchBolt()
-        game.currentAimSpot = spot
-        game.refreshThrowAim()
+        self.game.startPitchBolt()
+        self.game.currentAimSpot = spot
+        self.game.refreshThrowAim()
         with mock.patch("pygame.time.get_ticks", return_value=clock):
-            game.throw()
+            self.game.throw()
 
     def test_a_close_bolt_glides_there_and_then_hits(self):
-        game = self.game
         self.putEnemy(self.here + 3, Goblin()).hp = 50
         self.fireAt(self.here + 3)
         glideMs = 3 * gamemanager.GLIDE_MS_PER_TILE
-        self.assertEqual(game.glides, [{"from": self.here, "to": self.here + 3, "start": 1000, "ms": glideMs, "shot": None}])
-        landing, radius, effect, start = game.explosions[-1]
+        self.assertEqual(self.game.glides, [{"from": self.here, "to": self.here + 3, "start": 1000, "ms": glideMs, "shot": None}])
+        landing, radius, effect, start = self.game.explosions[-1]
         self.assertEqual((landing, effect, start), (self.here + 3, "Pitch", 1000 + glideMs), "the hit waits for the bolt")
         with mock.patch("pygame.time.get_ticks", return_value=1000 + glideMs // 2):
-            view = game.throwView()
+            view = self.game.throwView()
         [(fromTile, toTile, progress)] = view["glides"]
         self.assertEqual((fromTile, toTile), (self.here, self.here + 3))
         self.assertAlmostEqual(progress, 0.5, places=1)
         self.assertLess(view["explosions"][-1][3], 0, "not hit yet")
 
     def test_a_far_bolt_glides_out_hangs_then_glides_onto_its_target(self):
-        game = self.game
         goblin = self.putEnemy(self.here + 6, Goblin())
         goblin.hp, goblin.speed = 50, 0
         self.fireAt(self.here + 6)
-        shot = game.inFlight[0]
-        self.assertIs(game.glides[0]["shot"], shot)
-        self.assertEqual(game.glides[0]["to"], game.shotSpot(shot))
-        self.assertEqual(game.shotSpot(shot), self.here + 4, "halfway along its 6 tiles, for its 1 turn in the air")
+        shot = self.game.inFlight[0]
+        self.assertIs(self.game.glides[0]["shot"], shot)
+        self.assertEqual(self.game.glides[0]["to"], self.game.shotSpot(shot))
+        self.assertEqual(self.game.shotSpot(shot), self.here + 4, "halfway along its 6 tiles, for its 1 turn in the air")
         with mock.patch("pygame.time.get_ticks", return_value=5000):
-            self.assertFalse(game.throwView()["flying"][0]["gliding"], "done gliding: it hangs there")
-            self.assertTrue(game.animating(), "still spinning")
+            self.assertFalse(self.game.throwView()["flying"][0]["gliding"], "done gliding: it hangs there")
+            self.assertTrue(self.game.animating(), "still spinning")
             for _ in range(3):
-                if game.inFlight:
-                    game.enemyTurn()
-        self.assertEqual(game.glides[-1]["to"], self.here + 6)
+                if self.game.inFlight:
+                    self.game.enemyTurn()
+        self.assertEqual(self.game.glides[-1]["to"], self.here + 6)
         self.assertEqual(goblin.hp, 50 - relics.PITCH_BOLT_DAMAGE)
 
     def test_it_is_drawn_as_the_bolt_sprite_on_its_way(self):
-        game = self.game
-        painter = game.painter
         self.putEnemy(self.here + 3, Goblin()).hp = 50
-        game.messageBools = {name: False for name in game.messageBools}
+        self.game.messageBools = {name: False for name in self.game.messageBools}
         self.fireAt(self.here + 3)
         halfway = 1000 + 3 * gamemanager.GLIDE_MS_PER_TILE // 2
-        with mock.patch("pygame.time.get_ticks", return_value=halfway),                 mock.patch.object(painter, "drawGlidingBolt", wraps=painter.drawGlidingBolt) as drawGlidingBolt:
-            game.draw()
+        with mock.patch("pygame.time.get_ticks", return_value=halfway),                 mock.patch.object(self.game.painter, "drawGlidingBolt", wraps=self.game.painter.drawGlidingBolt) as drawGlidingBolt:
+            self.game.draw()
         fromTile, toTile, progress, _ = drawGlidingBolt.call_args.args
         self.assertEqual((fromTile, toTile), (self.here, self.here + 3))
         self.assertAlmostEqual(progress, 0.5, places=1)
 
     def test_the_hit_frames_draw_over_the_target_after_it_arrives(self):
-        game = self.game
         self.putEnemy(self.here + 2, Goblin()).hp = 50
-        game.messageBools = {name: False for name in game.messageBools}
+        self.game.messageBools = {name: False for name in self.game.messageBools}
         self.fireAt(self.here + 2)
-        arrives = game.explosions[-1][3]
+        arrives = self.game.explosions[-1][3]
         for clock, expected in ((arrives - 10, []), (arrives + 10, [0]), (arrives + gamemanager.EXPLOSION_MS - 10, [2])):
             with mock.patch("pygame.time.get_ticks", return_value=clock),                     mock.patch.object(sprites, "pitchHitFrame", wraps=sprites.pitchHitFrame) as pitchHitFrame:
-                game.draw()
+                self.game.draw()
             self.assertEqual([frame for frame in (sprites.pitchHitFrame(call.args[0]) for call in pitchHitFrame.call_args_list)],
                              expected, clock)
 
     def test_bursts_of_other_throws_are_unchanged(self):
-        game = self.game
-        game.player.inventory = [recipes.RECIPES_BY_ID["fire_flask"].makeItem(0, 0)]
-        game.startThrow(0)
-        game.currentAimSpot = self.here + 2
-        game.refreshThrowAim()
+        self.game.player.inventory = [recipes.RECIPES_BY_ID["fire_flask"].makeItem(0, 0)]
+        self.game.startThrow(0)
+        self.game.currentAimSpot = self.here + 2
+        self.game.refreshThrowAim()
         with mock.patch("pygame.time.get_ticks", return_value=1000):
-            game.throw()
-        self.assertEqual(game.glides, [])
-        self.assertEqual(game.explosions[-1][2:], ["Fire", 1000])
+            self.game.throw()
+        self.assertEqual(self.game.glides, [])
+        self.assertEqual(self.game.explosions[-1][2:], ["Fire", 1000])
 
 
 if __name__ == "__main__":

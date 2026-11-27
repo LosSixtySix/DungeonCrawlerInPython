@@ -92,31 +92,29 @@ def lampTiles(game):
 def findSite(game, position, worker, width, height, round_=False):
     """The best site for a width x height building (see the top of this file; round_: a farmhouse, its box width
     across): its shape plus "margin" (the ring round it) and "rock" (its tiles to dig out). None if nothing fits."""
-    rowLength = game.rowLength
-    rowCount = len(game.grid) // rowLength
+    rowCount = len(game.grid) // game.rowLength
     shaft = shaftOf(game, position)
-    shaftColumn, shaftRow = shaft % rowLength, shaft // rowLength
+    shaftColumn, shaftRow = shaft % game.rowLength, shaft // game.rowLength
     reach = expansion.walkingDistances(game, shaft, SITE_REACH * 4)
     keepOff = set(getattr(worker, "fields", {})) | plannedTiles(getattr(worker, "plans", [])) | lampTiles(game) | \
         {shaft, game.playerPositionFlat}
-    clearing = mineshafts.CLEARING_RADIUS
     best = None
     for middleRow in range(shaftRow - SITE_REACH, shaftRow + SITE_REACH + 1):
         for middleColumn in range(shaftColumn - SITE_REACH, shaftColumn + SITE_REACH + 1):
             away = math.hypot(middleColumn - shaftColumn, middleRow - shaftRow)
-            if away > SITE_REACH or away < clearing + max(width, height):
+            if away > SITE_REACH or away < mineshafts.CLEARING_RADIUS + max(width, height):
                 continue
             left, top = middleColumn - width // 2, middleRow - height // 2
-            if left < 2 or top < 2 or left + width > rowLength - 2 or top + height > rowCount - 2:
+            if left < 2 or top < 2 or left + width > game.rowLength - 2 or top + height > rowCount - 2:
                 continue
-            site = farmhouses.shape(rowLength, middleColumn, middleRow, (shaftColumn, shaftRow)) if round_ else \
-                shape(rowLength, left, top, width, height, (shaftColumn, shaftRow))
+            site = farmhouses.shape(game.rowLength, middleColumn, middleRow, (shaftColumn, shaftRow)) if round_ else \
+                shape(game.rowLength, left, top, width, height, (shaftColumn, shaftRow))
             if site["outside"] not in reach:
                 continue
             rock = siteRock(game, site, keepOff)
             if rock is None:
                 continue
-            margin = mineshafts.withClearance(rowLength, left, top, width, height) - site["box"]
+            margin = mineshafts.withClearance(game.rowLength, left, top, width, height) - site["box"]
             if not marginFits(game, margin, keepOff - set(getattr(worker, "fields", {}))):
                 continue
             rock |= {spot for spot in margin if clearable(game.grid[spot])}
@@ -331,10 +329,10 @@ def build(game, position, worker, plan):
 
 def around(game, spot):
     """The up to eight tiles round spot (diagonals too; no wrapping round the map's edges)."""
-    rowLength = game.rowLength
-    column = spot % rowLength
-    return [spot + columnStep + rowStep * rowLength for rowStep in (-1, 0, 1) for columnStep in (-1, 0, 1)
-            if (columnStep or rowStep) and 0 <= column + columnStep < rowLength and spot + columnStep + rowStep * rowLength in game.grid]
+    column = spot % game.rowLength
+    return [spot + columnStep + rowStep * game.rowLength for rowStep in (-1, 0, 1) for columnStep in (-1, 0, 1)
+            if (columnStep or rowStep) and 0 <= column + columnStep < game.rowLength
+            and spot + columnStep + rowStep * game.rowLength in game.grid]
 
 
 def standingSpots(game, plan, spot):

@@ -45,59 +45,53 @@ class WalkingBetweenFloorsTests(unittest.TestCase):
         self.farmKey = (self.game.level, self.shaft)
 
     def climbFrom(self, spot, unit, shaft):
-        game = self.game
-        dewgrubs.placeUnit(game, spot, unit)
-        occupancy.lift(game, spot, unit)
-        livingfloors.climb(game, spot, unit, shaft)
+        dewgrubs.placeUnit(self.game, spot, unit)
+        occupancy.lift(self.game, spot, unit)
+        livingfloors.climb(self.game, spot, unit, shaft)
 
     def test_climbing_down_it_leaves_the_city_and_comes_out_by_the_farm_shaft_next_turn(self):
-        game = self.game
         citizen = enemies.DwellerCitizen()
-        spot = besideFree(game, self.shaft)
+        spot = besideFree(self.game, self.shaft)
         self.climbFrom(spot, citizen, self.shaft)
-        self.assertEqual(game.grid[spot][0], FLOOR, "the tile it climbed from is clear")
-        self.assertNotIn(citizen, [unit for _, unit in dwellers.cityDwellers(game)])
-        self.assertEqual(livingfloors.arrivals(game)[self.farmKey], [(citizen, self.shaft)])
-        game.enemyTurn()
-        self.assertIn(citizen, unitsOnFloor(game, self.farmKey))
-        self.assertNotIn(self.farmKey, livingfloors.arrivals(game))
-        with livingfloors.awayFloor(game, self.farmKey):
-            where = next(spot for spot, unit in occupancy.allUnits(game) if unit is citizen)
-            self.assertLessEqual(dwellers.distance(game, where, self.shaft), 2)
+        self.assertEqual(self.game.grid[spot][0], FLOOR, "the tile it climbed from is clear")
+        self.assertNotIn(citizen, [unit for _, unit in dwellers.cityDwellers(self.game)])
+        self.assertEqual(livingfloors.arrivals(self.game)[self.farmKey], [(citizen, self.shaft)])
+        self.game.enemyTurn()
+        self.assertIn(citizen, unitsOnFloor(self.game, self.farmKey))
+        self.assertNotIn(self.farmKey, livingfloors.arrivals(self.game))
+        with livingfloors.awayFloor(self.game, self.farmKey):
+            where = next(spot for spot, unit in occupancy.allUnits(self.game) if unit is citizen)
+            self.assertLessEqual(dwellers.distance(self.game, where, self.shaft), 2)
 
     def test_climbing_up_it_comes_out_in_the_city_by_the_shaft(self):
-        game = self.game
-        climbDown(game, "farm")  # (you're on the farm now: the city keeps going)
+        climbDown(self.game, "farm")  # (you're on the farm now: the city keeps going)
         citizen = enemies.DwellerCitizen()
-        spot = besideFree(game, self.shaft)
+        spot = besideFree(self.game, self.shaft)
         self.climbFrom(spot, citizen, self.shaft)
-        self.assertEqual(list(livingfloors.arrivals(game)), [game.level])
-        game.enemyTurn()
-        self.assertIn(citizen, unitsOnFloor(game, game.level))
+        self.assertEqual(list(livingfloors.arrivals(self.game)), [self.game.level])
+        self.game.enemyTurn()
+        self.assertIn(citizen, unitsOnFloor(self.game, self.game.level))
 
     def test_it_comes_out_on_the_floor_you_are_on(self):
-        game = self.game
-        climbDown(game, "farm")
+        climbDown(self.game, "farm")
         citizen = enemies.DwellerCitizen()
-        livingfloors.arrivals(game)[mineshafts.floorKey(game)] = [(citizen, self.shaft)]
-        game.enemyTurn()
-        self.assertIn(citizen, [unit for _, unit in dwellers.cityDwellers(game)])
+        livingfloors.arrivals(self.game)[mineshafts.floorKey(self.game)] = [(citizen, self.shaft)]
+        self.game.enemyTurn()
+        self.assertIn(citizen, [unit for _, unit in dwellers.cityDwellers(self.game)])
 
     def test_with_nowhere_to_stand_it_waits_another_turn(self):
-        game = self.game
         citizen = enemies.DwellerCitizen()
-        livingfloors.arrivals(game)[self.farmKey] = [(citizen, self.shaft)]
+        livingfloors.arrivals(self.game)[self.farmKey] = [(citizen, self.shaft)]
         with mock.patch.object(livingfloors, "nearestFree", lambda *arguments, **keywords: None):
-            game.enemyTurn()
-        self.assertEqual(livingfloors.arrivals(game)[self.farmKey], [(citizen, self.shaft)])
+            self.game.enemyTurn()
+        self.assertEqual(livingfloors.arrivals(self.game)[self.farmKey], [(citizen, self.shaft)])
 
     def test_who_is_on_the_way_is_saved_with_the_game(self):
-        game = self.game
         citizen = enemies.DwellerCitizen()
         citizen.name = "Traveller"
-        livingfloors.arrivals(game)[self.farmKey] = [(citizen, self.shaft)]
+        livingfloors.arrivals(self.game)[self.farmKey] = [(citizen, self.shaft)]
         path = os.path.join(tempfile.mkdtemp(), "save.pkl")
-        gamemanager.gameManager.saveGame(game, path)  # (cityGame turns saving off)
+        gamemanager.gameManager.saveGame(self.game, path)  # (cityGame turns saving off)
         loaded = support.newGame()
         self.assertTrue(loaded.loadGame(path))
         [(unit, shaft)] = livingfloors.arrivals(loaded)[self.farmKey]
@@ -135,78 +129,73 @@ class DewCarrierTests(unittest.TestCase):
             self.assertTrue(all(unit.role == "citizen" for unit in carriers))
 
     def test_beside_the_queen_it_feeds_her_all_its_dew(self):
-        game = self.game
-        spot = next(near for tile in game.footprint(self.anchor, 2) for near in game.neighbors(tile)
-                    if game.grid[near][0] == FLOOR)
+        spot = next(near for tile in self.game.footprint(self.anchor, 2) for near in self.game.neighbors(tile)
+                    if self.game.grid[near][0] == FLOOR)
         carrier = self.carrierAt(spot, dew=7)
-        occupancy.lift(game, spot, carrier)
-        self.assertEqual(queen.carrierTurn(game, spot, carrier), spot)
+        occupancy.lift(self.game, spot, carrier)
+        self.assertEqual(queen.carrierTurn(self.game, spot, carrier), spot)
         self.assertEqual((self.queen.dew, carrier.materials.get("dew", 0)), (7, 0))
 
     def test_empty_handed_it_walks_to_the_farm_shaft_and_climbs_down(self):
-        game = self.game
-        carrier = next(unit for _, unit in dwellers.cityDwellers(game) if unit.work == "dew")
+        carrier = next(unit for _, unit in dwellers.cityDwellers(self.game) if unit.work == "dew")
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0):
             for _ in range(300):
-                game.enemyTurn()
-                if carrier not in [unit for _, unit in dwellers.cityDwellers(game)]:
+                self.game.enemyTurn()
+                if carrier not in [unit for _, unit in dwellers.cityDwellers(self.game)]:
                     break
-        self.assertIn(carrier, unitsOnFloor(game, (game.level, self.shaft)) +
-                      [unit for waiting in livingfloors.arrivals(game).values() for unit, _ in waiting])
+        self.assertIn(carrier, unitsOnFloor(self.game, (self.game.level, self.shaft)) +
+                      [unit for waiting in livingfloors.arrivals(self.game).values() for unit, _ in waiting])
 
     def test_on_the_farm_it_takes_dew_from_a_chest_then_climbs_up(self):
-        game = self.game
-        climbDown(game, "farm")
-        chestSpot = dwellerwork.storageChests(game)[0]
-        game.grid[chestSpot][2].append(resources.MaterialStack("dew", 25))
-        carrier = self.carrierAt(besideFree(game, chestSpot))
-        spot = next(spot for spot, unit in dwellers.cityDwellers(game) if unit is carrier)
-        occupancy.lift(game, spot, carrier)
-        queen.carrierTurn(game, spot, carrier)
+        climbDown(self.game, "farm")
+        chestSpot = dwellerwork.storageChests(self.game)[0]
+        self.game.grid[chestSpot][2].append(resources.MaterialStack("dew", 25))
+        carrier = self.carrierAt(besideFree(self.game, chestSpot))
+        spot = next(spot for spot, unit in dwellers.cityDwellers(self.game) if unit is carrier)
+        occupancy.lift(self.game, spot, carrier)
+        queen.carrierTurn(self.game, spot, carrier)
         self.assertEqual(carrier.materials["dew"], queen.CARRY)
-        occupancy.settle(game, spot, carrier)
+        occupancy.settle(self.game, spot, carrier)
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0):
             for _ in range(80):
-                game.enemyTurn()  # (the city takes its turn after yours: it comes out there the same turn)
-                if carrier not in [unit for _, unit in dwellers.cityDwellers(game)]:
+                self.game.enemyTurn()  # (the city takes its turn after yours: it comes out there the same turn)
+                if carrier not in [unit for _, unit in dwellers.cityDwellers(self.game)]:
                     break
-        self.assertIn(carrier, unitsOnFloor(game, game.level), "up in the city")
+        self.assertIn(carrier, unitsOnFloor(self.game, self.game.level), "up in the city")
         self.assertEqual(carrier.materials["dew"], queen.CARRY)
 
     def test_finding_no_dew_it_goes_back_up_and_rests_before_trying_again(self):
-        game = self.game
-        climbDown(game, "farm")
-        for chestSpot in dwellerwork.storageChests(game):
-            game.grid[chestSpot][2][:] = [thing for thing in game.grid[chestSpot][2] if getattr(thing, "materialId", None) != "dew"]
-        carrier = self.carrierAt(besideFree(game, game.sideFloor[1]))
-        spot = next(spot for spot, unit in dwellers.cityDwellers(game) if unit is carrier)
-        occupancy.lift(game, spot, carrier)
-        queen.carrierTurn(game, spot, carrier)
-        self.assertGreater(carrier.restUntil, game.turnCount)
+        climbDown(self.game, "farm")
+        for chestSpot in dwellerwork.storageChests(self.game):
+            self.game.grid[chestSpot][2][:] = [thing for thing in self.game.grid[chestSpot][2]
+                                               if getattr(thing, "materialId", None) != "dew"]
+        carrier = self.carrierAt(besideFree(self.game, self.game.sideFloor[1]))
+        spot = next(spot for spot, unit in dwellers.cityDwellers(self.game) if unit is carrier)
+        occupancy.lift(self.game, spot, carrier)
+        queen.carrierTurn(self.game, spot, carrier)
+        self.assertGreater(carrier.restUntil, self.game.turnCount)
         self.assertTrue(livingfloors.leaving(carrier), "it climbed straight back up")
-        game.onEnter()  # (you go back up too)
+        self.game.onEnter()  # (you go back up too)
         carrier.climbing = False
-        self.assertIsNone(queen.carrierTurn(game, self.anchor + 5, carrier), "resting: it goes about the city")
+        self.assertIsNone(queen.carrierTurn(self.game, self.anchor + 5, carrier), "resting: it goes about the city")
 
     def test_only_a_few_go_down_at_a_time_so_they_do_not_crowd_the_farmers(self):
-        game = self.game
-        away = queen.carriersAway(game, self.queen)
+        away = queen.carriersAway(self.game, self.queen)
         for _ in range(2):  # (two down on the farm already: the most at a time)
-            away[enemies.DwellerCitizen()] = game.turnCount
-        carrier = self.carrierAt(besideFree(game, self.shaft))
-        spot = next(spot for spot, unit in dwellers.cityDwellers(game) if unit is carrier)
-        occupancy.lift(game, spot, carrier)
-        self.assertIsNone(queen.carrierTurn(game, spot, carrier), "it waits its turn")
-        game.turnCount += queen.AWAY_LIMIT + 1  # (the ones down there have been gone too long: maybe dead)
-        queen.carrierTurn(game, spot, carrier)
+            away[enemies.DwellerCitizen()] = self.game.turnCount
+        carrier = self.carrierAt(besideFree(self.game, self.shaft))
+        spot = next(spot for spot, unit in dwellers.cityDwellers(self.game) if unit is carrier)
+        occupancy.lift(self.game, spot, carrier)
+        self.assertIsNone(queen.carrierTurn(self.game, spot, carrier), "it waits its turn")
+        self.game.turnCount += queen.AWAY_LIMIT + 1  # (the ones down there have been gone too long: maybe dead)
+        queen.carrierTurn(self.game, spot, carrier)
         self.assertTrue(livingfloors.leaving(carrier), "beside the shaft, it climbs down")
-        self.assertEqual(list(queen.carriersAway(game, self.queen)), [carrier])
+        self.assertEqual(list(queen.carriersAway(self.game, self.queen)), [carrier])
 
     def test_with_no_queen_it_is_just_a_citizen(self):
-        game = self.game
-        game.killEnemy(self.anchor, killer=None)
-        carrier = self.carrierAt(besideFree(game, self.shaft))
-        self.assertIsNone(queen.carrierTurn(game, self.shaft, carrier))
+        self.game.killEnemy(self.anchor, killer=None)
+        carrier = self.carrierAt(besideFree(self.game, self.shaft))
+        self.assertIsNone(queen.carrierTurn(self.game, self.shaft, carrier))
 
 
 if __name__ == "__main__":

@@ -31,18 +31,16 @@ class FogDrawingTests(unittest.TestCase):
         self.assertIsNot(self.fog.layersFor((99, 20, 30), (640, 480)), firstLayers)
 
     def test_drawing_the_fog_leaves_the_top_of_the_screen_alone(self):
-        screen = self.screen
-        screen.fill((0, 0, 0))
-        self.fog.draw(screen, (255, 255, 255))
-        self.assertEqual(tuple(screen.get_at((320, 5)))[:3], (0, 0, 0))
-        bottomRow = {tuple(screen.get_at((pixelX, 470)))[:3] for pixelX in range(0, 640, 8)}
+        self.screen.fill((0, 0, 0))
+        self.fog.draw(self.screen, (255, 255, 255))
+        self.assertEqual(tuple(self.screen.get_at((320, 5)))[:3], (0, 0, 0))
+        bottomRow = {tuple(self.screen.get_at((pixelX, 470)))[:3] for pixelX in range(0, 640, 8)}
         self.assertNotEqual(bottomRow, {(0, 0, 0)})  # the fog shows near the floor
 
     def test_fog_at_zero_alpha_is_invisible(self):
-        screen = self.screen
-        screen.fill((0, 0, 0))
-        self.fog.draw(screen, (255, 255, 255), alpha=0)
-        bottomRow = {tuple(screen.get_at((pixelX, 470)))[:3] for pixelX in range(0, 640, 8)}
+        self.screen.fill((0, 0, 0))
+        self.fog.draw(self.screen, (255, 255, 255), alpha=0)
+        bottomRow = {tuple(self.screen.get_at((pixelX, 470)))[:3] for pixelX in range(0, 640, 8)}
         self.assertEqual(bottomRow, {(0, 0, 0)})
 
 

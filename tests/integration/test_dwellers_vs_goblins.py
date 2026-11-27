@@ -95,15 +95,14 @@ class GuardTests(EnemyTest):
         self.assertIsNone(dwellers.enemyInSight(self.game, self.spot(40, 30), guard))
 
     def test_a_guard_hunting_you_puts_you_first(self):
-        game = self.game
-        support.placePlayer(game, self.spot(39, 30))
+        support.placePlayer(self.game, self.spot(39, 30))
         guard = self.place(enemies.DwellerGuard(), 40, 30)
         goblin = self.place(self.factionGoblin(), 41, 30)
-        dwellers.turnHostile(game, guard, game.playerPositionFlat)
-        game.player.evasion = lambda: 0
-        game.player.damageTaken = 0
-        dwellers.takeTurn(game, self.spot(40, 30), guard)
-        self.assertGreater(game.player.damageTaken, 0)
+        dwellers.turnHostile(self.game, guard, self.game.playerPositionFlat)
+        self.game.player.evasion = lambda: 0
+        self.game.player.damageTaken = 0
+        dwellers.takeTurn(self.game, self.spot(40, 30), guard)
+        self.assertGreater(self.game.player.damageTaken, 0)
         self.assertEqual(goblin.hp, goblin.maxHp)
 
 
@@ -136,14 +135,13 @@ class AlarmTests(EnemyTest):
         self.assertEqual(goblin.hp, goblin.maxHp - citizen.damage)
 
     def test_a_citizen_that_sees_an_enemy_tells_a_guard_and_the_guard_goes_after_it(self):
-        game = self.game
         guard = self.place(enemies.DwellerGuard(), 20, 30)
         for row in range(20, 41):  # the guard can't see the goblin from its post
             self.wall(30, row)
         citizen = self.place(enemies.DwellerCitizen(), 34, 30)
         goblin = self.place(enemies.Goblin(), 38, 30)
         goblin.speed = 0  # (no actions: it stays where the citizen saw it, so the guard finds it there)
-        self.assertIsNone(dwellers.enemyInSight(game, self.spot(20, 30), guard))
+        self.assertIsNone(dwellers.enemyInSight(self.game, self.spot(20, 30), guard))
         # (the citizen has to go round the wall to reach the guard: about 40 steps)
         self.assertTrue(self.runTurns(70, until=lambda: guard.enemyAt is not None or goblin.hp < goblin.maxHp), "the citizen told it")
         self.assertIsNone(citizen.enemyAt, "having told it, it goes back to its day")

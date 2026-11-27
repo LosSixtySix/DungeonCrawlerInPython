@@ -912,17 +912,16 @@ STATION_SPRITES = {"smelter": (SMELTER, SMELTER_COLORS), "anvil": (ANVIL, ANVIL_
 
 
 def roles(colors, base):
-    mix = themes.mix
     black, white = [0, 0, 0], [255, 255, 255]
     return {
-        "k": mix(colors["fog"], black, 0.5),
-        "d": mix(base, black, 0.6), "m": mix(base, black, 0.35), "c": base,
-        "l": mix(base, white, 0.25), "W": mix(base, white, 0.55),
-        "g": mix(colors["wallGold"], black, 0.2),
-        "S": mix(colors["wallStone"], white, 0.08), "s": mix(colors["wallStone"], black, 0.3),
-        "n": colors["wallWood"], "N": mix(colors["wallWood"], black, 0.4),
+        "k": themes.mix(colors["fog"], black, 0.5),
+        "d": themes.mix(base, black, 0.6), "m": themes.mix(base, black, 0.35), "c": base,
+        "l": themes.mix(base, white, 0.25), "W": themes.mix(base, white, 0.55),
+        "g": themes.mix(colors["wallGold"], black, 0.2),
+        "S": themes.mix(colors["wallStone"], white, 0.08), "s": themes.mix(colors["wallStone"], black, 0.3),
+        "n": colors["wallWood"], "N": themes.mix(colors["wallWood"], black, 0.4),
         "h": (0, 0, 0, 115), "H": (0, 0, 0, 64),
-        "a": (*mix(base, white, 0.2), 130), "b": (*mix(base, white, 0.35), 200), "w": (255, 255, 255, 230),
+        "a": (*themes.mix(base, white, 0.2), 130), "b": (*themes.mix(base, white, 0.35), 200), "w": (255, 255, 255, 230),
     }
 
 
@@ -934,9 +933,8 @@ def chestRoles(colors, base, stud):
 
 
 def playerRoles(colors):
-    mix = themes.mix
     base = list(PLAYER_COLOR)
-    return {"k": mix(colors["fog"], [0, 0, 0], 0.5), "c": mix(base, [0, 0, 0], 0.22), "C": mix(base, [0, 0, 0], 0.5),
+    return {"k": themes.mix(colors["fog"], [0, 0, 0], 0.5), "c": themes.mix(base, [0, 0, 0], 0.22), "C": themes.mix(base, [0, 0, 0], 0.5),
             "l": base, "h": (58, 42, 32), "s": (201, 160, 122), "n": (122, 82, 50), "f": (255, 160, 60), "F": (255, 236, 160)}
 
 
@@ -988,9 +986,8 @@ def unsealedFrame(colors, frame):
 
 
 def pitRoles(floor):
-    mix = themes.mix
-    return {"L": mix(floor, [255, 255, 255], 0.12), "a": mix(floor, [0, 0, 0], 0.3), "b": mix(floor, [0, 0, 0], 0.55),
-            "k": mix(floor, [0, 0, 0], 0.82)}
+    return {"L": themes.mix(floor, [255, 255, 255], 0.12), "a": themes.mix(floor, [0, 0, 0], 0.3), "b": themes.mix(floor, [0, 0, 0], 0.55),
+            "k": themes.mix(floor, [0, 0, 0], 0.82)}
 
 
 def makePit(style, floor, tileSize):

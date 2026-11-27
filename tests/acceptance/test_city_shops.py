@@ -42,38 +42,34 @@ class ShopWindowTests(unittest.TestCase):
         return column + row * self.rowLength
 
     def test_interacting_with_a_merchant_opens_its_shop(self):
-        game = self.game
-        game.onInteract()
-        self.assertEqual(game.focus, "shop")
-        self.assertEqual(game.windowSpec("shop")["title"], "Ore Exchange")
+        self.game.onInteract()
+        self.assertEqual(self.game.focus, "shop")
+        self.assertEqual(self.game.windowSpec("shop")["title"], "Ore Exchange")
         self.assertEqual(self.merchant.hp, self.merchant.maxHp)
 
     def test_buying_a_lot_puts_it_in_your_pouch(self):
-        game = self.game
-        game.player.gold = 100
-        game.onInteract()
+        self.game.player.gold = 100
+        self.game.onInteract()
         price = self.merchant.wares[0].price
-        game.shopEnter()
-        self.assertEqual(game.player.materials.get("iron_ore"), 5)
-        self.assertEqual(game.player.gold, 100 - price)
+        self.game.shopEnter()
+        self.assertEqual(self.game.player.materials.get("iron_ore"), 5)
+        self.assertEqual(self.game.player.gold, 100 - price)
 
     def test_a_full_pouch_cannot_take_a_lot(self):
-        game = self.game
-        game.player.gold = 100
-        game.player.materials["iron_ore"] = game.player.pouchLimit - 2
-        game.onInteract()
-        game.shopEnter()
-        self.assertEqual(game.shopMessage, "No room in your pouch")
+        self.game.player.gold = 100
+        self.game.player.materials["iron_ore"] = self.game.player.pouchLimit - 2
+        self.game.onInteract()
+        self.game.shopEnter()
+        self.assertEqual(self.game.shopMessage, "No room in your pouch")
 
     def test_the_sell_tab_only_lists_what_the_shop_buys_at_its_rate(self):
-        game = self.game
-        game.player.addItemToInventory(recipes.RECIPES_BY_ID["iron_sword"].build("Common"))
-        game.player.materials = {"iron_ore": 13, "wood": 40}
-        game.onInteract()
-        game.toggleShopTab()
-        self.assertEqual(game.shopEntries(), [("material", "iron_ore")])
-        game.shopEnter(everything=True)
-        self.assertEqual(game.player.materials["iron_ore"], 1, "two lots of 6")
+        self.game.player.addItemToInventory(recipes.RECIPES_BY_ID["iron_sword"].build("Common"))
+        self.game.player.materials = {"iron_ore": 13, "wood": 40}
+        self.game.onInteract()
+        self.game.toggleShopTab()
+        self.assertEqual(self.game.shopEntries(), [("material", "iron_ore")])
+        self.game.shopEnter(everything=True)
+        self.assertEqual(self.game.player.materials["iron_ore"], 1, "two lots of 6")
 
     def pressInteract(self, modifierKeys=0):
         key = self.game.settings.hotkeys["interact"]
@@ -81,86 +77,79 @@ class ShopWindowTests(unittest.TestCase):
         self.game.onKeyUp(pygame.event.Event(pygame.KEYUP, key=key, mod=modifierKeys))
 
     def test_the_interact_key_opens_the_shop_and_then_buys(self):
-        game = self.game
-        game.player.gold = 100
+        self.game.player.gold = 100
         self.pressInteract()
-        self.assertEqual(game.focus, "shop")
-        self.assertEqual(game.player.materials.get("iron_ore"), None, "opening the shop buys nothing")
+        self.assertEqual(self.game.focus, "shop")
+        self.assertEqual(self.game.player.materials.get("iron_ore"), None, "opening the shop buys nothing")
         self.pressInteract()
-        self.assertEqual(game.player.materials.get("iron_ore"), 5)
+        self.assertEqual(self.game.player.materials.get("iron_ore"), 5)
 
     def test_ctrl_interact_sells_every_whole_lot(self):
-        game = self.game
-        game.player.materials = {"iron_ore": 20}
+        self.game.player.materials = {"iron_ore": 20}
         self.pressInteract()
-        game.toggleShopTab()
+        self.game.toggleShopTab()
         self.pressInteract(pygame.KMOD_LCTRL)
-        self.assertEqual(game.player.materials["iron_ore"], 2, "three lots of 6")
+        self.assertEqual(self.game.player.materials["iron_ore"], 2, "three lots of 6")
 
     def test_the_hints_name_the_interact_key(self):
-        game = self.game
         self.pressInteract()
-        hints = [text for style, text, _ in game.windowSpec("shop")["detail"] if style == "hint"]
-        self.assertEqual(hints, [f"{game.interactKeyName()}  buy      Tab  sell"])
+        hints = [text for style, text, _ in self.game.windowSpec("shop")["detail"] if style == "hint"]
+        self.assertEqual(hints, [f"{self.game.interactKeyName()}  buy      Tab  sell"])
 
     def test_attacking_a_merchant_turns_it_hostile_and_closes_its_shop(self):
-        game = self.game
-        game.enemyDodge = lambda target, damage, position: damage
-        game.player.DealDamage = lambda: 3
-        game.onInteract()
-        game.onInteract(forceAttack=True)
+        self.game.enemyDodge = lambda target, damage, position: damage
+        self.game.player.DealDamage = lambda: 3
+        self.game.onInteract()
+        self.game.onInteract(forceAttack=True)
         self.assertTrue(self.merchant.hostile)
-        game.enemyTurn()
-        self.assertNotIn("shop", game.openWindows)
+        self.game.enemyTurn()
+        self.assertNotIn("shop", self.game.openWindows)
         self.assertFalse(cityshops.isTrader(self.merchant))
 
     def test_a_dead_merchants_stock_stays_in_a_city_chest(self):
-        game = self.game
-        game.killEnemy(self.merchantSpot)
-        tile = game.grid[self.merchantSpot]
+        self.game.killEnemy(self.merchantSpot)
+        tile = self.game.grid[self.merchantSpot]
         self.assertEqual(tile[0], CHEST)
         self.assertIsInstance(tile[2], items.CityChest)
         self.assertEqual(sorted((stack.materialId, stack.amount) for stack in tile[2]), [("coal", 5), ("iron_ore", 5)])
 
     def test_taking_a_dead_merchants_stock_in_sight_of_someone_is_stealing(self):
-        game = self.game
-        game.killEnemy(self.merchantSpot)
+        self.game.killEnemy(self.merchantSpot)
         watching = enemies.DwellerCitizen()
         watching.home = self.spot(33, 21)
-        game.grid[self.spot(33, 21)] = [ENEMY, 1, watching]
-        game.EnemyPositions.add(self.spot(33, 21))
-        game.roomItems = game.getItemsFromGrid()
-        game.windowSel["items"] = 0
-        game.pickUpItem()
+        self.game.grid[self.spot(33, 21)] = [ENEMY, 1, watching]
+        self.game.EnemyPositions.add(self.spot(33, 21))
+        self.game.roomItems = self.game.getItemsFromGrid()
+        self.game.windowSel["items"] = 0
+        self.game.pickUpItem()
         self.assertTrue(watching.hostile)
 
     def test_looking_at_a_merchant_names_its_shop(self):
         self.assertEqual(self.game.lookingAt(), "Dweller Merchant (Ore Exchange)")
 
     def test_with_nothing_to_sell_the_message_is_beside_the_buy_and_sell_tabs(self):
-        game = self.game
-        game.player.materials = {}
-        game.onInteract()
-        game.toggleShopTab()
-        emptyText = game.windowSpec("shop")["emptyText"]
-        self.assertEqual(game.windowSpec("shop")["slots"], [], "nothing to sell")
+        self.game.player.materials = {}
+        self.game.onInteract()
+        self.game.toggleShopTab()
+        emptyText = self.game.windowSpec("shop")["emptyText"]
+        self.assertEqual(self.game.windowSpec("shop")["slots"], [], "nothing to sell")
         drawn = []
-        original = game.painter.blitText
+        original = self.game.painter.blitText
 
         def recordText(surface, message, font, color, x, centerY, align="left"):
             drawn.append((str(message), x, centerY))
             return original(surface, message, font, color, x, centerY, align)
 
-        with mock.patch.object(game.painter, "blitText", side_effect=recordText):
-            game.change = True
-            game.draw()
+        with mock.patch.object(self.game.painter, "blitText", side_effect=recordText):
+            self.game.change = True
+            self.game.draw()
         sellTab = next((x, centerY) for message, x, centerY in drawn if message == "Sell")
         messages = [(x, centerY) for message, x, centerY in drawn if message == emptyText]
         beside = [(x, centerY) for x, centerY in messages if centerY == sellTab[1]]
         self.assertTrue(beside, "on the tabs' row")
-        self.assertGreater(beside[0][0], sellTab[0] + game.painter.windowSmallFont.size("Sell")[0], "to the right of them")
+        self.assertGreater(beside[0][0], sellTab[0] + self.game.painter.windowSmallFont.size("Sell")[0], "to the right of them")
         buyTabX = next(x for message, x, centerY in drawn if message == "Buy")
-        slotsRight = buyTabX + 5 * game.painter.BOX_W  # (the slots start under the Buy tab)
+        slotsRight = buyTabX + 5 * self.game.painter.BOX_W  # (the slots start under the Buy tab)
         self.assertFalse([x for x, centerY in messages if centerY != sellTab[1] and x < slotsRight], "not over the empty slots")
 
 
@@ -184,22 +173,20 @@ class ShopSignTests(unittest.TestCase):
         self.assertEqual(sorted(kind for _, kind in self.signs()), sorted(merchant.shopKind for merchant in merchants))
 
     def test_a_sign_blocks_the_way_and_says_the_shop_name(self):
-        game = self.game
         signSpot, kind = self.signs()[0]
-        support.placePlayer(game, next(spot for spot in game.neighbors(signSpot) if game.grid[spot][0] == FLOOR))
-        before = game.playerPositionFlat
-        game.movePlayer(signSpot)
-        self.assertEqual(game.playerPositionFlat, before)
-        game.PlayerLookPosition = signSpot
-        self.assertEqual(game.lookingAt(), f"Sign: {cityshops.shopName(kind)}")
+        support.placePlayer(self.game, next(spot for spot in self.game.neighbors(signSpot) if self.game.grid[spot][0] == FLOOR))
+        before = self.game.playerPositionFlat
+        self.game.movePlayer(signSpot)
+        self.assertEqual(self.game.playerPositionFlat, before)
+        self.game.PlayerLookPosition = signSpot
+        self.assertEqual(self.game.lookingAt(), f"Sign: {cityshops.shopName(kind)}")
 
     def test_the_city_with_its_signs_draws(self):
-        game = self.game
-        for tile in game.grid.values():
+        for tile in self.game.grid.values():
             tile[1] = 1
-        game.change = True
-        game.setPositionsVisible()
-        game.draw()
+        self.game.change = True
+        self.game.setPositionsVisible()
+        self.game.draw()
 
 
 if __name__ == "__main__":

@@ -15,26 +15,24 @@ from tests.helpers.queen import BesideTheQueen
 
 class QueenInHerChamberTests(BesideTheQueen):
     def test_she_is_drawn_from_her_own_picture_over_her_four_tiles(self):
-        game = self.game
-        with mock.patch.object(renderer.renderer, "giantQuarter", wraps=game.painter.giantQuarter) as giantQuarter:
-            game.change = True
-            game.draw()
+        with mock.patch.object(renderer.renderer, "giantQuarter", wraps=self.game.painter.giantQuarter) as giantQuarter:
+            self.game.change = True
+            self.game.draw()
         drawnFor = {call.args[0] for call in giantQuarter.call_args_list if call.args[1] is self.queen}
-        self.assertTrue(drawnFor and drawnFor <= set(game.footprint(self.anchor, 2)))
+        self.assertTrue(drawnFor and drawnFor <= set(self.game.footprint(self.anchor, 2)))
 
     def test_you_hit_her_she_turns_on_you_and_hits_back(self):
-        game = self.game
-        self.assertEqual(game.lookingAt().split(" (")[0], "Dweller Queen")
-        game.player.DealDamage = lambda: 5
-        game.enemyDodge = lambda target, damage, position: damage
-        game.player.evasion = lambda: 0
-        game.onInteract()
+        self.assertEqual(self.game.lookingAt().split(" (")[0], "Dweller Queen")
+        self.game.player.DealDamage = lambda: 5
+        self.game.enemyDodge = lambda target, damage, position: damage
+        self.game.player.evasion = lambda: 0
+        self.game.onInteract()
         self.assertTrue(self.queen.hostile)
         self.assertEqual(self.queen.hp, self.queen.maxHp - 5)
-        game.player.damageTaken = 0
-        game.enemyTurn()
-        self.assertGreater(game.player.damageTaken, 0, "she hits back")
-        self.assertEqual(queen.courtOf(game), (self.anchor, self.queen), "without moving")
+        self.game.player.damageTaken = 0
+        self.game.enemyTurn()
+        self.assertGreater(self.game.player.damageTaken, 0, "she hits back")
+        self.assertEqual(queen.courtOf(self.game), (self.anchor, self.queen), "without moving")
 
 
 class HatchingCityTests(unittest.TestCase):

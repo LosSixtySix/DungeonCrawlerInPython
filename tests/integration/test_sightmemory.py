@@ -28,10 +28,9 @@ def afresh(game):
 def remembered(game):
     """The same, as setPositionsVisible works them out now."""
     game.setPositionsVisible()
-    memory = game.sightMemory
-    seen = game.yourSight(game.player.getVisionRange(), memory)
+    seen = game.yourSight(game.player.getVisionRange(), game.sightMemory)
     return seen, dict(game.fireLight), dict(game.glowLight), \
-        game.seenFromAfar(set(game.fireLight) | set(game.glowLight), seen, memory), game.darkSight
+        game.seenFromAfar(set(game.fireLight) | set(game.glowLight), seen, game.sightMemory), game.darkSight
 
 
 class SameAsAfreshTests(unittest.TestCase):
@@ -49,7 +48,6 @@ class SameAsAfreshTests(unittest.TestCase):
         game = support.newGame(level=2)
         game.saveGame = lambda *arguments, **keywords: None
         here = game.playerPositionFlat
-        rowLength = game.rowLength
         floors = [spot for spot, tile in game.grid.items() if tile[0] == FLOOR]
         for spot in random.sample(floors, 6):
             game.grid[spot] = [PILE, 0, items.ItemPile([items.consumable("Glowrock", 0, items.GLOW)])]
@@ -57,7 +55,7 @@ class SameAsAfreshTests(unittest.TestCase):
             for turn in range(30):
                 game.enemyTurn()
                 if turn % 5 == 0:
-                    game.smoke = {here + rowLength * 2 + turn % 3: 3}
+                    game.smoke = {here + game.rowLength * 2 + turn % 3: 3}
                 if turn % 7 == 0:
                     walls = [spot for spot, tile in game.grid.items() if tile[0] == WALL]
                     game.grid[min(walls, key=lambda spot: abs(spot - here))] = [FLOOR, 1]
@@ -77,8 +75,7 @@ class RedrawTests(unittest.TestCase):
     def test_a_wall_broken_beside_you_shows_what_is_behind_it_at_once(self):
         game = support.newGame()
         blankFloor(game)
-        rowLength = game.rowLength
-        here = 30 + 20 * rowLength
+        here = 30 + 20 * game.rowLength
         support.placePlayer(game, here)
         game.currentLocation = [FLOOR, 1]
         game.grid[here + 1] = [WALL, 0]
@@ -91,8 +88,7 @@ class RedrawTests(unittest.TestCase):
     def test_smoke_rising_beside_you_hides_what_is_behind_it_at_once(self):
         game = support.newGame()
         blankFloor(game)
-        rowLength = game.rowLength
-        here = 30 + 20 * rowLength
+        here = 30 + 20 * game.rowLength
         support.placePlayer(game, here)
         game.currentLocation = [FLOOR, 1]
         game.smoke = {}

@@ -197,7 +197,6 @@ def makeWorksFloor(game, level, shaft, kind):
     """Makes the works floor down the city at level's shaft (of kind), as going down it would, and keeps it aside
     (game.floorsAside) for when you do, all without you or the floor you're on changing."""
     live = stashLive(game)
-    theme = game.theme
     yours = takeNumbered(game, level)
     floorsBefore = len(game.levelGrids)
     game.levelGrids.extend([None] * (level + 1 - floorsBefore))  # (a city not saved yet has no place in the list)
@@ -215,7 +214,7 @@ def makeWorksFloor(game, level, shaft, kind):
             del game.levelGrids[floorsBefore:]
         putNumbered(game, level, yours)
         restoreLive(game, live)
-        game.setTheme(theme)  # (making it set the theme to its own colors)
+        game.setTheme(game.theme)  # (making it set the theme to its own colors)
 
 
 # ---------------------------------------------------------------- taking turns
@@ -285,15 +284,14 @@ def leaving(unit):
 
 def nearestFree(game, spot, reach=6):
     """The open floor tile nearest spot (spot itself counts), within reach rings, or None."""
-    rowLength = game.rowLength
-    column, row = spot % rowLength, spot // rowLength
+    column, row = spot % game.rowLength, spot // game.rowLength
     for ring in range(reach + 1):
-        ringTiles = [(column + stepColumn) + (row + stepRow) * rowLength for stepRow in range(-ring, ring + 1)
+        ringTiles = [(column + stepColumn) + (row + stepRow) * game.rowLength for stepRow in range(-ring, ring + 1)
                      for stepColumn in range(-ring, ring + 1) if max(abs(stepColumn), abs(stepRow)) == ring
-                     and 0 <= column + stepColumn < rowLength]
+                     and 0 <= column + stepColumn < game.rowLength]
         free = [tile for tile in ringTiles if tile in game.grid and game.grid[tile][0] == 0 and tile != game.playerPositionFlat]
         if free:
-            return min(free, key=lambda tile: abs(tile % rowLength - column) + abs(tile // rowLength - row))
+            return min(free, key=lambda tile: abs(tile % game.rowLength - column) + abs(tile // game.rowLength - row))
     return None
 
 

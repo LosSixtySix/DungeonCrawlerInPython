@@ -63,12 +63,11 @@ class MinerTests(WorkTest):
         self.assertIsNone(dwellerwork.pickSeam(self.game, self.spot(40, 30), miner))
 
     def test_it_never_breaks_a_wall_a_lamp_hangs_on(self):
-        game = self.game
         miner = self.worker(40, 30)
         self.wallAt(40, 31, wall.IronVein)
-        game.sideFloor = ("mine", 0)  # (a works floor: it has lamps)
-        game.wallLamps = {game.level: {self.spot(40, 30): metropolis.WallLamp("down", 3)}}  # hung on the vein
-        self.assertIsNone(dwellerwork.pickSeam(game, self.spot(40, 30), miner))
+        self.game.sideFloor = ("mine", 0)  # (a works floor: it has lamps)
+        self.game.wallLamps = {self.game.level: {self.spot(40, 30): metropolis.WallLamp("down", 3)}}  # hung on the vein
+        self.assertIsNone(dwellerwork.pickSeam(self.game, self.spot(40, 30), miner))
 
     def test_two_miners_do_not_work_the_same_seam(self):
         first, second = self.worker(40, 30), self.worker(40, 32)
@@ -97,12 +96,11 @@ class HaulingTests(WorkTest):
         self.assertEqual(chest[0].amount, dwellerwork.STACK_LIMIT)
 
     def test_killing_a_worker_gets_you_a_share_of_what_it_carried(self):
-        game = self.game
         miner = self.worker(40, 30)
         miner.materials = {"iron_ore": 20}
-        game.player.attributes["wisdom"] = 30  # (all of it)
-        game.killEnemy(self.spot(40, 30), "player")
-        self.assertGreater(game.player.materials.get("iron_ore", 0), 0)
+        self.game.player.attributes["wisdom"] = 30  # (all of it)
+        self.game.killEnemy(self.spot(40, 30), "player")
+        self.assertGreater(self.game.player.materials.get("iron_ore", 0), 0)
 
 
 class FarmerTests(FarmTest):
@@ -200,14 +198,13 @@ class FarmerTests(FarmTest):
 
 class StarvingTests(FarmTest):
     def test_a_grub_gets_hungrier_every_turn_and_starves_unfed(self):
-        game = self.game
-        dwellerfarming.starveTurn(game)
+        dwellerfarming.starveTurn(self.game)
         self.assertEqual(self.grub.hunger, 1)
         self.grub.hunger = 98
-        dwellerfarming.starveTurn(game)
-        self.assertIn(self.grub, [grub for _, grub in dwellerwork.grubsHere(game)], "99 turns unfed: still alive")
-        dwellerfarming.starveTurn(game)
-        self.assertNotIn(self.grub, [grub for _, grub in dwellerwork.grubsHere(game)], "100 turns unfed: starved")
+        dwellerfarming.starveTurn(self.game)
+        self.assertIn(self.grub, [grub for _, grub in dwellerwork.grubsHere(self.game)], "99 turns unfed: still alive")
+        dwellerfarming.starveTurn(self.game)
+        self.assertNotIn(self.grub, [grub for _, grub in dwellerwork.grubsHere(self.game)], "100 turns unfed: starved")
 
     def test_waiting_with_dew_it_does_not_get_hungrier(self):
         self.grub.dewReady = True
@@ -224,11 +221,10 @@ class StarvingTests(FarmTest):
         self.assertFalse(dwellerwork.feed(self.grub, farmer), "no food left")
 
     def test_grubs_only_go_hungry_on_a_works_floor(self):
-        game = self.game
-        game.enemyTurn()
+        self.game.enemyTurn()
         self.assertEqual(self.grub.hunger, 0)
-        game.sideFloor = ("farm", 0)
-        game.enemyTurn()
+        self.game.sideFloor = ("farm", 0)
+        self.game.enemyTurn()
         self.assertEqual(self.grub.hunger, 1)
 
 
@@ -271,20 +267,19 @@ class FarmRoleTests(FarmTest):
         self.assertEqual(dwellerfarming.toStore(keeper), {"bloodcap": 25 - dwellerfarming.FOOD_KEPT, "dew": 1})
 
     def test_nothing_wild_sprouts_on_the_fields(self):
-        game = self.game
         self.fields[self.spot(31, 20)] = "bloodcap"
         self.farmer(30, 20)
-        game.sideFloor = ("farm", 0)
-        self.assertIn(self.spot(31, 20), dwellerfarming.fieldTiles(game))
+        self.game.sideFloor = ("farm", 0)
+        self.assertIn(self.spot(31, 20), dwellerfarming.fieldTiles(self.game))
         for column, row in ((30, 21), (32, 21), (31, 21)):  # seeding bloodcaps all round it
             crop = plants.Plant.grown("bloodcap")
             crop.stage = "seed"
-            game.grid[self.spot(column, row)] = [PLANT, 1, crop]
+            self.game.grid[self.spot(column, row)] = [PLANT, 1, crop]
         with mock.patch.object(plants, "BIRTH_CHANCE", {3: 1, 2: 1, 1: 1}):
             for _ in range(plants.GROW_TURNS * 3):
-                game.turnCount += 1
-                game.enemyTurn()
-        self.assertNotEqual(game.grid[self.spot(31, 20)][0], PLANT)
+                self.game.turnCount += 1
+                self.game.enemyTurn()
+        self.assertNotEqual(self.game.grid[self.spot(31, 20)][0], PLANT)
 
     def test_more_field_is_wanted_while_it_is_small_for_the_herd_and_the_growers(self):
         farmer = self.farmer(30, 20)
@@ -307,25 +302,23 @@ class GrubTests(FarmTest):
                 self.assertIn(self.positionOf(self.grub), self.penInside)
 
     def test_a_grub_never_steps_out_of_its_gate(self):
-        game = self.game
-        game.grid[self.spot(43, 33)] = [FLOOR, 1]
-        game.EnemyPositions.clear()
+        self.game.grid[self.spot(43, 33)] = [FLOOR, 1]
+        self.game.EnemyPositions.clear()
         beside = self.spot(43, 31)  # just inside the gate, the other tiles round it taken by grubs
         for column, row in ((42, 31), (44, 31), (43, 32)):
-            game.grid[self.spot(column, row)] = [ENEMY, 1, enemies.DewGrub()]
-        game.grid[beside] = [ENEMY, 1, self.grub]
+            self.game.grid[self.spot(column, row)] = [ENEMY, 1, enemies.DewGrub()]
+        self.game.grid[beside] = [ENEMY, 1, self.grub]
         with mock.patch.object(dwellerwork, "GRUB_SHUFFLE", 1):
-            game.grid[beside].pop()
-            self.assertEqual(dwellerwork.grubTurn(game, beside, self.grub), beside)
+            self.game.grid[beside].pop()
+            self.assertEqual(dwellerwork.grubTurn(self.game, beside, self.grub), beside)
 
     def test_a_grub_never_fights_and_the_guards_leave_it_be(self):
         self.assertEqual(self.grub.damage, 0)
         self.assertFalse(dwellers.isCityEnemy(self.grub))
 
     def test_hurting_a_grub_is_hostile(self):
-        game = self.game
-        game.sideFloor = ("farm", 0)  # (on a farm floor)
-        game.playerHurtEnemy(self.grub, self.spot(43, 33))
+        self.game.sideFloor = ("farm", 0)  # (on a farm floor)
+        self.game.playerHurtEnemy(self.grub, self.spot(43, 33))
         self.assertTrue(self.grub.hostile)
 
     def test_a_grub_drops_meat_and_sometimes_dew(self):
@@ -335,24 +328,21 @@ class GrubTests(FarmTest):
 
 class CityCropTests(FarmTest):
     def test_picking_a_city_crop_is_stealing(self):
-        game = self.game
         self.crop(20, 20)
         with mock.patch.object(dwellers, "hostileAct") as hostileAct:
-            game.harvestPlant(self.spot(20, 20))
-        hostileAct.assert_called_once_with(game, self.spot(20, 20))
+            self.game.harvestPlant(self.spot(20, 20))
+        hostileAct.assert_called_once_with(self.game, self.spot(20, 20))
 
     def test_picking_a_wild_plant_is_not(self):
-        game = self.game
-        game.grid[self.spot(20, 20)] = [PLANT, 1, plants.Plant.grown("bloodcap")]
+        self.game.grid[self.spot(20, 20)] = [PLANT, 1, plants.Plant.grown("bloodcap")]
         with mock.patch.object(dwellers, "hostileAct") as hostileAct:
-            game.harvestPlant(self.spot(20, 20))
+            self.game.harvestPlant(self.spot(20, 20))
         hostileAct.assert_not_called()
 
     def test_looking_at_one_says_whose_it_is(self):
-        game = self.game
         self.crop(20, 20)
-        game.PlayerLookPosition = self.spot(20, 20)
-        self.assertIn("Dweller crop", game.lookingAt())
+        self.game.PlayerLookPosition = self.spot(20, 20)
+        self.assertIn("Dweller crop", self.game.lookingAt())
 
 
 if __name__ == "__main__":

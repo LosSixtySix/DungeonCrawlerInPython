@@ -54,8 +54,7 @@ class AimTests(AimPastAnEnemyTest):
 class DrawingTests(AimPastAnEnemyTest):
     def cursorsDrawn(self):
         """The tiles drawAimCursor was asked to draw on, for one frame."""
-        painter = self.game.painter
-        with mock.patch.object(painter, "drawAimCursor", wraps=painter.drawAimCursor) as drawAimCursor:
+        with mock.patch.object(self.game.painter, "drawAimCursor", wraps=self.game.painter.drawAimCursor) as drawAimCursor:
             self.game.draw()
         return [call.args[0] for call in drawAimCursor.call_args_list]
 
@@ -67,16 +66,14 @@ class DrawingTests(AimPastAnEnemyTest):
         self.assertEqual(self.cursorsDrawn(), [])
 
     def test_the_cursor_shows_in_the_frame_as_corner_brackets_in_the_potion_color(self):
-        game = self.game
-        game.messageBools = {name: False for name in game.messageBools}  # (the new game's message covers the screen)
-        keyDown(game, pygame.K_RIGHT)
-        game.draw()
-        painter = game.painter
-        tile = painter.screenTile(self.enemySpot + 1)
-        fire = tuple(painter.effectColor("Fire"))[:3]
+        self.game.messageBools = {name: False for name in self.game.messageBools}  # (the new game's message covers the screen)
+        keyDown(self.game, pygame.K_RIGHT)
+        self.game.draw()
+        tile = self.game.painter.screenTile(self.enemySpot + 1)
+        fire = tuple(self.game.painter.effectColor("Fire"))[:3]
         for corner in (tile.topleft, (tile.right - 1, tile.top), (tile.left, tile.bottom - 1), (tile.right - 1, tile.bottom - 1)):
-            self.assertEqual(tuple(painter.win.get_at(corner))[:3], fire, corner)
-        self.assertNotEqual(tuple(painter.win.get_at(tile.center))[:3], fire, "the middle stays clear")
+            self.assertEqual(tuple(self.game.painter.win.get_at(corner))[:3], fire, corner)
+        self.assertNotEqual(tuple(self.game.painter.win.get_at(tile.center))[:3], fire, "the middle stays clear")
 
 
 if __name__ == "__main__":

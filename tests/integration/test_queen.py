@@ -48,15 +48,14 @@ class QueenTest(CityTest):
 
     def setUp(self):
         super().setUp()
-        game = self.game
         self.queen = enemies.DwellerQueen()
         self.anchor = self.spot(30, 20)
         self.queen.home = self.anchor
-        game.putGiant(game.grid, self.anchor, self.queen)
-        for tile in game.footprint(self.anchor, 2):
-            game.grid[tile][1] = 1
-        game.EnemyPositions.add(self.anchor)
-        game.enemyDodge = lambda target, damage, position: damage  # (every hit lands)
+        self.game.putGiant(self.game.grid, self.anchor, self.queen)
+        for tile in self.game.footprint(self.anchor, 2):
+            self.game.grid[tile][1] = 1
+        self.game.EnemyPositions.add(self.anchor)
+        self.game.enemyDodge = lambda target, damage, position: damage  # (every hit lands)
 
     def addGoblin(self, column, row):
         goblin = enemies.Goblin()
@@ -88,40 +87,36 @@ class QueenTurnTests(QueenTest):
         self.assertEqual(goblin.hp, before)
 
     def test_calm_she_never_hits_you_hostile_she_does(self):
-        game = self.game
         self.standAt(32, 21)
-        game.player.damageTaken = 0
-        queen.queenTurn(game, self.anchor, self.queen)
-        self.assertEqual(game.player.damageTaken, 0)
-        dwellers.turnHostile(game, self.queen, game.playerPositionFlat)
-        queen.queenTurn(game, self.anchor, self.queen)
-        self.assertGreater(game.player.damageTaken, 0)
+        self.game.player.damageTaken = 0
+        queen.queenTurn(self.game, self.anchor, self.queen)
+        self.assertEqual(self.game.player.damageTaken, 0)
+        dwellers.turnHostile(self.game, self.queen, self.game.playerPositionFlat)
+        queen.queenTurn(self.game, self.anchor, self.queen)
+        self.assertGreater(self.game.player.damageTaken, 0)
 
     def test_hurting_her_turns_her_hostile(self):
-        game = self.game
         self.standAt(29, 20)
-        game.player.DealDamage = lambda: 3
-        game.onInteract()
+        self.game.player.DealDamage = lambda: 3
+        self.game.onInteract()
         self.assertTrue(self.queen.hostile)
         self.assertLess(self.queen.hp, self.queen.maxHp)
 
     def test_killing_her_clears_her_whole_body(self):
-        game = self.game
-        game.killEnemy(self.spot(31, 21), killer=None)
-        self.assertIsNone(queen.courtOf(game))
+        self.game.killEnemy(self.spot(31, 21), killer=None)
+        self.assertIsNone(queen.courtOf(self.game))
         self.assertFalse([tile for tile in metropolis.bodyOf(self.rowLength, self.anchor)
-                          if game.grid[tile][0] == ENEMY or self.queen in game.grid[tile]])
+                          if self.game.grid[tile][0] == ENEMY or self.queen in self.game.grid[tile]])
 
     def test_a_dweller_sharing_one_of_her_spaces_never_lists_her_twice(self):
-        game = self.game
         citizen = self.addDweller(enemies.DwellerCitizen, 32, 21)
         citizen.goal = citizen.home = self.spot(28, 20)
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0):
             for _ in range(15):
-                game.enemyTurn()
-                listed = [spot for spot in game.EnemyPositions if game.grid[spot][2] is self.queen]
+                self.game.enemyTurn()
+                listed = [spot for spot in self.game.EnemyPositions if self.game.grid[spot][2] is self.queen]
                 self.assertEqual(listed, [self.anchor])
-        self.assertEqual(len(dwellers.cityDwellers(game)), 2, "nobody lost or doubled")
+        self.assertEqual(len(dwellers.cityDwellers(self.game)), 2, "nobody lost or doubled")
 
 
 class RoyalGuardTests(QueenTest):
@@ -131,34 +126,31 @@ class RoyalGuardTests(QueenTest):
         return royal
 
     def test_a_royal_guard_hunts_you_near_the_queen(self):
-        game = self.game
         royal = self.addRoyal(28, 20)
         self.standAt(28, 25)
-        dwellers.turnHostile(game, royal, game.playerPositionFlat)
-        game.player.damageTaken = 0
-        self.assertTrue(self.runTurns(10, until=lambda: game.player.damageTaken > 0))
+        dwellers.turnHostile(self.game, royal, self.game.playerPositionFlat)
+        self.game.player.damageTaken = 0
+        self.assertTrue(self.runTurns(10, until=lambda: self.game.player.damageTaken > 0))
 
     def test_it_never_follows_you_past_its_leash(self):
-        game = self.game
         royal = self.addRoyal(28, 20)
         self.standAt(28, 50)
-        dwellers.turnHostile(game, royal, game.playerPositionFlat)
+        dwellers.turnHostile(self.game, royal, self.game.playerPositionFlat)
         self.runTurns(30)
-        self.assertLessEqual(dwellers.distance(game, self.positionOf(royal), royal.home), royal.leash)
+        self.assertLessEqual(dwellers.distance(self.game, self.positionOf(royal), royal.home), royal.leash)
 
     def test_it_goes_after_an_enemy_near_the_queen_but_not_one_past_its_leash(self):
-        game = self.game
         royal = self.addRoyal(28, 20)  # its post
         lookingFrom = self.spot(28, 25)  # (it has walked out a way)
         beyond = self.addGoblin(28, 30)  # in sight from there, but 10 from its post
         beyond.speed = 0
-        self.assertIsNone(dwellers.enemyInSight(game, lookingFrom, royal))
+        self.assertIsNone(dwellers.enemyInSight(self.game, lookingFrom, royal))
         near = self.addGoblin(28, 27)
         near.speed = 0
-        self.assertEqual(dwellers.enemyInSight(game, lookingFrom, royal), (self.spot(28, 27), near))
+        self.assertEqual(dwellers.enemyInSight(self.game, lookingFrom, royal), (self.spot(28, 27), near))
         guard = self.addDweller(enemies.DwellerGuard, 40, 20)
         guard.home = royal.home
-        self.assertIsNotNone(dwellers.enemyInSight(game, self.spot(28, 29), guard), "an ordinary guard would go")
+        self.assertIsNotNone(dwellers.enemyInSight(self.game, self.spot(28, 29), guard), "an ordinary guard would go")
 
 
 class PupatingTests(QueenTest):
@@ -190,23 +182,21 @@ class PupatingTests(QueenTest):
             self.assertIsNone(queen.stepCourt(self.game))
 
     def test_a_pupa_comes_out_a_royal_guard_and_goes_to_its_post(self):
-        game = self.game
         with mock.patch.object(queen, "PUPATE_CHANCE", 1), mock.patch.object(queen, "PUPA_TURNS", 3), \
                 mock.patch.object(dwellers, "IDLE_CHANCE", 0):
-            pupa = queen.stepCourt(game)
+            pupa = queen.stepCourt(self.game)
             self.runTurns(2)
-            self.assertIs(game.grid[self.spot(36, 20)][2], pupa, "it doesn't move while it pupates")
+            self.assertIs(self.game.grid[self.spot(36, 20)][2], pupa, "it doesn't move while it pupates")
             self.runTurns(1)
-            royal = game.grid[self.spot(36, 20)][2]
+            royal = self.game.grid[self.spot(36, 20)][2]
             self.assertTrue(queen.isRoyal(royal))
             self.assertEqual(royal.home, pupa.post)
             self.assertTrue(self.runTurns(40, until=lambda: self.positionOf(royal) == royal.home))
 
     def test_a_pupa_is_never_nudged_aside(self):
-        game = self.game
         with mock.patch.object(queen, "PUPATE_CHANCE", 1):
-            queen.stepCourt(game)
-        self.assertFalse(dwellers.nudgeAside(game, self.spot(36, 20)))
+            queen.stepCourt(self.game)
+        self.assertFalse(dwellers.nudgeAside(self.game, self.spot(36, 20)))
 
 
 class RealCityTests(unittest.TestCase):

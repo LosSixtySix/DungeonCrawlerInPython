@@ -322,16 +322,15 @@ class FightingTests(unittest.TestCase):
         self.assertFalse(expansion.hostile(goblin, self.trader))
 
     def test_shift_interact_attacks_him_and_turns_him_hostile(self):
-        game = self.game
-        game.enemyDodge = lambda target, damage, position: damage  # the swing always lands
-        game.player.DealDamage = lambda: 3  # (and always does some damage)
-        game.onInteract()
-        self.assertEqual(game.focus, "shop")
-        game.onInteract(forceAttack=True)
+        self.game.enemyDodge = lambda target, damage, position: damage  # the swing always lands
+        self.game.player.DealDamage = lambda: 3  # (and always does some damage)
+        self.game.onInteract()
+        self.assertEqual(self.game.focus, "shop")
+        self.game.onInteract(forceAttack=True)
         self.assertLess(self.trader.hp, self.trader.maxHp)
         self.assertTrue(self.trader.hostile)
-        self.assertNotIn("shop", game.openWindows, "the shop closes")
-        self.assertIn("The Peddler turns on you!", [popup[0] for popup in game.popups])
+        self.assertNotIn("shop", self.game.openWindows, "the shop closes")
+        self.assertIn("The Peddler turns on you!", [popup[0] for popup in self.game.popups])
 
     def test_a_bomb_on_him_turns_him_hostile(self):
         with mock.patch.object(gamemanager, "FLOOR_BREAK_CHANCE", 0):
@@ -339,30 +338,27 @@ class FightingTests(unittest.TestCase):
         self.assertTrue(self.trader.hostile)
 
     def test_once_hostile_he_fights_you(self):
-        game = self.game
-        peddler.provoke(game, self.trader, self.traderSpot)
-        game.player.evasion = lambda: 0
-        game.player.damageTaken = 0
+        peddler.provoke(self.game, self.trader, self.traderSpot)
+        self.game.player.evasion = lambda: 0
+        self.game.player.damageTaken = 0
         for _ in range(5):
-            game.MoveEnemies()
-        self.assertGreater(game.player.damageTaken, 0)
+            self.game.MoveEnemies()
+        self.assertGreater(self.game.player.damageTaken, 0)
 
     def test_once_hostile_interact_hits_him_instead_of_trading(self):
-        game = self.game
-        peddler.provoke(game, self.trader, self.traderSpot)
-        game.enemyDodge = lambda target, damage, position: damage
-        game.player.DealDamage = lambda: 3  # (a swing that always does some damage)
-        game.onInteract()
-        self.assertNotIn("shop", game.openWindows)
+        peddler.provoke(self.game, self.trader, self.traderSpot)
+        self.game.enemyDodge = lambda target, damage, position: damage
+        self.game.player.DealDamage = lambda: 3  # (a swing that always does some damage)
+        self.game.onInteract()
+        self.assertNotIn("shop", self.game.openWindows)
         self.assertLess(self.trader.hp, self.trader.maxHp)
 
     def test_killed_he_pays_his_gold_and_drops_his_stock(self):
-        game = self.game
         itemsInStock = [ware.item for ware in self.trader.wares if ware.item is not None]
-        goldBefore = game.player.gold
-        game.killEnemy(self.traderSpot)
-        self.assertGreaterEqual(game.player.gold - goldBefore, 200)
-        grounds = [game.groundAt(spot) for spot in game.grid]  # (on his body, and spilled anywhere: under you too)
+        goldBefore = self.game.player.gold
+        self.game.killEnemy(self.traderSpot)
+        self.assertGreaterEqual(self.game.player.gold - goldBefore, 200)
+        grounds = [self.game.groundAt(spot) for spot in self.game.grid]  # (on his body, and spilled anywhere: under you too)
         dropped = [item for ground in grounds if ground[0] == PILE for item in ground[2].items]
         self.assertEqual(sorted(item.name for item in dropped), sorted(item.name for item in itemsInStock))
 

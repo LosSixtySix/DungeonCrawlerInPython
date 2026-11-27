@@ -186,15 +186,14 @@ class CityLayoutTests(unittest.TestCase):
             self.assertGreater(max(headings) - min(headings), 0.3, "it bends on its way")
 
     def test_the_roads_are_one_network_from_where_you_arrive(self):
-        city = self.city
         reached, frontier = {middleSpot()}, [middleSpot()]
         while frontier:
             spot = frontier.pop()
-            for near in metropolis.neighborsOf(city, spot):
-                if near in city.roads and near not in reached:
+            for near in metropolis.neighborsOf(self.city, spot):
+                if near in self.city.roads and near not in reached:
                     reached.add(near)
                     frontier.append(near)
-        self.assertEqual(reached & city.roads, city.roads)
+        self.assertEqual(reached & self.city.roads, self.city.roads)
 
     def test_every_building_is_built_along_a_road(self):
         for building in self.city.buildings:
@@ -375,26 +374,24 @@ class CalmDwellerTests(unittest.TestCase):
             self.assertEqual(counters[id(merchant)], spot)
 
     def test_guards_patrol_near_their_posts(self):
-        game = self.game
-        for spot, guard in dwellersOn(game, "guard"):
+        for spot, guard in dwellersOn(self.game, "guard"):
             for _ in range(20):
-                patrolSpot = dwellers.pickGoal(game, spot, guard)
-                self.assertLessEqual(dwellers.distance(game, patrolSpot, guard.home), dwellers.WANDER_REACH["guard"] * 1.5)
+                patrolSpot = dwellers.pickGoal(self.game, spot, guard)
+                self.assertLessEqual(dwellers.distance(self.game, patrolSpot, guard.home), dwellers.WANDER_REACH["guard"] * 1.5)
         for _ in range(40):
-            game.enemyTurn()
-        for spot, guard in dwellersOn(game, "guard"):
+            self.game.enemyTurn()
+        for spot, guard in dwellersOn(self.game, "guard"):
             # (a detour round a building or through the open yards, or a citizen swapping past it, can take it a few
             # tiles further for a while)
-            self.assertLessEqual(dwellers.distance(game, spot, guard.home), 14)
+            self.assertLessEqual(dwellers.distance(self.game, spot, guard.home), 14)
 
     def test_calm_dwellers_never_hurt_you(self):
-        game = self.game
-        citizenSpot, citizen = dwellersOn(game, "citizen")[0]
-        support.placePlayer(game, next(spot for spot in game.neighbors(citizenSpot) if game.grid[spot][0] == FLOOR))
-        game.player.damageTaken = 0
+        citizenSpot, citizen = dwellersOn(self.game, "citizen")[0]
+        support.placePlayer(self.game, next(spot for spot in self.game.neighbors(citizenSpot) if self.game.grid[spot][0] == FLOOR))
+        self.game.player.damageTaken = 0
         for _ in range(20):
-            game.enemyTurn()
-        self.assertEqual(game.player.damageTaken, 0)
+            self.game.enemyTurn()
+        self.assertEqual(self.game.player.damageTaken, 0)
 
     def test_nobody_is_lost_or_doubled_as_they_walk(self):
         count = len(dwellers.cityDwellers(self.game))  # (two small Dwellers can share a space: both count)
