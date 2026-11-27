@@ -43,9 +43,8 @@ class _Noise:
         xf, yf = x - xi, y - yi
         x0, x1 = xi % period, (xi + 1) % period
         y0, y1 = yi & 255, (yi + 1) & 255
-        v = self.values
-        a, b = v[y0 * 256 + x0], v[y0 * 256 + x1]
-        c, d = v[y1 * 256 + x0], v[y1 * 256 + x1]
+        a, b = self.values[y0 * 256 + x0], self.values[y0 * 256 + x1]
+        c, d = self.values[y1 * 256 + x0], self.values[y1 * 256 + x1]
         u, w = _smooth(xf), _smooth(yf)
         return (a + (b - a) * u) * (1 - w) + (c + (d - c) * u) * w
 

@@ -36,11 +36,10 @@ class UnitTest(unittest.TestCase):
 
     def sproutOn(self, spots, kind="hearthmoss", planted=False):
         """Run this floor's growth step, sprouting kind on spots. Returns the tile types the step saw there."""
-        grid = self.game.grid
         seen = {}
 
         def sprout(stepGrid, *arguments, **keywords):
-            if stepGrid is not grid:
+            if stepGrid is not self.game.grid:
                 return False
             for spot in spots:
                 seen[spot] = stepGrid[spot][0]
@@ -77,9 +76,8 @@ class SproutingTests(UnitTest):
         self.sproutOn([spot])
         self.assertEqual(self.game.grid[spot][0], PLANT)
         self.assertNotIn(spot, self.game.EnemyPositions)
-        game = self.game
-        self.assertEqual(game.grid[spot][2].bodyUnder.unitName, "Goblin", "its body lies under the plant")
-        self.assertEqual([p for p in game.grid if game.bodyAt(p) is not None], [], "and nowhere else")
+        self.assertEqual(self.game.grid[spot][2].bodyUnder.unitName, "Goblin", "its body lies under the plant")
+        self.assertEqual([p for p in self.game.grid if self.game.bodyAt(p) is not None], [], "and nowhere else")
 
     def test_two_sharing_a_space_are_both_hurt(self):
         first, second = enemies.DwellerCitizen(), enemies.DwellerCitizen()
@@ -90,21 +88,19 @@ class SproutingTests(UnitTest):
         self.assertEqual((first.hp, second.hp), (first.maxHp - 2, second.maxHp - 2))
 
     def test_a_giant_is_hurt_once_and_nothing_grows_on_its_body(self):
-        game = self.game
         giant = enemies.FireGiant()
         anchor = self.spot(30, 20)
-        game.putGiant(game.grid, anchor, giant)
-        game.EnemyPositions.add(anchor)
+        self.game.putGiant(self.game.grid, anchor, giant)
+        self.game.EnemyPositions.add(anchor)
         giant.speed = 0
-        body = game.footprint(anchor, 2)
+        body = self.game.footprint(anchor, 2)
         self.onGrowthTurn()
         self.sproutOn(body)
         self.assertEqual(giant.hp, giant.maxHp - gamemanager.OVERGROWTH_DAMAGE)
-        self.assertFalse(set(body) & set(game.enemyOccupiedItemSpaces))
-        self.assertTrue(all(game.grid[tile][2] is giant for tile in body))
+        self.assertFalse(set(body) & set(self.game.enemyOccupiedItemSpaces))
+        self.assertTrue(all(self.game.grid[tile][2] is giant for tile in body))
 
     def test_a_planted_plant_hurts_no_unit_and_not_you(self):
-        game = self.game
         goblin = enemies.Goblin()
         spot = self.place(goblin, 30, 20)
         self.onGrowthTurn()
@@ -112,9 +108,9 @@ class SproutingTests(UnitTest):
         self.assertEqual(goblin.hp, goblin.maxHp)
         planted = plants.Plant.grown("hearthmoss")
         planted.planted = True
-        game.player.damageTaken = 0
-        game.overgrowPlayer([PLANT, 1, planted])
-        self.assertEqual(game.player.damageTaken, 0)
+        self.game.player.damageTaken = 0
+        self.game.overgrowPlayer([PLANT, 1, planted])
+        self.assertEqual(self.game.player.damageTaken, 0)
 
     def test_without_overgrowth_nothing_grows_under_units(self):
         self.game.floorEvents.pop(self.game.level)

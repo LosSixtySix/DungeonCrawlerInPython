@@ -421,23 +421,22 @@ def layOut(gm, center, org, context):
 def work(gm, i, org, context):
     """Does the next bit of work. Returns (position, whether the pattern is finished)."""
     org.didSomething = False
-    plan = org.plan
     dist, came = reachable(gm, i)
 
     # 1. Make room: break the walls and pull up the plants where the pattern goes
-    toClear = [t for t in plan["clear"] | plan["wallSet"]
-               if (gm.grid[t][0] == 2 and t not in plan["wallSet"] and t not in teamWalls(context, org))
-               or (gm.grid[t][0] == 8 and not (plan["cells"] and isDemise(gm.grid[t]) and t in plan["cells"]))]
+    toClear = [t for t in org.plan["clear"] | org.plan["wallSet"]
+               if (gm.grid[t][0] == 2 and t not in org.plan["wallSet"] and t not in teamWalls(context, org))
+               or (gm.grid[t][0] == 8 and not (org.plan["cells"] and isDemise(gm.grid[t]) and t in org.plan["cells"]))]
     if toClear:
         return goWork(gm, i, org, toClear, lambda t: gm.neighbors(t), clearTile, dist, came, context), False
 
     # 2. (Plant Organizer) turn the floor into Wood
-    toWood = [t for t in plan["wood"] if plants.floorOf(t, gm.rooms) != "Wood"]
+    toWood = [t for t in org.plan["wood"] if plants.floorOf(t, gm.rooms) != "Wood"]
     if toWood:
         return goWork(gm, i, org, toWood, lambda t: [t] + gm.neighbors(t), woodTile, dist, came, context), False
 
     # 3. Build the walls
-    if plan["wallSet"]:
+    if org.plan["wallSet"]:
         position, done = build(gm, i, org, dist, came, context)
         return position, done
 
@@ -517,14 +516,13 @@ def escapes(gm, plan, spot, newWall):
 
 
 def build(gm, i, org, dist, came, context):
-    plan = org.plan
     todo = []
-    for t in plan["walls"]:
+    for t in org.plan["walls"]:
         kind = gm.grid[t][0]
-        if kind == 2 or t in plan["skip"]:
+        if kind == 2 or t in org.plan["skip"]:
             continue
         if kind in (3, 4, 6, 7, 9, 10):  # something dropped or placed there since: leave a gap
-            plan["skip"].add(t)
+            org.plan["skip"].add(t)
             continue
         todo.append(t)
     if not todo:
@@ -535,11 +533,11 @@ def build(gm, i, org, dist, came, context):
             continue
         for s in gm.neighbors(t):
             if s in dist:
-                choices.append((t not in plan["insideOnly"], dist[s], t, s))
+                choices.append((t not in org.plan["insideOnly"], dist[s], t, s))
     if not choices:
         if i in todo:  # standing on the last spot where a wall goes: step off it
             off = [j for j in gm.neighbors(i) if passable(gm.grid[j])]
-            off.sort(key=lambda j: (j in plan["wallSet"], j not in plan["outside"]))
+            off.sort(key=lambda j: (j in org.plan["wallSet"], j not in org.plan["outside"]))
             return (moveTo(gm, i, off[0]) if off else i), False
         open_ = [t for t in todo if gm.grid[t][0] == 0]
         if open_:
@@ -547,7 +545,7 @@ def build(gm, i, org, dist, came, context):
         return i, False
     choices.sort()
     # the first one it can build and still walk out of the shape afterwards (or, if none, the first one)
-    _, _, t, s = next((c for c in choices if escapes(gm, plan, c[3], c[2])), choices[0])
+    _, _, t, s = next((c for c in choices if escapes(gm, org.plan, c[3], c[2])), choices[0])
     if s != i:
         return moveTo(gm, i, firstStep(came, i, s)), False
     if org.workOn != ("wall", t):
@@ -563,18 +561,17 @@ def build(gm, i, org, dist, came, context):
 
 
 def sow(gm, i, org, dist, came):
-    plan = org.plan
-    cells = plan["cells"]
+    cells = org.plan["cells"]
     if not cells or all(isDemise(gm.grid[c]) for c in cells):
         return i, True
     if any(gm.grid[c][0] not in (0, 8) and c != i for c in cells):
         return i, False  # someone's in the way: wait
-    cx, cy = coords(gm, plan["center"])
-    near = [t for t in plan["wood"] if t not in cells and gm.grid[t][0] == 0
+    cx, cy = coords(gm, org.plan["center"])
+    near = [t for t in org.plan["wood"] if t not in cells and gm.grid[t][0] == 0
             and max(abs(coords(gm, t)[0] - cx), abs(coords(gm, t)[1] - cy)) <= 2]
-    if i not in cells and i in plan["wood"] and max(abs(coords(gm, i)[0] - cx), abs(coords(gm, i)[1] - cy)) <= 2:
-        if org.workOn != ("sow", plan["center"]):
-            org.workOn, org.progress = ("sow", plan["center"]), 0
+    if i not in cells and i in org.plan["wood"] and max(abs(coords(gm, i)[0] - cx), abs(coords(gm, i)[1] - cy)) <= 2:
+        if org.workOn != ("sow", org.plan["center"]):
+            org.workOn, org.progress = ("sow", org.plan["center"]), 0
         org.progress += 1
         org.didSomething = True
         if org.progress >= SOW_TURNS:

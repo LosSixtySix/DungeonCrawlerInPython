@@ -120,30 +120,29 @@ class DevConsole():
 
     def onKey(self, event):
         """Every key while the console is open comes here."""
-        key = event.key
-        if key == pygame.K_TAB:
+        if event.key == pygame.K_TAB:
             self.autofill()
             self.gm.change = True
             return
         self.tabbing = None
-        if key in (pygame.K_ESCAPE, pygame.K_BACKQUOTE):
+        if event.key in (pygame.K_ESCAPE, pygame.K_BACKQUOTE):
             self.toggle()
-        elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             self.submit()
-        elif key == pygame.K_BACKSPACE:
+        elif event.key == pygame.K_BACKSPACE:
             self.text = self.text[:-1]
-        elif key == pygame.K_UP and self.history:
+        elif event.key == pygame.K_UP and self.history:
             self.historyIndex = len(self.history) - 1 if self.historyIndex is None else max(0, self.historyIndex - 1)
             self.text = self.history[self.historyIndex]
-        elif key == pygame.K_DOWN and self.historyIndex is not None:
+        elif event.key == pygame.K_DOWN and self.historyIndex is not None:
             self.historyIndex += 1
             if self.historyIndex >= len(self.history):
                 self.historyIndex, self.text = None, ""
             else:
                 self.text = self.history[self.historyIndex]
-        elif key == pygame.K_PAGEUP:
+        elif event.key == pygame.K_PAGEUP:
             self.scrollBy(10)
-        elif key == pygame.K_PAGEDOWN:
+        elif event.key == pygame.K_PAGEDOWN:
             self.scrollBy(-10)
         self.gm.change = True
 
@@ -152,11 +151,10 @@ class DevConsole():
     def matches(self):
         """[(full line it would become, the word it fills in)] for what's typed so far, best first. The command
         is the first word; after it, commands in self.arguments offer their second word (e.g. /give's item ids)."""
-        text = self.text
-        if not text.strip():
+        if not self.text.strip():
             return []
-        slash = "/" if text.startswith("/") else ""
-        body = text[len(slash):]
+        slash = "/" if self.text.startswith("/") else ""
+        body = self.text[len(slash):]
         if " " not in body:  # still typing the command
             word = body.lower()
             names = [n for n in list(self.commands) + list(self.aliases) if n.isalpha()]
@@ -256,18 +254,17 @@ class DevConsole():
             self.write("error", f"No item \"{itemId}\". Type /items to see the ids")
             return
         _, name, kind = catalog[itemId]
-        player = self.gm.player
         if kind == "gold":
-            player.gold += amount
+            self.gm.player.gold += amount
             self.write("good", f"+{amount} Gold")
         elif kind == "material":
-            added = player.addMaterial(itemId, amount)
+            added = self.gm.player.addMaterial(itemId, amount)
             message = f"+{added} {name}"
             self.write("good" if added == amount else "error", message if added == amount else message + " (pouch full)")
         else:
             added = 0
             for _ in range(amount):
-                if not player.addItemToInventory(self.makeItem(itemId, kind)):
+                if not self.gm.player.addItemToInventory(self.makeItem(itemId, kind)):
                     break
                 added += 1
             if added == amount:
@@ -287,20 +284,19 @@ class DevConsole():
         return recipe.build("Common")
 
     def cmdPeaceful(self, args):
-        gm = self.gm
         if args and args[0].lower() in ("on", "off"):
-            gm.peaceful = args[0].lower() == "on"
+            self.gm.peaceful = args[0].lower() == "on"
         elif args:
             self.write("error", "Usage: /peaceful [on|off]")
             return
         else:
-            gm.peaceful = not gm.peaceful
-        if gm.peaceful:  # anything already chasing you forgets where you are
-            for position in gm.EnemyPositions:
-                tile = gm.grid.get(position)
+            self.gm.peaceful = not self.gm.peaceful
+        if self.gm.peaceful:  # anything already chasing you forgets where you are
+            for position in self.gm.EnemyPositions:
+                tile = self.gm.grid.get(position)
                 if tile and tile[0] == 5 and len(tile) > 2:
                     tile[2].lastPlayerPosition = None
-        self.write("good", "Peaceful: enemies ignore you" if gm.peaceful else "Peaceful off: enemies hunt you again")
+        self.write("good", "Peaceful: enemies ignore you" if self.gm.peaceful else "Peaceful off: enemies hunt you again")
 
     def cmdEvents(self, _args):
         self.write("head", f"Floor events ({events.EVENT_CHANCE:.0%} of floors from floor {events.FIRST_FLOOR}, one picked at random)")
@@ -320,9 +316,8 @@ class DevConsole():
                 self.write("error", f"No event \"{args[0]}\"")
             return self.cmdEvents(args)
         eventId = args[0].lower()
-        gm = self.gm
-        event = gm.floorEvents[gm.level] = {"id": eventId, "turnsLeft": 0, "active": False}
-        gm.startEvent(event)
+        event = self.gm.floorEvents[self.gm.level] = {"id": eventId, "turnsLeft": 0, "active": False}
+        self.gm.startEvent(event)
         self.write("good", f"{events.name(eventId)} has started on this floor")
 
     def cmdOreFloor(self, args):
@@ -340,23 +335,21 @@ class DevConsole():
         self.write("good", f"The next new floor will be {'a Motherlode ' if motherlode else ''}{name}. Take the stairs down")
 
     def cmdReveal(self, args):
-        gm = self.gm
         if args and args[0].lower() in ("on", "off"):
-            gm.revealMap = args[0].lower() == "on"
+            self.gm.revealMap = args[0].lower() == "on"
         elif args:
             self.write("error", "Usage: /reveal [on|off]")
             return
         else:
-            gm.revealMap = not getattr(gm, "revealMap", False)
-        gm.setPositionsVisible()
-        gm.change = True
-        self.write("good", "Whole floor revealed" if gm.revealMap else "Back to your own sight (what you saw stays remembered)")
+            self.gm.revealMap = not getattr(self.gm, "revealMap", False)
+        self.gm.setPositionsVisible()
+        self.gm.change = True
+        self.write("good", "Whole floor revealed" if self.gm.revealMap else "Back to your own sight (what you saw stays remembered)")
 
     def cmdPlay(self, args):
-        gm = self.gm
         word = args[0].lower() if args else None
-        if word == "off" or (word is None and getattr(gm, "autoPlay", None) is not None):
-            gm.autoPlay = None
+        if word == "off" or (word is None and getattr(self.gm, "autoPlay", None) is not None):
+            self.gm.autoPlay = None
             self.write("good", "Stopped: your turn again")
             return
         ms = PLAY_TURN_MS
@@ -366,7 +359,7 @@ class DevConsole():
             except ValueError:
                 self.write("error", "Usage: /play [off|ms per turn]")
                 return
-        gm.autoPlay = {"ms": ms, "next": 0}
+        self.gm.autoPlay = {"ms": ms, "next": 0}
         self.write("good", f"Watching: a turn every {ms} ms. Esc or /play stops")
 
     def cmdMoltenVault(self, _args):
@@ -378,15 +371,14 @@ class DevConsole():
         self.write("good", "Into the Scorched Depths. The Molten Blade is in the chest at the center")
 
     def cmdPatience(self, _args):
-        gameManager = self.gm
-        if gameManager.level != 0:
+        if self.gm.level != 0:
             self.write("error", "Only works on the first floor")
             return
-        if gameManager.playerPositionFlat != gameManager.centerTile():
+        if self.gm.playerPositionFlat != self.gm.centerTile():
             self.write("error", "Stand on the center tile (where you started) first")
             return
-        gameManager.patienceFall()
-        self.write("good", f"You fell onto a {gameManager.floorTypeName()}")
+        self.gm.patienceFall()
+        self.write("good", f"You fell onto a {self.gm.floorTypeName()}")
 
     def cmdPeddler(self, _args):
         self.gm.peddlerNext = True

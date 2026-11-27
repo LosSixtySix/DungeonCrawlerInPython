@@ -40,67 +40,59 @@ class WhatBlocksTests(SightTest):
         self.assertNotIn(self.spot(35, 20), seen)
 
     def test_an_enemy_hides_what_is_behind_it_from_you_but_not_from_another_enemy(self):
-        game = self.game
-        game.grid[self.spot(33, 20)] = [ENEMY, 1, enemies.Goblin()]
+        self.game.grid[self.spot(33, 20)] = [ENEMY, 1, enemies.Goblin()]
         self.assertIn(self.spot(33, 20), self.mine())
         self.assertNotIn(self.spot(35, 20), self.mine())
-        self.assertIn(self.spot(35, 20), game.rayCircleVision(self.spot(31, 20), 8, ENEMY), "enemies see past each other")
+        self.assertIn(self.spot(35, 20), self.game.rayCircleVision(self.spot(31, 20), 8, ENEMY), "enemies see past each other")
 
     def test_a_tall_plant_blocks_sight_a_short_one_does_not(self):
-        game = self.game
-        game.grid[self.spot(33, 20)] = [PLANT, 1, plants.Plant("emberroot")]
+        self.game.grid[self.spot(33, 20)] = [PLANT, 1, plants.Plant("emberroot")]
         self.assertNotIn(self.spot(35, 20), self.mine())
-        game.grid[self.spot(33, 20)] = [PLANT, 1, plants.Plant("glowcap")]
+        self.game.grid[self.spot(33, 20)] = [PLANT, 1, plants.Plant("glowcap")]
         self.assertIn(self.spot(35, 20), self.mine())
 
     def test_smoke_is_seen_into_but_not_through_and_from_inside_it_you_see_beside_you(self):
-        game = self.game
-        game.smoke = {self.spot(33, 20): 5}
+        self.game.smoke = {self.spot(33, 20): 5}
         seen = self.mine()
         self.assertIn(self.spot(33, 20), seen)
         self.assertNotIn(self.spot(35, 20), seen)
-        game.smoke = {spot: 5 for spot in game.grid}
-        self.assertEqual(self.mine(), {self.here} | set(game.eightAround(self.here)))
+        self.game.smoke = {spot: 5 for spot in self.game.grid}
+        self.assertEqual(self.mine(), {self.here} | set(self.game.eightAround(self.here)))
 
     def test_tremor_sense_feels_through_walls_and_smoke(self):
-        game = self.game
         for row in range(10, 30):
             self.wall(32, row)
-        game.smoke = {self.spot(31, 20): 5}
-        felt = game.rayCircleVision(self.here, 6, ENEMY, tremorSense=True)
+        self.game.smoke = {self.spot(31, 20): 5}
+        felt = self.game.rayCircleVision(self.here, 6, ENEMY, tremorSense=True)
         self.assertIn(self.spot(35, 20), felt)
 
     def test_an_enemy_you_see_sees_you(self):
-        game = self.game
         for column, row in ((32, 18), (33, 22), (28, 21), (34, 19), (31, 24)):
             self.wall(column, row)
         for spot in self.mine(9):
-            if game.grid[spot][0] == FLOOR:
-                self.assertIn(self.here, game.rayCircleVision(spot, 9, ENEMY), f"{spot} can't see back")
+            if self.game.grid[spot][0] == FLOOR:
+                self.assertIn(self.here, self.game.rayCircleVision(spot, 9, ENEMY), f"{spot} can't see back")
 
 
 class LightTests(SightTest):
     def test_a_fire_lights_the_open_ground_round_it_and_the_wall_faces_but_not_behind_them(self):
-        game = self.game
         for row in range(10, 30):
             self.wall(35, row)
-        lit = game.lightAround(self.spot(33, 20), 4)
+        lit = self.game.lightAround(self.spot(33, 20), 4)
         self.assertIn(self.spot(31, 20), lit)
         self.assertIn(self.spot(35, 20), lit, "the wall face")
         self.assertNotIn(self.spot(36, 20), lit)
 
     def test_lit_tiles_far_off_are_seen_if_nothing_is_in_the_way(self):
-        game = self.game
         far, hidden = self.spot(50, 20), self.spot(30, 40)
         for column in range(25, 36):
             self.wall(column, 35)
-        visible = game.seenFromAfar({far, hidden}, self.mine(3))
+        visible = self.game.seenFromAfar({far, hidden}, self.mine(3))
         self.assertEqual(visible, {far})
 
     def test_from_inside_smoke_no_light_out_there_is_seen(self):
-        game = self.game
-        game.smoke = {self.here: 5}
-        self.assertEqual(game.seenFromAfar({self.spot(50, 20)}, set()), set())
+        self.game.smoke = {self.here: 5}
+        self.assertEqual(self.game.seenFromAfar({self.spot(50, 20)}, set()), set())
 
 
 if __name__ == "__main__":

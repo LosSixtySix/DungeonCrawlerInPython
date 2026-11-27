@@ -21,11 +21,11 @@ class ShapeTests(unittest.TestCase):
         self.inside, self.walls, self.beds = farmhouses.offsets()
 
     def test_it_is_round_its_corners_are_not_part_of_it(self):
-        half = farmhouses.HALF
-        for corner in ((half, half), (-half, half), (half, -half), (-half, -half)):
+        for corner in ((farmhouses.HALF, farmhouses.HALF), (-farmhouses.HALF, farmhouses.HALF),
+                       (farmhouses.HALF, -farmhouses.HALF), (-farmhouses.HALF, -farmhouses.HALF)):
             self.assertNotIn(corner, self.walls | self.inside)
-        self.assertIn((half, 0), self.walls)
-        self.assertIn((0, -half), self.walls)
+        self.assertIn((farmhouses.HALF, 0), self.walls)
+        self.assertIn((0, -farmhouses.HALF), self.walls)
 
     def test_four_triangular_plots_round_the_middle_and_paths_to_it(self):
         self.assertEqual(len(self.beds), 4 * len(farmhouses.BOAT))
@@ -71,22 +71,21 @@ class PlantedBonusTests(unittest.TestCase):
 
 class NewFarmhouseTests(PenTest):
     def test_short_of_field_the_growers_build_a_farmhouse_and_its_plots_join_the_fields(self):
-        game = self.game
         self.pen(40, 30)
         fields, built = {self.spot(10, 10): "bloodcap"}, []
         growers = [self.farmer(column, 45) for column in (45, 47, 49)]
         for grower in growers:
             grower.farmRole, grower.fields, grower.farmhouses = "grower", fields, built
-        plan = dwellerbuilding.farmhousePlan(game, self.spot(45, 45), growers[0])
+        plan = dwellerbuilding.farmhousePlan(self.game, self.spot(45, 45), growers[0])
         self.assertEqual(plan["crop"], "bloodcap", "a crop they have seeds of")
         with mock.patch.object(dwellers, "IDLE_CHANCE", 0):
             self.assertTrue(self.runTurns(600, until=lambda: built))
         farmhouse = built[0]
         for spot in farmhouse["walls"]:
-            self.assertIsInstance(game.grid[spot][2], wall.FarmhouseWall)
-        self.assertIsInstance(game.grid[farmhouse["chest"]][2], items.StorageChest)
+            self.assertIsInstance(self.game.grid[spot][2], wall.FarmhouseWall)
+        self.assertIsInstance(self.game.grid[farmhouse["chest"]][2], items.StorageChest)
         self.assertTrue(set(farmhouse["beds"]) <= set(fields))
-        self.assertEqual(plants.floorOf(farmhouse["beds"][0], game.rooms), farmhouses.floorFor("bloodcap"))
+        self.assertEqual(plants.floorOf(farmhouse["beds"][0], self.game.rooms), farmhouses.floorFor("bloodcap"))
 
 
 if __name__ == "__main__":

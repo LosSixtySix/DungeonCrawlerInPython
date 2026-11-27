@@ -78,13 +78,12 @@ class ClearingTests(QuellingTest):
         self.assertEqual(self.game.grid[self.spot(30, 22)][0], PLANT)
 
     def test_two_dwellers_go_for_different_plants(self):
-        game = self.game
         self.plant(29, 22)
         self.plant(31, 22)
         first = self.addDweller(enemies.DwellerCitizen, 30, 26)
         second = self.addDweller(enemies.DwellerCitizen, 30, 27)
-        quelling.quellTurn(game, self.spot(30, 26), first)
-        quelling.quellTurn(game, self.spot(30, 27), second)
+        quelling.quellTurn(self.game, self.spot(30, 26), first)
+        quelling.quellTurn(self.game, self.spot(30, 27), second)
         self.assertNotEqual(first.quellTarget, second.quellTarget)
 
 
@@ -103,39 +102,35 @@ class WhoTests(unittest.TestCase):
 
 class BuildersPickingTests(PenTest):
     def test_a_site_with_wild_plants_on_it_is_fine_and_they_are_cleared_with_it(self):
-        game = self.game
         wild = self.spot(51, 40)
-        game.grid[wild] = [PLANT, 1, plants.Plant.grown("glowcap")]
+        self.game.grid[wild] = [PLANT, 1, plants.Plant.grown("glowcap")]
         site = {"box": {wild, self.spot(52, 40)}}
-        self.assertEqual(dwellerbuilding.siteRock(game, site, set()), {wild}, "not turned down: it's to be cleared")
+        self.assertEqual(dwellerbuilding.siteRock(self.game, site, set()), {wild}, "not turned down: it's to be cleared")
         plan = {"kind": "pen", "box": site["box"], "walls": set(), "inside": frozenset(site["box"]), "door": self.spot(52, 40),
                 "outside": self.spot(53, 40), "chests": []}
-        self.assertEqual(dwellerbuilding.pieces(game, plan), [("dig", wild)])
+        self.assertEqual(dwellerbuilding.pieces(self.game, plan), [("dig", wild)])
 
     def test_picking_a_wild_plant_is_one_swing_and_the_builder_keeps_what_it_gives(self):
-        game = self.game
         farmer = self.farmer(50, 40)
-        game.grid[self.spot(51, 40)] = [PLANT, 1, plants.Plant.grown("glowcap")]
+        self.game.grid[self.spot(51, 40)] = [PLANT, 1, plants.Plant.grown("glowcap")]
         plan = {"kind": "pen", "box": {self.spot(51, 40)}, "walls": set(), "inside": frozenset({self.spot(51, 40)}),
                 "door": self.spot(51, 40), "outside": self.spot(50, 40), "chests": []}
-        dwellerbuilding.build(game, self.spot(50, 40), farmer, plan)
-        self.assertEqual(game.grid[self.spot(51, 40)][0], FLOOR)
+        dwellerbuilding.build(self.game, self.spot(50, 40), farmer, plan)
+        self.assertEqual(self.game.grid[self.spot(51, 40)][0], FLOOR)
 
     def test_a_crop_still_keeps_a_site_off(self):
-        game = self.game
         crop = plants.Plant.grown("glowcap")
         crop.planted = True
-        game.grid[self.spot(51, 40)] = [PLANT, 1, crop]
+        self.game.grid[self.spot(51, 40)] = [PLANT, 1, crop]
         site = {"box": {self.spot(51, 40)}}
-        self.assertIsNone(dwellerbuilding.siteRock(game, site, set()))
+        self.assertIsNone(dwellerbuilding.siteRock(self.game, site, set()))
 
     def test_the_rock_round_a_site_is_dug_out_too(self):
-        game = self.game
         rock = self.wallAt(60, 40, wall.StoneWall)
         plan = {"kind": "pen", "box": {self.spot(57, 40)}, "walls": set(), "inside": frozenset({self.spot(57, 40)}),
                 "door": self.spot(57, 40), "outside": self.spot(56, 40), "chests": [],
                 "margin": {self.spot(58, 40), self.spot(59, 40), self.spot(60, 40)}}
-        self.assertIn(("dig", self.spot(60, 40)), dwellerbuilding.pieces(game, plan))
+        self.assertIn(("dig", self.spot(60, 40)), dwellerbuilding.pieces(self.game, plan))
 
 
 if __name__ == "__main__":

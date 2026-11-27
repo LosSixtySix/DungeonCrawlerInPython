@@ -29,8 +29,7 @@ def scorchedGame():
 
 
 def tilesApart(game, spot, other):
-    rowLength = game.rowLength
-    return max(abs(spot % rowLength - other % rowLength), abs(spot // rowLength - other // rowLength))
+    return max(abs(spot % game.rowLength - other % game.rowLength), abs(spot // game.rowLength - other // game.rowLength))
 
 
 class FireGiantTest(unittest.TestCase):

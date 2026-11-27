@@ -110,9 +110,8 @@ def sees(game, anchor, queen, spot):
 
 def youInReach(game, anchor, queen):
     """Are you within her reach and in her sight, with her hostile to you?"""
-    player = game.playerPositionFlat
-    return not game.peaceful and queen.hostile and game.reachOf(queen, anchor, player) <= queen.reach \
-        and sees(game, anchor, queen, player)
+    return not game.peaceful and queen.hostile and game.reachOf(queen, anchor, game.playerPositionFlat) <= queen.reach \
+        and sees(game, anchor, queen, game.playerPositionFlat)
 
 
 def enemyInReach(game, anchor, queen):
@@ -575,11 +574,10 @@ def neediest(game, court):
 
 def hatch(game, egg, kind):
     """The unit an egg hatches into, given its home (see the top of this file)."""
-    court = egg.court
-    homes = court.get("homes") or [egg.nest]
+    homes = egg.court.get("homes") or [egg.nest]
     if kind == "guard":
         hatchling = enemies.DwellerGuard()
-        posts = court.get("posts") or [egg.nest]
+        posts = egg.court.get("posts") or [egg.nest]
         guarded = [unit.home for _, unit in dwellers.cityDwellers(game) if jobOf(unit) == "guard"]
         hatchling.home = min(posts, key=lambda post: (guarded.count(post), dwellers.distance(game, egg.nest, post)))
     else:

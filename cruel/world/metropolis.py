@@ -222,10 +222,9 @@ class WallLamp:
 
 
 def neighborsOf(city, spot):
-    rowLength = city.rowLength
     out = []
-    for other in (spot - 1, spot + 1, spot - rowLength, spot + rowLength):
-        if other in city.grid and (abs(other - spot) != 1 or other // rowLength == spot // rowLength):
+    for other in (spot - 1, spot + 1, spot - city.rowLength, spot + city.rowLength):
+        if other in city.grid and (abs(other - spot) != 1 or other // city.rowLength == spot // city.rowLength):
             out.append(other)
     return out
 
@@ -624,15 +623,15 @@ def placeBuildings(city, playerSpot):
 def nestsIn(city, building):
     """Up to NESTS nests in a hatchery: inside tiles, the ones nearest its middle first, none beside a door or
     another nest (so you can walk between them)."""
-    rowLength = city.rowLength
     nests = []
-    for spot in sorted(building.inside, key=lambda tile: (abs(tile % rowLength - building.center % rowLength)
-                                                          + abs(tile // rowLength - building.center // rowLength), tile)):
+    for spot in sorted(building.inside, key=lambda tile: (abs(tile % city.rowLength - building.center % city.rowLength)
+                                                          + abs(tile // city.rowLength - building.center // city.rowLength), tile)):
         if len(nests) >= NESTS:
             break
         if any(door in neighborsOf(city, spot) for door in building.doors):
             continue
-        if any(max(abs(spot % rowLength - nest % rowLength), abs(spot // rowLength - nest // rowLength)) <= 1 for nest in nests):
+        if any(max(abs(spot % city.rowLength - nest % city.rowLength),
+                   abs(spot // city.rowLength - nest // city.rowLength)) <= 1 for nest in nests):
             continue
         nests.append(spot)
     return nests

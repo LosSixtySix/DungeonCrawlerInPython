@@ -253,10 +253,10 @@ class NewPenTests(PenTest):
             if self.spot(30, row) in self.game.grid:
                 self.wallAt(30, row)
         site = dwellerbuilding.findSite(self.game, self.spot(50, 40), farmer, 7, 6)
-        rowLength = self.game.rowLength
         door, backDoor = site["door"], site["backDoor"]
         self.assertNotIn(backDoor, site["walls"])
-        self.assertTrue(door % rowLength == backDoor % rowLength or door // rowLength == backDoor // rowLength, "on opposite sides")
+        self.assertTrue(door % self.game.rowLength == backDoor % self.game.rowLength
+                        or door // self.game.rowLength == backDoor // self.game.rowLength, "on opposite sides")
         self.assertGreater(dwellers.distance(self.game, door, backDoor), 4)
         for spot in site["backWay"]:
             tile = self.game.grid[spot]
@@ -283,14 +283,13 @@ class BuildingTests(PenTest):
             self.wallAt(column, 31, wall.ShopWall)  # another building's wall
             self.wallAt(column, 49, wall.StoneWall)  # rock
         site = dwellerbuilding.findSite(self.game, self.spot(50, 40), farmer, 7, 6)
-        rowLength = self.game.rowLength
         for spot in site["box"]:
             for other in range(30, 70):
                 self.assertGreater(dwellers.distance(self.game, spot, self.spot(other, 31)), mineshafts.CLEARANCE,
                                    "another building's wall is no nearer than CLEARANCE")
-        boxColumns = [spot % rowLength for spot in site["box"]]
-        boxRows = [spot // rowLength for spot in site["box"]]
-        ring = {column + row * rowLength
+        boxColumns = [spot % self.game.rowLength for spot in site["box"]]
+        boxRows = [spot // self.game.rowLength for spot in site["box"]]
+        ring = {column + row * self.game.rowLength
                 for row in range(min(boxRows) - mineshafts.CLEARANCE, max(boxRows) + mineshafts.CLEARANCE + 1)
                 for column in range(min(boxColumns) - mineshafts.CLEARANCE, max(boxColumns) + mineshafts.CLEARANCE + 1)} - site["box"]
         self.assertEqual(site["margin"], ring)
@@ -363,23 +362,21 @@ class StorehouseTests(PenTest):
 
 class SwappingTests(PenTest):
     def test_a_stuck_worker_swaps_past_one_that_swapped_lately(self):
-        game = self.game
         other = self.worker(41, 30)
-        other.swappedAt = game.turnCount
-        game.movedEnemies = {self.spot(41, 30)}
-        game.grid[self.spot(40, 30)] = [ENEMY, 1]  # (the mover, lifted off for its turn)
-        self.assertFalse(dwellers.swapPast(game, self.spot(40, 30), self.spot(41, 30)))
-        self.assertTrue(dwellers.swapPast(game, self.spot(40, 30), self.spot(41, 30), force=True))
+        other.swappedAt = self.game.turnCount
+        self.game.movedEnemies = {self.spot(41, 30)}
+        self.game.grid[self.spot(40, 30)] = [ENEMY, 1]  # (the mover, lifted off for its turn)
+        self.assertFalse(dwellers.swapPast(self.game, self.spot(40, 30), self.spot(41, 30)))
+        self.assertTrue(dwellers.swapPast(self.game, self.spot(40, 30), self.spot(41, 30), force=True))
 
     def test_a_grub_is_only_swapped_into_its_own_pen(self):
-        game = self.game
         pen = self.pen(40, 30)
         grub = self.grub(self.spot(43, 31), pen)
-        game.movedEnemies = {self.spot(43, 31)}
-        game.grid[self.spot(43, 30)] = [ENEMY, 1]  # a farmer in the gate, wanting in
-        self.assertFalse(dwellers.swapPast(game, self.spot(43, 30), self.spot(43, 31), force=True))
+        self.game.movedEnemies = {self.spot(43, 31)}
+        self.game.grid[self.spot(43, 30)] = [ENEMY, 1]  # a farmer in the gate, wanting in
+        self.assertFalse(dwellers.swapPast(self.game, self.spot(43, 30), self.spot(43, 31), force=True))
         grub.headedTo = frozenset({self.spot(43, 30)})  # (unless that's where it's being taken)
-        self.assertTrue(dwellers.swapPast(game, self.spot(43, 30), self.spot(43, 31), force=True))
+        self.assertTrue(dwellers.swapPast(self.game, self.spot(43, 30), self.spot(43, 31), force=True))
 
 
 if __name__ == "__main__":

@@ -19,9 +19,8 @@ class LookTests(unittest.TestCase):
 
     def test_city_walls_are_drawn_in_their_rooms_wall_colors(self):
         game = cityGame()
-        painter = game.painter
         for wallKind, room in ((wall.HouseWall, "House"), (wall.ShopWall, "Shop"), (wall.NobleWall, "Noble"), (wall.CityWall, "City")):
-            self.assertEqual(painter.wallColor(wallKind().name, False), game.theme.colors[f"wall{room}"])
+            self.assertEqual(game.painter.wallColor(wallKind().name, False), game.theme.colors[f"wall{room}"])
 
     def test_every_theme_draws_a_city(self):
         game = cityGame()

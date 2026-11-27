@@ -40,20 +40,18 @@ class SightTests(unittest.TestCase):
         self.assertNotEqual(self.game.grid[self.far][1], 1)
 
     def test_enemies_are_not_drawn_to_it_even_with_a_torch_in_hand(self):
-        game = self.game
-        game.player.equipment["Right Hand"] = items.equipment("Light", "Torch", "Hands", 2)
-        game.player.drinkEffect("darkvision", 50)
-        game.setPositionsVisible()
-        self.assertTrue(game.torchLight, "the torch's own light is still seen")
-        self.assertFalse(game.darkSight & game.torchLight)
-        self.assertIsNone(game.torchSpotSeen(set(game.darkSight)))
+        self.game.player.equipment["Right Hand"] = items.equipment("Light", "Torch", "Hands", 2)
+        self.game.player.drinkEffect("darkvision", 50)
+        self.game.setPositionsVisible()
+        self.assertTrue(self.game.torchLight, "the torch's own light is still seen")
+        self.assertFalse(self.game.darkSight & self.game.torchLight)
+        self.assertIsNone(self.game.torchSpotSeen(set(self.game.darkSight)))
 
     def test_from_inside_smoke_it_shows_nothing_more(self):
-        game = self.game
-        game.smoke[self.middle] = 5
-        game.player.drinkEffect("darkvision", 50)
-        game.setPositionsVisible()
-        self.assertEqual(game.darkSight, set())
+        self.game.smoke[self.middle] = 5
+        self.game.player.drinkEffect("darkvision", 50)
+        self.game.setPositionsVisible()
+        self.assertEqual(self.game.darkSight, set())
 
     def test_it_is_drawn_dim_and_unlit(self):
         painter = renderer.renderer.__new__(renderer.renderer)

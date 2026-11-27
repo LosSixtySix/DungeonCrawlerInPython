@@ -30,27 +30,24 @@ class HelperTests(unittest.TestCase):
         self.assertTrue(organizers.isDemise(demiseTile))
 
     def test_offsets_that_fall_off_the_map_give_none(self):
-        game = self.game
-        center = middleOf(game)
-        self.assertEqual(organizers.toTiles(game, center, {(1, 0), (0, 1)}), {center + 1, center + game.rowLength})
-        leftEdge = (center // game.rowLength) * game.rowLength
-        self.assertIsNone(organizers.toTiles(game, leftEdge, {(-1, 0)}))
+        center = middleOf(self.game)
+        self.assertEqual(organizers.toTiles(self.game, center, {(1, 0), (0, 1)}), {center + 1, center + self.game.rowLength})
+        leftEdge = (center // self.game.rowLength) * self.game.rowLength
+        self.assertIsNone(organizers.toTiles(self.game, leftEdge, {(-1, 0)}))
 
     def test_manhattan_distance_counts_steps(self):
-        game = self.game
-        center = middleOf(game)
-        self.assertEqual(organizers.manhattan(game, center, center + 3 + 2 * game.rowLength), 5)
+        center = middleOf(self.game)
+        self.assertEqual(organizers.manhattan(self.game, center, center + 3 + 2 * self.game.rowLength), 5)
 
     def test_reachable_walks_around_walls(self):
-        game = self.game
-        center = middleOf(game)
-        game.grid[center + 1] = [2, 0, wall.StoneWall()]
-        distances, cameFrom = organizers.reachable(game, center)
+        center = middleOf(self.game)
+        self.game.grid[center + 1] = [2, 0, wall.StoneWall()]
+        distances, cameFrom = organizers.reachable(self.game, center)
         self.assertNotIn(center + 1, distances)
         self.assertEqual(distances[center + 2], 4)  # around the wall
         self.assertEqual(distances[center - 1], 1)
         firstStep = organizers.firstStep(cameFrom, center, center + 2)
-        self.assertIn(firstStep, game.neighbors(center))
+        self.assertIn(firstStep, self.game.neighbors(center))
 
 
 class PlanTests(unittest.TestCase):
@@ -162,11 +159,10 @@ class BuildingTests(unittest.TestCase):
         self.assertFalse(organizers.overgrow(game, center))
 
     def test_an_organizer_beside_you_attacks_instead_of_working(self):
-        game = self.game
-        support.placePlayer(game, self.center + 1)
+        support.placePlayer(self.game, self.center + 1)
         squareOrganizer = enemies.SquareOrganizer()
         squareOrganizer.rest = 0
-        position, sameOrganizer = organizers.takeTurn(game, self.center, squareOrganizer, emptyContext())
+        position, sameOrganizer = organizers.takeTurn(self.game, self.center, squareOrganizer, emptyContext())
         self.assertEqual(position, self.center)
         self.assertIs(sameOrganizer, squareOrganizer)
         self.assertIsNone(squareOrganizer.plan)
@@ -228,12 +224,11 @@ class BrokenWallTests(unittest.TestCase):
         self.assertIsNone(squareOrganizer.aggro)
 
     def test_an_angry_organizer_walks_toward_the_player(self):
-        game = self.game
-        support.placePlayer(game, self.center + 6)
+        support.placePlayer(self.game, self.center + 6)
         squareOrganizer, _ = self.buildersWall(enemies.SquareOrganizer, 2)
         squareOrganizer.aggro = "player"
-        game.grid[self.center].pop()  # lifted off its tile, as MoveEnemies does
-        position = organizers.chase(game, self.center, squareOrganizer, emptyContext())
+        self.game.grid[self.center].pop()  # lifted off its tile, as MoveEnemies does
+        position = organizers.chase(self.game, self.center, squareOrganizer, emptyContext())
         self.assertEqual(position, self.center + 1)
 
 

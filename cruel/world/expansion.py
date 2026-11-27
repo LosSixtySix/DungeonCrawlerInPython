@@ -7,6 +7,7 @@ from cruel.world import bodies
 from cruel.world import occupancy
 from cruel.world import organizers
 from cruel.world import plants
+from cruel.world import ranged
 from cruel.inventory import resources
 from cruel.world import wall
 
@@ -87,9 +88,9 @@ CAMP = 10                   # grid tile type for camp structures (spawners and b
 HOLE = 11                   # grid tile type for broken floor (a bomb's collapse): step on it and you fall to the floor below
 
 SPAWN_TURNS = (30, 50)      # turns between a spawner's goblins
-SPAWN_ODDS = [("Goblin", 64), ("Goblin Chieftan", 22), ("Goblin Builder", 8), ("Goblin Farmer", 6)]
+SPAWN_ODDS = [("Goblin", 50), ("Goblin Chieftan", 20), ("Goblin Archer", 16), ("Goblin Builder", 8), ("Goblin Farmer", 6)]
 WORKERS = ("Goblin Builder", "Goblin Farmer")  # they don't join squads, and only fight what's right beside them
-UNIT_CLASSES = {"Goblin": enemies.Goblin, "Goblin Chieftan": enemies.GoblinChief,
+UNIT_CLASSES = {"Goblin": enemies.Goblin, "Goblin Chieftan": enemies.GoblinChief, "Goblin Archer": enemies.GoblinArcher,
                 "Goblin Builder": enemies.GoblinBuilder, "Goblin Farmer": enemies.GoblinFarmer}
 SPAWNER_HP = 30
 SPAWNER_DROPS = [("stone", 2), ("scrap", 1)]
@@ -193,7 +194,7 @@ GUARD_REACH = 18            # a neutral faction's squads only fight what comes t
 GRUDGE_TURNS = 150          # provoke a neutral faction and it's hostile to you for this many turns
 FAR_SPOTS_WEIGHED = 300     # how many open spots a neutral faction compares when it looks for the farthest one
 
-GOBLIN_NAMES = ("Goblin", "Goblin Chieftan")
+GOBLIN_NAMES = ("Goblin", "Goblin Chieftan", "Goblin Archer")
 
 # The hut: offsets from its center. A 7x7 square with the corners left out, an entrance in the middle of each of
 # its 4 sides, a 5x5 room inside and the spawner in the middle. The Stone floor covers it and a 1-tile border.
@@ -343,8 +344,7 @@ def factionOf(enemy):
 
 
 def dist(gm, a, b):
-    R = gm.rowLength
-    return math.hypot(a % R - b % R, a // R - b // R)
+    return math.hypot(a % gm.rowLength - b % gm.rowLength, a // gm.rowLength - b // gm.rowLength)
 
 
 def offsetTile(gm, center, dx, dy):
@@ -437,10 +437,9 @@ def isOre(tile):
 def beginTurn(gm):
     """Where every enemy is at the start of the enemy turn, bucketed by area so nearby searches are quick."""
     pos, buckets = {}, {}
-    R = gm.rowLength
     for p, e in occupancy.allUnits(gm):  # (two on a space included)
         pos[id(e)] = p
-        buckets.setdefault((p % R // 8, p // R // 8), []).append((p, e))
+        buckets.setdefault((p % gm.rowLength // 8, p // gm.rowLength // 8), []).append((p, e))
     updatePeace(gm)
     return {"pos": pos, "buckets": buckets, "squadTargets": {}, "fields": {}}
 
@@ -458,8 +457,7 @@ def find(gm, ctx, enemy):
 
 def near(gm, ctx, position, reach):
     """(position, enemy) for enemies within reach of position (by the turn's starting positions)."""
-    R = gm.rowLength
-    bx, by, span = position % R // 8, position // R // 8, int(reach) // 8 + 1
+    bx, by, span = position % gm.rowLength // 8, position // gm.rowLength // 8, int(reach) // 8 + 1
     for gx in range(bx - span, bx + span + 1):
         for gy in range(by - span, by + span + 1):
             for p, e in ctx["buckets"].get((gx, gy), ()):
@@ -673,20 +671,21 @@ def digWall(gm, i, unit, t, damage):
     gm.change = True
 
 
-def attack(gm, i, unit, target, targetPosition):
-    """unit hits target ("player" or an enemy). Whatever it hits fights back."""
+def attack(gm, i, unit, target, targetPosition, damage=None, fightsBack=True):
+    """unit hits target ("player" or an enemy) for damage (its own hit when not given). Whatever it hits fights back,
+    unless fightsBack is False (an archer's arrow striking one of its own side, ranged.py)."""
     if target == "player":
         gm.hitPlayer(unit, i)
         return
     target = occupancy.victimAt(gm, targetPosition, target)  # (two on the space: the weaker one is hit)
-    target.hp -= gm.enemyDodge(target, unit.damage, targetPosition)
+    target.hp -= gm.enemyDodge(target, unit.damage if damage is None else damage, targetPosition)
     gm.bleed(targetPosition)
     gm.change = True
     if isinstance(target, enemies.Organizer):
         organizers.placedBy(target)
-        if target.aggro is None and not isinstance(target, enemies.PlantOrganizer):
+        if fightsBack and target.aggro is None and not isinstance(target, enemies.PlantOrganizer):
             target.aggro, target.aggroTurns = unit, 0
-    elif factionOf(target) is None:
+    elif fightsBack and factionOf(target) is None:
         target.foe = unit
     if target.hp <= 0:
         gm.killEnemy(targetPosition, killer=unit, unit=target)
@@ -721,6 +720,14 @@ def takeTurn(gm, i, unit, ctx):
         if slotsUsed(unit) > CARRY_SLOTS:  # a kill's spoils (and meat) can overfill its pockets
             dropExtra(gm, unit, i)
         return i
+    if ranged.isRanged(unit):  # an archer shoots the nearest foe it can before anything else
+        target = ranged.factionTarget(gm, i, unit, ctx)
+        if target is not None:
+            ranged.shoot(gm, i, unit, target)
+            if slotsUsed(unit) > CARRY_SLOTS:
+                dropExtra(gm, unit, i)
+            moved(ctx, unit, i)
+            return i
     if unit.name == "Goblin Builder":
         position = builderTurn(gm, i, unit, ctx)
     elif unit.name == "Goblin Farmer":
@@ -786,7 +793,7 @@ def joinSquad(gm, unit, f):
     def wants(s):
         members = alive(s)
         return not any(m.name == "Goblin Chieftan" for m in members) if chief else \
-            sum(m.name == "Goblin" for m in members) < SQUAD_GOBLINS
+            sum(m.name in ("Goblin", "Goblin Archer") for m in members) < SQUAD_GOBLINS  # (an archer fills a goblin's place)
 
     squad = next((s for s in f.squads if s.marching and wants(s)), None) or \
         next((s for s in f.squads if not s.marching and wants(s)), None)
@@ -2752,6 +2759,9 @@ def otherTurn(gm, i, enemy, ctx):
         elif at in gm.neighbors(i):
             attack(gm, i, enemy, foe, at)
             return i
+        elif ranged.isRanged(enemy) and ranged.canShoot(gm, i, at, enemy):
+            ranged.shoot(gm, i, enemy, at)
+            return i
         else:
             position = step(gm, i, enemy, at, set(), ctx)
             moved(ctx, enemy, position)
@@ -2994,10 +3004,9 @@ def crack(gm, piece, damage):
     """A spawner or warcamp chest took damage: it cracks like a wall (wall.Wall.takeDamage), more of its picture
     chipped the bigger the share of its HP the hit took (renderer.crackedPicture draws them)."""
     maxHp = getattr(piece, "maxHp", None) or CHEST_HP
-    ts = gm.tileSize
-    share = int(min(damage, max(piece.hp, 0) + damage) / maxHp * ts * ts)
+    share = int(min(damage, max(piece.hp, 0) + damage) / maxHp * gm.tileSize * gm.tileSize)
     points = piece.__dict__.setdefault("brokenPoints", set())
-    points |= wall.getRandomPoints((1, ts - 1), (1, ts - 1), share)
+    points |= wall.getRandomPoints((1, gm.tileSize - 1), (1, gm.tileSize - 1), share)
 
 
 def hitStructure(gameManager, spot):

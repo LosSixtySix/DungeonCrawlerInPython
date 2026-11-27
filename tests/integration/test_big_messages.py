@@ -60,26 +60,24 @@ class TimingTests(MessageTest):
         self.assertAlmostEqual(slow, quick, delta=0.06)
 
     def test_a_stalled_frame_does_not_eat_the_message(self):
-        game = self.game
         clock = FrameClock(16)
-        game.messageBools["floorLevelMessage"] = True
-        game.painter.fade, game.painter.messageTicks = 255, None
+        self.game.messageBools["floorLevelMessage"] = True
+        self.game.painter.fade, self.game.painter.messageTicks = 255, None
         with mock.patch("pygame.time.get_ticks", clock):
-            game.draw(overlayOnly=True)
+            self.game.draw(overlayOnly=True)
             clock.now += 3000  # (a new floor being made)
-            game.draw(overlayOnly=True)
-        self.assertTrue(game.messageBools["floorLevelMessage"], "still up")
-        self.assertGreater(game.painter.fade, 200)
+            self.game.draw(overlayOnly=True)
+        self.assertTrue(self.game.messageBools["floorLevelMessage"], "still up")
+        self.assertGreater(self.game.painter.fade, 200)
 
 
 class ShadeTests(MessageTest):
     def shadeBehind(self, key):
         """How dark (alpha 0 to 255) the screen behind the message is on its first frame."""
-        game = self.game
-        game.messageBools = {name: name == key for name in game.messageBools}
-        game.painter.fade = 255
-        game.draw()
-        return game.painter.messageCanvas.get_at((0, 0)).a
+        self.game.messageBools = {name: name == key for name in self.game.messageBools}
+        self.game.painter.fade = 255
+        self.game.draw()
+        return self.game.painter.messageCanvas.get_at((0, 0)).a
 
     def test_an_event_only_darkens_the_view(self):
         shade = self.shadeBehind("eventMessage")
@@ -90,11 +88,10 @@ class ShadeTests(MessageTest):
         self.assertEqual(self.shadeBehind("floorLevelMessage"), 255)
 
     def test_the_darkness_lightens_as_it_fades(self):
-        game = self.game
         self.shadeBehind("eventMessage")
-        game.painter.fade = 100
-        game.draw()
-        self.assertEqual(game.painter.messageCanvas.get_at((0, 0)).a, 100 * gamemanager.MESSAGE_SHADES["eventMessage"] // 255)
+        self.game.painter.fade = 100
+        self.game.draw()
+        self.assertEqual(self.game.painter.messageCanvas.get_at((0, 0)).a, 100 * gamemanager.MESSAGE_SHADES["eventMessage"] // 255)
 
 
 if __name__ == "__main__":

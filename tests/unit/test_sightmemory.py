@@ -58,8 +58,7 @@ class LightTests(unittest.TestCase):
 
     def test_it_matches_working_it_out_afresh(self):
         lit = self.memory.lightFrom(self.lamp, 5)
-        grid = self.game.grid
-        self.assertEqual(lit, sight.fieldOfView(self.lamp, 5, ROW_LENGTH, ROW_COUNT, lambda place: grid[place][0] == WALL))
+        self.assertEqual(lit, sight.fieldOfView(self.lamp, 5, ROW_LENGTH, ROW_COUNT, lambda place: self.game.grid[place][0] == WALL))
         self.assertNotIn(spot(14, 10), lit, "the wall shades what's behind it")
 
     def test_a_change_where_it_looked_works_it_out_again(self):
@@ -81,13 +80,12 @@ class LightTests(unittest.TestCase):
         self.assertIs(self.memory.lightFrom(self.lamp, 5), first)
 
     def test_a_change_behind_a_wall_it_never_looked_past_keeps_it(self):
-        game = self.game
         for row in range(5, 16):
-            game.grid[spot(12, row)] = [WALL, 0]
-        memory = sightmemory.refresh(game, OPEN)
+            self.game.grid[spot(12, row)] = [WALL, 0]
+        memory = sightmemory.refresh(self.game, OPEN)
         first = memory.lightFrom(self.lamp, 5)
-        game.grid[spot(14, 10)] = [WALL, 0]  # (behind the wall, in reach)
-        sightmemory.refresh(game, OPEN)
+        self.game.grid[spot(14, 10)] = [WALL, 0]  # (behind the wall, in reach)
+        sightmemory.refresh(self.game, OPEN)
         self.assertIs(memory.lightFrom(self.lamp, 5), first)
 
 

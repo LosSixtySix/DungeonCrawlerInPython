@@ -60,10 +60,9 @@ class OreFloorTests(unittest.TestCase):
     def test_a_copper_lode_fills_its_walls_with_copper_and_a_third_coal(self):
         random.seed(12)
         game = support.newGame()
-        grid = game.grid
-        wallCount = sum(1 for tile in grid.values() if tile[0] == 2)
-        game.placeOreFloorVeins(grid, "Copper Lode", 5, False)
-        veins = [tile[2] for tile in grid.values() if tile[0] == 2 and isinstance(tile[2], wall.OreVein)]
+        wallCount = sum(1 for tile in game.grid.values() if tile[0] == 2)
+        game.placeOreFloorVeins(game.grid, "Copper Lode", 5, False)
+        veins = [tile[2] for tile in game.grid.values() if tile[0] == 2 and isinstance(tile[2], wall.OreVein)]
         veinTypes = {type(vein) for vein in veins}
         self.assertTrue(veinTypes <= {wall.CopperVein, wall.CoalVein})
         low, high = wall.ORE_FLOOR_DENSITY

@@ -30,6 +30,7 @@ from cruel.world import dewgrubs
 from cruel.world import dwellerfarming
 from cruel.world import dwellers
 from cruel.world import queen
+from cruel.world import ranged
 from cruel.world import sight
 from cruel.world import sightmemory
 from cruel.world import followers
@@ -530,12 +531,11 @@ class gameManager():
         self.console.onTextInput(event)
 
     def onKeyDown(self, event):
-        key = event.key
-        repeat = key in self.keysHeld
-        self.keysHeld.add(key)
+        repeat = event.key in self.keysHeld
+        self.keysHeld.add(event.key)
         # ~ opens the developer console; while it's open every key goes to it (held Backspace still repeats)
-        if self.scene == "playing" and self.rebinding is None and (self.console.open or key == pygame.K_BACKQUOTE):
-            if repeat and key in (pygame.K_BACKQUOTE, pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_KP_ENTER):
+        if self.scene == "playing" and self.rebinding is None and (self.console.open or event.key == pygame.K_BACKQUOTE):
+            if repeat and event.key in (pygame.K_BACKQUOTE, pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_KP_ENTER):
                 return
             if self.console.open:
                 self.console.onKey(event)
@@ -543,36 +543,36 @@ class gameManager():
                 self.console.toggle()
             return
         self.patienceMs = 0  # any key breaks your patience
-        if repeat and (self.rebinding is not None or not self.isRepeatable(key)):
+        if repeat and (self.rebinding is not None or not self.isRepeatable(event.key)):
             return  # a held key repeating: ignored unless it's one that should repeat
         self.change = True
         if self.scene == "title":
-            return self.onTitleKey(key)
+            return self.onTitleKey(event.key)
         if self.scene == "attempts":
-            return self.onAttemptsKey(key)
+            return self.onAttemptsKey(event.key)
         if self.rebinding is not None:
-            return self.onRebindKey(key)
+            return self.onRebindKey(event.key)
         if self.pausePage is not None:
-            return self.onPauseKey(key)
+            return self.onPauseKey(event.key)
         if self.crafting is not None:  # busy crafting: Esc stops it, every other key waits
-            if key == pygame.K_ESCAPE:
+            if event.key == pygame.K_ESCAPE:
                 self.stopCrafting(f"Stopped making {self.crafting['recipe'].name}")
             return
         if getattr(self, "autoPlay", None) is not None:  # watching (/play): Esc stops it, every other key waits
-            if key == pygame.K_ESCAPE:
+            if event.key == pygame.K_ESCAPE:
                 self.autoPlay = None
                 self.console.write("good", "Stopped: your turn again")
             return
         if self.throwing is not None:  # aiming a throw: arrows move the target, Enter throws, Esc puts it away
-            return self.onThrowKey(key)
+            return self.onThrowKey(event.key)
 
-        if key == pygame.K_ESCAPE:
+        if event.key == pygame.K_ESCAPE:
             return self.onEscape()
-        if self.isAction(key, "cycle"):
+        if self.isAction(event.key, "cycle"):
             self.cycleHeld = True
             self.cycleUsed = False
             return
-        move = self.direction(key)
+        move = self.direction(event.key)
         if self.cycleHeld and move is not None and move[1] == 0:
             self.cycleFocus(move[0])
             self.cycleUsed = True
@@ -582,9 +582,9 @@ class gameManager():
             self.cycleUsed = True
             return
         for windowId in WINDOW_ORDER:
-            if windowId not in OPENED_BY_INTERACT and self.isAction(key, WINDOW_HOTKEY[windowId]):
+            if windowId not in OPENED_BY_INTERACT and self.isAction(event.key, WINDOW_HOTKEY[windowId]):
                 return self.onWindowHotkey(windowId)
-        if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT) and self.focus in ("inventory", "equipment"):
                 return self.dropFocusedItem()
             if self.focus == "crafting":
@@ -592,7 +592,7 @@ class gameManager():
             if self.focus == "shop":  # Ctrl+Enter on a material sells every whole lot
                 return self.shopEnter(everything=bool(event.mod & (pygame.KMOD_CTRL | pygame.KMOD_ALT)))
             return self.onEnter()
-        if self.isAction(key, "interact"):
+        if self.isAction(event.key, "interact"):
             if self.focus == "attack" and "attack" in self.openWindows:  # interact again hits the one marked
                 return self.onWindowEnter("attack")
             if self.focus == "shop" and "shop" in self.openWindows:
@@ -605,11 +605,11 @@ class gameManager():
             return
         if move is not None:
             self.onDirectionKey(*move)
-        elif self.isAction(key, "wait"):  # (last: a key you'd bound to something else before Wait came keeps doing that)
+        elif self.isAction(event.key, "wait"):  # (last: a key you'd bound to something else before Wait came keeps doing that)
             self.waitTurn()
-        elif self.isAction(key, "drop_glowrock"):  # (last too, for the same reason)
+        elif self.isAction(event.key, "drop_glowrock"):  # (last too, for the same reason)
             self.dropGlowrock()
-        elif self.isAction(key, "pitch_bolt"):
+        elif self.isAction(event.key, "pitch_bolt"):
             self.startPitchBolt()
 
     def waitTurn(self):
@@ -720,26 +720,26 @@ class gameManager():
         """Rows: Resolution, Mode, Apply, Back. Left/Right (or Enter) changes a value; nothing happens until Apply."""
         enter = key in (pygame.K_RETURN, pygame.K_KP_ENTER)
         step = move[0] if move is not None else (1 if enter else 0)
-        pending = self.pendingDisplay
         if key == pygame.K_ESCAPE or (enter and self.titleSel == 3):
             self.openTitlePage("settings")
         elif self.titleSel == 0 and step:
-            choices = self.resolutionChoices(pending["fullscreen"])
-            index = choices.index(pending["resolution"]) if pending["resolution"] in choices else 0
+            choices = self.resolutionChoices(self.pendingDisplay["fullscreen"])
+            index = choices.index(self.pendingDisplay["resolution"]) if self.pendingDisplay["resolution"] in choices else 0
             # Right goes up a size, Left goes down (the list is biggest first); it wraps around at either end
-            pending["resolution"] = choices[(index - step) % len(choices)]
+            self.pendingDisplay["resolution"] = choices[(index - step) % len(choices)]
         elif self.titleSel == 1 and step:
-            pending["fullscreen"] = not pending["fullscreen"]
-            choices = self.resolutionChoices(pending["fullscreen"])
-            if pending["resolution"] not in choices:  # e.g. a size only fullscreen offers: use the closest that fits
-                w, h = pending["resolution"]
-                pending["resolution"] = min(choices, key=lambda size: abs(size[0] - w) + abs(size[1] - h))
+            self.pendingDisplay["fullscreen"] = not self.pendingDisplay["fullscreen"]
+            choices = self.resolutionChoices(self.pendingDisplay["fullscreen"])
+            if self.pendingDisplay["resolution"] not in choices:  # e.g. a size only fullscreen offers: use the closest that fits
+                w, h = self.pendingDisplay["resolution"]
+                self.pendingDisplay["resolution"] = min(choices, key=lambda size: abs(size[0] - w) + abs(size[1] - h))
         elif self.titleSel == 2 and enter:
-            if pending["resolution"] == self.displaySize() and pending["fullscreen"] == self.settings.fullscreen:
+            if self.pendingDisplay["resolution"] == self.displaySize() and self.pendingDisplay["fullscreen"] == self.settings.fullscreen:
                 self.titleMessage = "Nothing to change"
                 return
-            self.settings.resolution = None if pending["resolution"] == self.desktopSize() else list(pending["resolution"])
-            self.settings.fullscreen = pending["fullscreen"]
+            self.settings.resolution = None if self.pendingDisplay["resolution"] == self.desktopSize() \
+                else list(self.pendingDisplay["resolution"])
+            self.settings.fullscreen = self.pendingDisplay["fullscreen"]
             self.settings.save()
             self.applyDisplay()
             self.titleMessage = "Display settings applied"
@@ -859,11 +859,10 @@ class gameManager():
         self.focus = stops[(index + step) % len(stops)]
 
     def moveSelection(self, dx, dy):
-        windowId = self.focus
-        if windowId == "loot":
+        if self.focus == "loot":
             self.windowSel["loot"] = max(0, min(len(loot.LOOT_TABS) - 1, self.windowSel["loot"] + dx))
             return
-        if windowId == "crafting":
+        if self.focus == "crafting":
             if dx:
                 tab = max(0, min(len(recipes.STATIONS) - 1, self.craftTab + dx))
                 if tab != self.craftTab:
@@ -872,15 +871,15 @@ class gameManager():
                 last = max(0, len(self.craftRecipes()) - 1)
                 self.windowSel["crafting"] = max(0, min(last, self.windowSel["crafting"] + dy))
             return
-        if windowId == "inventory":
+        if self.focus == "inventory":
             index = self.windowSel["inventory"] + dx + dy * INVENTORY_COLUMNS
             if 0 <= index < self.player.inventoryLimit:
                 self.windowSel["inventory"] = index
             self.scrollInventory()
             return
-        if windowId == "shop":
+        if self.focus == "shop":
             return self.moveShopSelection(dx, dy)
-        if windowId == "equipment" and self.swapActive():
+        if self.focus == "equipment" and self.swapActive():
             keys = list(self.player.equipment.keys())
             slots = self.swap["slots"]
             current = keys[self.windowSel["equipment"]]
@@ -889,8 +888,8 @@ class gameManager():
             return
         count = {"equipment": len(self.player.equipment), "levelup": len(self.player.attributes),
                  "items": len(self.roomItems) if self.roomItems else 0,
-                 "attack": len((getattr(self, "attackChoice", None) or {}).get("units", []))}[windowId]
-        self.windowSel[windowId] = max(0, min(count - 1, self.windowSel[windowId] + dy))
+                 "attack": len((getattr(self, "attackChoice", None) or {}).get("units", []))}[self.focus]
+        self.windowSel[self.focus] = max(0, min(count - 1, self.windowSel[self.focus] + dy))
 
     def onWindowEnter(self, windowId):
         index = self.windowSel[windowId]
@@ -951,19 +950,18 @@ class gameManager():
     # (or the nearest tile with room, see placeItems), where it can be picked up again. It's a free action.
 
     def dropFocusedItem(self):
-        player = self.player
         if self.focus == "inventory":
             index = self.windowSel["inventory"]
-            if index >= len(player.inventory):
+            if index >= len(self.player.inventory):
                 return
-            take = lambda: (player.takeOne(index), [])  # one potion off a stack
+            take = lambda: (self.player.takeOne(index), [])  # one potion off a stack
         else:
             if self.swapActive():
                 return
-            slot = list(player.equipment)[self.windowSel["equipment"]]
-            if player.equipment[slot] == "None":
+            slot = list(self.player.equipment)[self.windowSel["equipment"]]
+            if self.player.equipment[slot] == "None":
                 return
-            take = lambda: player.takeOff(slot)
+            take = lambda: self.player.takeOff(slot)
         if not any(self.roomFor(self.groundAt(p)) for p in self.spillOrder(self.playerPositionFlat)):
             self.addPopup("No room to drop it", self.playerPositionFlat)
             return
@@ -975,14 +973,13 @@ class gameManager():
     def dropGlowrock(self):
         """The Drop Glowrock hotkey (G): sets one Glowrock down at your feet (or the nearest tile with room), out of
         a Glowrock Pouch if you have one with any in it, otherwise a loose one. A free action, like any drop."""
-        player = self.player
-        if not player.glowrockCount():
+        if not self.player.glowrockCount():
             self.addPopup("No Glowrock to drop", self.playerPositionFlat)
             return
         if not any(self.roomFor(self.groundAt(p)) for p in self.spillOrder(self.playerPositionFlat)):
             self.addPopup("No room to drop it", self.playerPositionFlat)
             return
-        rock = player.takeGlowrock()
+        rock = self.player.takeGlowrock()
         self.fitSelections()
         self.placeItems(self.playerPositionFlat, [rock])
         self.change = True
@@ -1148,8 +1145,8 @@ class gameManager():
         swap = self.swap
         if swap is None:
             return False
-        inventory = self.player.inventory
-        if self.focus != "equipment" or swap["index"] >= len(inventory) or inventory[swap["index"]] is not swap["item"]:
+        if self.focus != "equipment" or swap["index"] >= len(self.player.inventory) \
+                or self.player.inventory[swap["index"]] is not swap["item"]:
             self.swap = None
             return False
         return True
@@ -1195,8 +1192,8 @@ class gameManager():
         state = self.stationState(station)
         if state == "locked":
             return []
-        inventory = self.player.inventory
-        rows = recipes.forStation(station) + recipes.relicStationRecipes(station, inventory) +             recipes.salvageRecipes(station, inventory)
+        rows = recipes.forStation(station) + recipes.relicStationRecipes(station, self.player.inventory) + \
+            recipes.salvageRecipes(station, self.player.inventory)
         if recipes.STATION_INFO[station]["setup"]:
             if state == "packed":
                 rows.insert(0, recipes.setupRecipe(station))
@@ -1219,7 +1216,6 @@ class gameManager():
 
     def craftProblem(self, recipe):
         """Why this recipe can't be made right now, or None if it can."""
-        player = self.player
         name = recipes.STATION_INFO[recipe.station]["name"]
         state = self.stationState(recipe.station)
         if recipe.kind == "setup":
@@ -1231,29 +1227,28 @@ class gameManager():
         if state == "away":
             return f"stand next to your {name}"
         if state == "elsewhere":
-            return f"your {name} is on floor {mineshafts.floorLabel(player.stationPlaced[recipe.station][0])}"
+            return f"your {name} is on floor {mineshafts.floorLabel(self.player.stationPlaced[recipe.station][0])}"
         if recipe.kind == "pack":
             return None
-        if recipe.kind == "station" and recipe.makes in player.stations:
+        if recipe.kind == "station" and recipe.makes in self.player.stations:
             return "already made"
-        if recipe.kind == "upgrade" and player.pouchLimit >= resources.BIG_POUCH_LIMIT:
+        if recipe.kind == "upgrade" and self.player.pouchLimit >= resources.BIG_POUCH_LIMIT:
             return "already made"
-        if recipe.target is not None and not any(item is recipe.target for item in player.inventory):
+        if recipe.target is not None and not any(item is recipe.target for item in self.player.inventory):
             return "it's not in your pack any more"
-        if player.gold < recipe.needs.get("gold", 0):
+        if self.player.gold < recipe.needs.get("gold", 0):
             return "not enough gold"
-        if not player.hasMaterials(recipe.needs):
+        if not self.player.hasMaterials(recipe.needs):
             return "not enough materials"
-        if recipe.kind == "item" and len(player.inventory) >= player.inventoryLimit:
+        if recipe.kind == "item" and len(self.player.inventory) >= self.player.inventoryLimit:
             return "inventory is full"
         if recipe.kind == "plant":
-            look = self.PlayerLookPosition
-            if look not in self.grid or self.grid[look][0] != 0:
+            if self.PlayerLookPosition not in self.grid or self.grid[self.PlayerLookPosition][0] != 0:
                 return "face an empty floor tile"
-            if not plants.growsOn(recipe.makes, plants.floorOf(look, self.rooms)):
+            if not plants.growsOn(recipe.makes, plants.floorOf(self.PlayerLookPosition, self.rooms)):
                 floors = plants.PLANTS[recipe.makes]["cityFloors" if self.proportion == metropolis.METROPOLIS else "floors"]
                 return f"it only grows on {' or '.join(floors)} floors"
-        if recipe.kind == "potion" and player.roomFor(recipe.makeItem(0, 0)) < recipe.amount:
+        if recipe.kind == "potion" and self.player.roomFor(recipe.makeItem(0, 0)) < recipe.amount:
             return "not enough room in your inventory"
         return None
 
@@ -1367,42 +1362,40 @@ class gameManager():
             self.stopCrafting(f"Made {craft['done']} of {craft['times']}: {problem}")
 
     def finishCraft(self, recipe):
-        player = self.player
-        kind = recipe.kind
-        if kind == "setup":
+        if recipe.kind == "setup":
             spot = self.freeSpotBesidePlayer()
             self.grid[spot] = [7, 1, recipes.Station(recipe.station)]
-            player.stationPlaced[recipe.station] = (mineshafts.floorKey(self), spot)
+            self.player.stationPlaced[recipe.station] = (mineshafts.floorKey(self), spot)
             self.craftMessage = f"{recipes.STATION_INFO[recipe.station]['name']} set up"
             return
-        if kind == "pack":
-            spot = player.stationPlaced.pop(recipe.station)[1]
+        if recipe.kind == "pack":
+            spot = self.player.stationPlaced.pop(recipe.station)[1]
             self.grid[spot] = [0, self.grid[spot][1]]
             self.craftMessage = f"{recipes.STATION_INFO[recipe.station]['name']} packed away"
             return
-        player.spendMaterials(recipe.needs)
-        if kind == "station":
-            player.stations.add(recipe.makes)
+        self.player.spendMaterials(recipe.needs)
+        if recipe.kind == "station":
+            self.player.stations.add(recipe.makes)
             message = f"{recipe.name} made: new tab unlocked"
             if recipes.STATION_INFO[recipe.makes]["setup"]:
                 message += ", set it up there"
             popup = recipe.name
-        elif kind == "upgrade":
-            player.pouchLimit = resources.BIG_POUCH_LIMIT
-            message = popup = f"Pouch holds {player.pouchLimit} of each"
-        elif kind == "material":
-            added = player.addMaterial(recipe.makes, recipe.amount)
+        elif recipe.kind == "upgrade":
+            self.player.pouchLimit = resources.BIG_POUCH_LIMIT
+            message = popup = f"Pouch holds {self.player.pouchLimit} of each"
+        elif recipe.kind == "material":
+            added = self.player.addMaterial(recipe.makes, recipe.amount)
             popup = f"+{added} {resources.materialName(recipe.makes)}"
             message = popup if added == recipe.amount else popup + " (pouch full)"
-        elif kind == "scrap":
-            player.inventory = [item for item in player.inventory if item is not recipe.target]
-            player.addMaterial("relic_dust", 3)
+        elif recipe.kind == "scrap":
+            self.player.inventory = [item for item in self.player.inventory if item is not recipe.target]
+            self.player.addMaterial("relic_dust", 3)
             message = popup = "+3 Relic Dust"
             if rand.random() < 0.5:
-                player.addMaterial("void_shard", 1)
+                self.player.addMaterial("void_shard", 1)
                 message += ", +1 Void Shard"
-        elif kind == "salvage":
-            player.inventory = [item for item in player.inventory if item is not recipe.target]
+        elif recipe.kind == "salvage":
+            self.player.inventory = [item for item in self.player.inventory if item is not recipe.target]
             made = recipes.RECIPES_BY_ID[recipe.makes]
             back = recipes.rollSalvage(made, self.salvagePercent())
             for materialId, amount in back.items():
@@ -1410,30 +1403,29 @@ class gameManager():
             got = ", ".join(f"{n} {'Gold' if m == 'gold' else resources.materialName(m)}" for m, n in back.items())
             self.craftMessage = f"Took apart {recipe.target.name}: " + (got or "nothing worth keeping")
             return
-        elif kind == "plant":
-            look = self.PlayerLookPosition
-            self.grid[look] = [8, self.grid[look][1], plants.Plant(recipe.makes, planted=True)]
+        elif recipe.kind == "plant":
+            self.grid[self.PlayerLookPosition] = [8, self.grid[self.PlayerLookPosition][1], plants.Plant(recipe.makes, planted=True)]
             popup = f"Planted {plants.PLANTS[recipe.makes]['name']}"
             message = popup
             self.craftMessage = message
-            self.addPopup(popup, look)
+            self.addPopup(popup, self.PlayerLookPosition)
             return
-        elif kind == "potion":
+        elif recipe.kind == "potion":
             for _ in range(recipe.amount):
                 made = recipe.makeItem(0, 0)
                 made.recipeId = recipe.id
-                player.addItemToInventory(made)
+                self.player.addItemToInventory(made)
             name = recipe.makeItem(0, 0).name
             popup = name if recipe.amount == 1 else f"{recipe.amount} {name}"
             message = f"{popup} added to your inventory"
-        elif kind in ("reforge", "rekindle"):
+        elif recipe.kind in ("reforge", "rekindle"):
             relics.givePower(recipe.target, relics.newPower(recipe.target))
             popup = recipe.target.name
             message = f"{recipe.target.name}: {relics.EFFECTS[recipe.target.relicPower][1]}"
         else:
-            quality = recipes.rollQuality(player.attributeBonuses["intelligence"])
+            quality = recipes.rollQuality(self.player.attributeBonuses["intelligence"])
             item = recipe.build(quality)
-            player.addItemToInventory(item)
+            self.player.addItemToInventory(item)
             popup = item.name
             message = f"{item.name} added to your inventory"
             if item.enchants:
@@ -1466,7 +1458,6 @@ class gameManager():
 
     def craftSpec(self, spec):
         """The Crafting window: station tabs, the recipe list, details for the selected recipe and a status line."""
-        player = self.player
         station = self.craftStation()
         state = self.stationState(station)
         info = recipes.STATION_INFO[station]
@@ -1480,8 +1471,8 @@ class gameManager():
         for recipe in recipeList:
             if recipe.kind in ("setup", "pack", "salvage"):
                 spec["list"].append((recipe.name, f"{recipe.turns}t", self.craftProblem(recipe) is None))
-            elif (recipe.kind == "station" and recipe.makes in player.stations) or \
-                    (recipe.kind == "upgrade" and player.pouchLimit >= resources.BIG_POUCH_LIMIT):
+            elif (recipe.kind == "station" and recipe.makes in self.player.stations) or \
+                    (recipe.kind == "upgrade" and self.player.pouchLimit >= resources.BIG_POUCH_LIMIT):
                 spec["list"].append((recipe.name, "made", False))
             else:
                 count = self.craftableCount(recipe)
@@ -1490,10 +1481,10 @@ class gameManager():
         def needRows(needs):
             rows = []
             for m, n in needs.items():
-                have = player.have(m)
+                have = self.player.have(m)
                 name = resources.materialName(m)
                 standIn, perOne = resources.STAND_INS.get(m, (None, 0))
-                if standIn and player.materials.get(standIn):  # (have counts the stand-in too)
+                if standIn and self.player.materials.get(standIn):  # (have counts the stand-in too)
                     name += f" (or {perOne} {resources.materialName(standIn)} each)"
                 rows.append(("need" if have >= n else "short", name, f"{have} / {n}"))
             return rows
@@ -1524,7 +1515,7 @@ class gameManager():
                 amount = f"x{low}" if low == high else f"x{low}-{high}"
                 detail.append(("need", "Gold" if m == "gold" else resources.materialName(m), amount))
             detail.append(("label", "TAKES", f"{recipe.turns} turn" + ("s" if recipe.turns > 1 else "")))
-            detail.append(("muted", f"INT {player.attributes['intelligence']}: {percent:g}% back. More Intelligence, more back.", ""))
+            detail.append(("muted", f"INT {self.player.attributes['intelligence']}: {percent:g}% back. More Intelligence, more back.", ""))
             detail.append(("hint", "Enter  take apart", ""))
         else:
             detail = [("title", recipe.name, ""), ("muted", recipe.description, "")]
@@ -1539,25 +1530,25 @@ class gameManager():
                 detail.append(("label", "NEEDS", turns))
                 detail += needRows(recipe.needs)
                 if recipe.needs.get("gold"):
-                    detail.append(("muted", f"Your next level-up costs {player.nextLevelGold} gold.", ""))
+                    detail.append(("muted", f"Your next level-up costs {self.player.nextLevelGold} gold.", ""))
             else:
                 detail.append(("label", "TAKES", turns))
             if recipe.kind == "item":
-                odds = recipes.qualityOdds(player.attributeBonuses["intelligence"])
-                detail.append(("muted", f"INT {player.attributes['intelligence']}:  " + "  ".join(f"{name} {pct}%" for name, pct in odds), ""))
+                odds = recipes.qualityOdds(self.player.attributeBonuses["intelligence"])
+                detail.append(("muted", f"INT {self.player.attributes['intelligence']}:  "
+                               + "  ".join(f"{name} {pct}%" for name, pct in odds), ""))
             if recipe.kind in ("material", "item", "potion"):
                 detail.append(("hint", f"Enter  craft      Shift+Enter  up to {CRAFT_MORE}", ""))
             else:
                 detail.append(("hint", "Enter  " + {"setup": "set up", "pack": "pack up", "plant": "plant"}.get(recipe.kind, "craft"), ""))
         spec["detail"] = detail
 
-        craft = self.crafting
         spec["progress"] = None
-        if craft is not None:
-            r = craft["recipe"]
-            count = f"  ({craft['done'] + 1} of {craft['times']})" if craft["times"] > 1 else ""
-            spec["status"] = f"{r.name}{count}   turn {craft['turn'] + 1} of {r.turns}   Esc stops"
-            spec["progress"] = (craft["done"] * r.turns + craft["turn"]) / (craft["times"] * r.turns)
+        if self.crafting is not None:
+            r = self.crafting["recipe"]
+            count = f"  ({self.crafting['done'] + 1} of {self.crafting['times']})" if self.crafting["times"] > 1 else ""
+            spec["status"] = f"{r.name}{count}   turn {self.crafting['turn'] + 1} of {r.turns}   Esc stops"
+            spec["progress"] = (self.crafting["done"] * r.turns + self.crafting["turn"]) / (self.crafting["times"] * r.turns)
         else:
             spec["status"] = self.craftMessage
         return spec
@@ -1569,41 +1560,40 @@ class gameManager():
         A big enemy turns from the middle of its body. Facing: 0 left, 1 right, 2 up, 3 down."""
         if fromPosition == toPosition or enemy is None:
             return
-        R = self.rowLength
         middle = (getattr(enemy, "size", 1) - 1) / 2 if fromPosition == getattr(enemy, "anchor", None) else 0
-        dx = toPosition % R - (fromPosition % R + middle)
-        dy = toPosition // R - (fromPosition // R + middle)
+        dx = toPosition % self.rowLength - (fromPosition % self.rowLength + middle)
+        dy = toPosition // self.rowLength - (fromPosition // self.rowLength + middle)
         if abs(dx) >= abs(dy):
             enemy.facing = 1 if dx > 0 else 0
         else:
             enemy.facing = 3 if dy > 0 else 2
 
-    def hitPlayer(self, enemy, enemyPosition):
-        """An enemy attacks the player."""
+    def hitPlayer(self, enemy, enemyPosition, damage=None, arrow=False):
+        """An enemy attacks the player, for damage (its own hit when not given). arrow: an arrow (ranged.py), which
+        goblin fear doesn't stop and Demise thorns can't bite back at."""
         if self.peaceful:  # developer console /peaceful
             return
         self.faceToward(enemy, enemyPosition, self.playerPositionFlat)  # it turns to swing at you
-        player = self.player
-        if enemy.name in ("Goblin", "Goblin Chieftan") and player.hasEffect("goblin_fear") and rand.random() < 0.3:
+        if not arrow and enemy.name in expansion.GOBLIN_NAMES and self.player.hasEffect("goblin_fear") and rand.random() < 0.3:
             enemy.lastPlayerPosition = None
             self.addPopup("Flees!", enemyPosition)
             return
-        dodged = self.dodge(player.evasion(), player.cleanDodge())
+        dodged = self.dodge(self.player.evasion(), self.player.cleanDodge())
         if dodged == "clean":  # missed you entirely: no Ward used up, no thorns
             self.addPopup("Dodged", self.playerPositionFlat)
             return
-        if player.wardCanBlock():
-            player.blockWithWard()
+        if self.player.wardCanBlock():
+            self.player.blockWithWard()
             self.addPopup("Warded", self.playerPositionFlat)
             return
-        damage = player.hitDamage(enemy.damage)
+        damage = self.player.hitDamage(enemy.damage if damage is None else damage)
         if dodged == "partial":
             damage = math.ceil(damage / 2)
             self.addPopup("Grazed", self.playerPositionFlat)
-        player.damageTaken += damage
+        self.player.damageTaken += damage
         self.bleed(self.playerPositionFlat)
         tile = self.grid.get(enemyPosition)
-        if player.hasEffect("fed_thorns") and tile and tile[0] == 5 and len(tile) > 2 and tile[2] is enemy:
+        if not arrow and self.player.hasEffect("fed_thorns") and tile and tile[0] == 5 and len(tile) > 2 and tile[2] is enemy:
             self.magicEnemy(enemyPosition, relics.THORN_DAMAGE)  # Demise Stew: the thorns in your blood bite back
 
     def dodge(self, evasion, cleanDodge):
@@ -1644,23 +1634,22 @@ class gameManager():
     def placeVault(self, grid, stationId, enemyPositions):
         """A 5x5 vault sealed in gold walls, with a found station in the middle and a relic chest beside it.
         Returns the station's position, or None if no spot was found."""
-        R = self.rowLength
-        columns = self.numberOfSpots // R
-        px, py = self.playerPositionFlat % R, self.playerPositionFlat // R
+        columns = self.numberOfSpots // self.rowLength
+        px, py = self.playerPositionFlat % self.rowLength, self.playerPositionFlat // self.rowLength
         for _ in range(300):
-            cx, cy = rand.randint(3, R - 4), rand.randint(3, columns - 4)
+            cx, cy = rand.randint(3, self.rowLength - 4), rand.randint(3, columns - 4)
             if abs(cx - px) + abs(cy - py) < 15:
                 continue
-            block = [(cx + dx) + (cy + dy) * R for dy in range(-2, 3) for dx in range(-2, 3)]
+            block = [(cx + dx) + (cy + dy) * self.rowLength for dy in range(-2, 3) for dx in range(-2, 3)]
             if any(grid[b][0] in (1, 3, 4, 5, 6, 7) or b in enemyPositions for b in block):
                 continue
             for dy in range(-2, 3):
                 for dx in range(-2, 3):
-                    b = (cx + dx) + (cy + dy) * R
+                    b = (cx + dx) + (cy + dy) * self.rowLength
                     grid[b] = [2, 0, wall.GoldWall()] if abs(dx) == 2 or abs(dy) == 2 else [0, 0]
-            center = cx + cy * R
+            center = cx + cy * self.rowLength
             grid[center] = [7, 0, recipes.Station(stationId, claimed=False)]
-            grid[center - 1 - R] = [3, 0, [relics.make(rand.choice([relicId for relicId in relics.RELICS
+            grid[center - 1 - self.rowLength] = [3, 0, [relics.make(rand.choice([relicId for relicId in relics.RELICS
                                                                     if relicId not in relics.PATH_ONLY_RELICS]))]]
             return center
         return None
@@ -1889,14 +1878,14 @@ class gameManager():
             self.firePlayer(MOLTEN_WALL_DAMAGE)
         broken = tile.pop()
         tile[0] = expansion.HOLE if getattr(broken, "holeBelow", False) else 0  # (the floor under it was broken)
-        player = self.player
-        drops = loot.rollWall(name, player.attributes["wisdom"])
+        drops = loot.rollWall(name, self.player.attributes["wisdom"])
         if isinstance(broken, wall.OreVein) and position in self.rooms["Gold"]:  # a vein in a gold wall: gold too
-            drops += loot.rollWall("Gold Wall", player.attributes["wisdom"])
+            drops += loot.rollWall("Gold Wall", self.player.attributes["wisdom"])
         if isinstance(broken, wall.OreVein):  # Iron Pick (+1 ore) and Keen Eye (1 in 4 for +1)
-            extra = player.countEffect("extra_ore") + sum(1 for _ in range(player.countEffect("keen_eye")) if rand.random() < 0.25)
+            extra = self.player.countEffect("extra_ore") + \
+                sum(1 for _ in range(self.player.countEffect("keen_eye")) if rand.random() < 0.25)
             drops = [(materialId, amount + extra if materialId == broken.ore else amount) for materialId, amount in drops]
-        if player.hasEffect("gold_double"):
+        if self.player.hasEffect("gold_double"):
             drops = [(materialId, amount * 2 if materialId == "gold" else amount) for materialId, amount in drops]
         kind = getattr(broken, "corruptedBy", None)
         if kind:  # a wall a plant had corrupted (Overgrowth): its herb too
@@ -2132,15 +2121,14 @@ class gameManager():
     def killLoot(self, enemy, position):
         """Your reward for a kill: gold, its loot roll and your share of what it carried go straight to you, with
         a popup each. Returns what's left for the floor: relics, and whatever doesn't fit in a full pouch."""
-        player = self.player
-        gold = enemy.gold + 3 * player.countEffect("gold_per_kill") + player.countEffect("lucky")
+        gold = enemy.gold + 3 * self.player.countEffect("gold_per_kill") + self.player.countEffect("lucky")
         if gold:
             self.give("gold", gold, position)
         drops = loot.roll(loot.ENEMY_LOOT, enemy.name)
-        player.lootFound.add(loot.discoveryKey(enemy.name))
+        self.player.lootFound.add(loot.discoveryKey(enemy.name))
         stacks = []
         for dropId, amount in drops:
-            player.lootFound.add(loot.discoveryKey(enemy.name, dropId))
+            self.player.lootFound.add(loot.discoveryKey(enemy.name, dropId))
             if loot.isRelicDrop(dropId):
                 relic = relics.make(dropId[6:])
                 stacks.append(relic)
@@ -2225,18 +2213,17 @@ class gameManager():
             self.player.alterGold(amount)
             self.addPopup(f"+{amount} Gold", position)
             return amount
-        player = self.player
-        if not hasattr(player, "pouchFullShown"):  # players from saves made before this was counted
-            player.pouchFullShown = {}
-        if player.materials.get(materialId, 0) < player.pouchLimit:
-            player.pouchFullShown.pop(materialId, None)  # below the max again: the message can show again
-        added = player.addMaterial(materialId, amount)
+        if not hasattr(self.player, "pouchFullShown"):  # players from saves made before this was counted
+            self.player.pouchFullShown = {}
+        if self.player.materials.get(materialId, 0) < self.player.pouchLimit:
+            self.player.pouchFullShown.pop(materialId, None)  # below the max again: the message can show again
+        added = self.player.addMaterial(materialId, amount)
         name = resources.materialName(materialId)
         # "pouch full" shows at most POUCH_FULL_MESSAGES times for each material until it drops below the max
-        shown = player.pouchFullShown.get(materialId, 0)
+        shown = self.player.pouchFullShown.get(materialId, 0)
         full = added < amount and shown < POUCH_FULL_MESSAGES
         if full:
-            player.pouchFullShown[materialId] = shown + 1
+            self.player.pouchFullShown[materialId] = shown + 1
         if added == amount:
             self.addPopup(f"+{added} {name}", position)
         elif added:
@@ -2558,19 +2545,18 @@ class gameManager():
         right beside it): it attacks. Otherwise it steps toward you, or where it last saw you, or somewhere it can
         see, if its whole body fits there. Returns its anchor."""
         tiles = self.footprint(anchor, giant.size)
-        player = self.playerPositionFlat
         sight = set()
         for p in (tiles[0], tiles[-1]):  # it looks from two corners of its body
             sight |= self.rayCircleVision(p, giant.visionRange, 5)
         sight -= set(tiles)
         if self.peaceful or (self.playerHidden() and not giant.tremorSense):
-            sight.discard(player)
-        distance = self.reachOf(giant, anchor, player)
-        if not self.peaceful and (distance <= 1 or (distance <= getattr(giant, "reach", 1) and player in sight)):
+            sight.discard(self.playerPositionFlat)
+        distance = self.reachOf(giant, anchor, self.playerPositionFlat)
+        if not self.peaceful and (distance <= 1 or (distance <= getattr(giant, "reach", 1) and self.playerPositionFlat in sight)):
             self.giantHit(giant, anchor)
             return anchor
-        if player in sight:
-            giant.lastPlayerPosition = player
+        if self.playerPositionFlat in sight:
+            giant.lastPlayerPosition = self.playerPositionFlat
         elif giant.lastPlayerPosition is None or giant.lastPlayerPosition in tiles:
             # nothing to chase: wander near the chest it guards (or anywhere it can see, without one)
             open_ = [p for p in sight if self.grid[p][0] == 0]
@@ -2578,19 +2564,18 @@ class gameManager():
         target = giant.lastPlayerPosition
         if target is None:
             return anchor
-        R = self.rowLength
         # aim the middle of its body at the target
-        dx = target % R - (anchor % R + (giant.size - 1) / 2)
-        dy = target // R - (anchor // R + (giant.size - 1) / 2)
+        dx = target % self.rowLength - (anchor % self.rowLength + (giant.size - 1) / 2)
+        dy = target // self.rowLength - (anchor // self.rowLength + (giant.size - 1) / 2)
         sx, sy = (dx > 0) - (dx < 0), (dy > 0) - (dy < 0)
         steps = [(sx, 0), (0, sy)] if abs(dx) >= abs(dy) else [(0, sy), (sx, 0)]
         for mx, my in steps:
             if not (mx or my):
                 continue
-            x, y = anchor % R + mx, anchor // R + my
-            if not 0 <= x < R:
+            x, y = anchor % self.rowLength + mx, anchor // self.rowLength + my
+            if not 0 <= x < self.rowLength:
                 continue
-            new = x + y * R
+            new = x + y * self.rowLength
             if self.canFit(new, giant.size, own=set(tiles), giant=giant):
                 self.liftGiant(self.grid, giant)
                 self.putGiant(self.grid, new, giant)
@@ -2702,13 +2687,12 @@ class gameManager():
         return DOOR_RADIUS + DOOR_RADIUS_GROWTH * self.level
 
     def PlaceNextLevelDoor(self):
-        R = self.rowLength
-        px, py = self.playerPositionFlat % R, self.playerPositionFlat // R
+        px, py = self.playerPositionFlat % self.rowLength, self.playerPositionFlat // self.rowLength
         radius = self.doorRadius()
         streets = self.rooms.get(metropolis.STREET) if self.proportion == metropolis.METROPOLIS else None  # a city's is on a street
         while True:
             spots = [i for i in range(self.numberOfSpots) if i != self.playerPositionFlat and self.grid[i][0] in (0, 2)
-                     and (i % R - px) ** 2 + (i // R - py) ** 2 <= radius * radius
+                     and (i % self.rowLength - px) ** 2 + (i // self.rowLength - py) ** 2 <= radius * radius
                      and (streets is None or (i in streets and self.grid[i][0] == 0))]
             if spots:
                 break
@@ -2990,12 +2974,11 @@ class gameManager():
     # ---------------------------------------------------------------- vision
 
     def createARay(self, startPosition, targetPosition):
-        rowLength = self.rowLength
-        sX = startPosition % rowLength
-        sY = startPosition // rowLength
+        sX = startPosition % self.rowLength
+        sY = startPosition // self.rowLength
 
-        tX = targetPosition % rowLength
-        tY = targetPosition // rowLength
+        tX = targetPosition % self.rowLength
+        tY = targetPosition // self.rowLength
 
         angle = math.atan2(tY - sY, tX - sX)
         distance = int(math.sqrt(((tX - sX) ** 2) + ((tY - sY) ** 2)))
@@ -3004,7 +2987,7 @@ class gameManager():
         for r in range(0, distance + 1):
             x = round(r * math.cos(angle) + sX)
             y = round(r * math.sin(angle) + sY)
-            flatRays.add(x + (y * rowLength))
+            flatRays.add(x + (y * self.rowLength))
 
         flatRays.discard(startPosition)
         return flatRays
@@ -3015,11 +2998,10 @@ class gameManager():
         (selfNum: you, or other enemies for an enemy); anything else is seen and blocks what's behind it. Smoke is
         seen into but not through (from inside it you only see the tiles beside you). Tremor sense feels through
         everything but the map's edge."""
-        grid = self.grid
         smoke = self.smoke if not tremorSense else {}  # smoke blinds everyone (tremor sense feels through it)
 
         def blocks(spot):
-            tile = grid.get(spot)
+            tile = self.grid.get(spot)
             if tile is None:
                 return True
             if spot in smoke and spot != position:
@@ -3030,10 +3012,10 @@ class gameManager():
             return not (kind in SEE_THROUGH or kind == selfNum or (kind == 8 and not tile[2].blocksSight))
 
         def wholeFace(spot):  # (walls and things show their face; a unit is only seen if the line to it is clear)
-            tile = grid.get(spot)
+            tile = self.grid.get(spot)
             return tile is not None and tile[0] not in (1, 5)
 
-        return sight.fieldOfView(position, visionRange, self.rowLength, len(grid) // self.rowLength, blocks, wholeFace)
+        return sight.fieldOfView(position, visionRange, self.rowLength, len(self.grid) // self.rowLength, blocks, wholeFace)
 
     def seeThroughForPlayer(self, position):
         """The same rule your vision uses: open floor, item piles, short plants and thin posts (the Peddler's
@@ -3045,9 +3027,8 @@ class gameManager():
         """The tiles a fire (or any light) lights out to radius, the way sight works (sight.fieldOfView): what
         blocks your sight is lit and stops the light behind it. The fire's own tile always lights, whatever is
         burning there."""
-        grid = self.grid
-        return sight.fieldOfView(fire, radius, self.rowLength, len(grid) // self.rowLength,
-                                 lambda spot: spot not in grid or not self.seeThroughForPlayer(spot))
+        return sight.fieldOfView(fire, radius, self.rowLength, len(self.grid) // self.rowLength,
+                                 lambda spot: spot not in self.grid or not self.seeThroughForPlayer(spot))
 
     def seenFromAfar(self, lit, visiblePositions, memory=None):
         """Of the lit tiles (by fire, lamps or Glowrocks), the ones you see from where you stand, however far: the
@@ -3063,9 +3044,8 @@ class gameManager():
             view = sight.fieldOfView(here, reach, R, len(grid) // R,
                                      lambda spot: spot not in grid or spot in smoke or not self.seeThroughForPlayer(spot))
         else:
-            blockers = memory.blockers
             view = memory.remember(("afar", here, reach, frozenset(smoke)), lambda: sight.fieldOfView(
-                here, reach, R, memory.rowCount, lambda spot: spot in blockers or spot in smoke))
+                here, reach, R, memory.rowCount, lambda spot: spot in memory.blockers or spot in smoke))
         return view.intersection(targets)
 
     def yourSight(self, reach, memory):
@@ -3085,8 +3065,7 @@ class gameManager():
 
     def lineOfSight(self, start, end):
         """True if nothing that blocks your sight stands on the straight line between two tiles."""
-        R = self.rowLength
-        x0, y0, x1, y1 = start % R, start // R, end % R, end // R
+        x0, y0, x1, y1 = start % self.rowLength, start // self.rowLength, end % self.rowLength, end // self.rowLength
         dx, dy = abs(x1 - x0), -abs(y1 - y0)
         sx, sy = (1 if x0 < x1 else -1), (1 if y0 < y1 else -1)
         err = dx + dy
@@ -3100,7 +3079,7 @@ class gameManager():
                 y0 += sy
             if (x0, y0) == (x1, y1):
                 return True
-            if not self.seeThroughForPlayer(x0 + y0 * R) or x0 + y0 * R in self.smoke:  # smoke blocks sight too
+            if not self.seeThroughForPlayer(x0 + y0 * self.rowLength) or x0 + y0 * self.rowLength in self.smoke:  # smoke blocks sight too
                 return False
         return True
 
@@ -3112,7 +3091,6 @@ class gameManager():
         """Which tiles the fires, bonfires, lamp posts and wall lamps light, as {tile: (the nearest one lighting it,
         its light radius)}. A wall lamp isn't a tile of its own, so it keeps lighting with someone standing under it.
         memory (sightmemory.py): each light's tiles are kept there until something near it changes."""
-        R = self.rowLength
         lightAround = self.lightAround if memory is None else memory.lightFrom
         self.fireLight = {}
         best = {}
@@ -3122,7 +3100,7 @@ class gameManager():
                   [(spot, lamp.radius) for spot, lamp in metropolis.wallLampsHere(self).items()]
         for fire, radius in sources:
             for p in lightAround(fire, radius):
-                d = (p % R - fire % R) ** 2 + (p // R - fire // R) ** 2
+                d = (p % self.rowLength - fire % self.rowLength) ** 2 + (p // self.rowLength - fire // self.rowLength) ** 2
                 if p not in best or d < best[p]:
                     best[p], self.fireLight[p] = d, (fire, radius)
 
@@ -3131,7 +3109,6 @@ class gameManager():
         with distance (GLOW_BRIGHTNESS on its own tile, nothing at the edge), and walls stop it like they stop fire
         light. Two rocks lighting the same tile add up. A rock in a pile, under you or under an enemy all count.
         memory (sightmemory.py): each rock's tiles are kept there until something near it changes."""
-        R = self.rowLength
         lightAround = self.lightAround if memory is None else memory.lightFrom
         rocks = [p for p, tile in self.grid.items() if tile[0] == 9 and items.pileGlows(tile[2])]
         if len(self.currentLocation) > 2 and items.pileGlows(self.currentLocation[2]):
@@ -3140,7 +3117,7 @@ class gameManager():
         self.glowLight = {}
         for rock in rocks:
             for p in lightAround(rock, math.ceil(GLOW_RADIUS)):
-                d = math.hypot(p % R - rock % R, p // R - rock // R)
+                d = math.hypot(p % self.rowLength - rock % self.rowLength, p // self.rowLength - rock // self.rowLength)
                 if d <= GLOW_RADIUS:
                     glow = GLOW_BRIGHTNESS * (1 - d / (GLOW_RADIUS + 0.5))
                     self.glowLight[p] = round(min(1.0, self.glowLight.get(p, 0.0) + glow), 3)
@@ -3219,36 +3196,34 @@ class gameManager():
 
     def levelUpPreview(self, attribute):
         """What one more point in this attribute would change: [(what, now, after)] for the Level Up window."""
-        player = self.player
         now = self.attributeEffects(attribute)
-        old, oldBonus = player.attributes[attribute], player.attributeBonuses[attribute]
-        player.attributes[attribute] = old + 1
-        player.attributeBonuses[attribute] = int(math.log2(old + 1) * 4)
+        old, oldBonus = self.player.attributes[attribute], self.player.attributeBonuses[attribute]
+        self.player.attributes[attribute] = old + 1
+        self.player.attributeBonuses[attribute] = int(math.log2(old + 1) * 4)
         try:
             after = self.attributeEffects(attribute)
         finally:
-            player.attributes[attribute], player.attributeBonuses[attribute] = old, oldBonus
+            self.player.attributes[attribute], self.player.attributeBonuses[attribute] = old, oldBonus
         return {"title": f"{attribute.title()} {old} -> {old + 1}",
                 "rows": [(what, a, b) for (what, a), (_, b) in zip(now, after)],
                 "note": "Leveling up also heals you fully"}
 
     def attributeEffects(self, attribute):
         """[(what, value as text)] for everything this attribute affects, at the player's current stats."""
-        player = self.player
-        bonus = player.attributeBonuses[attribute]
+        bonus = self.player.attributeBonuses[attribute]
         if attribute == "strength":
-            low, high = player.getMinMaxDamage()
-            return [("STR bonus to gear", f"+{bonus}"), ("Damage", f"{low}-{high}"), ("Wall Damage", str(player.getWallDamage()))]
+            low, high = self.player.getMinMaxDamage()
+            return [("STR bonus to gear", f"+{bonus}"), ("Damage", f"{low}-{high}"), ("Wall Damage", str(self.player.getWallDamage()))]
         if attribute == "constitution":
-            return [("Max HP", str(player.getMaxHealth()))]
+            return [("Max HP", str(self.player.getMaxHealth()))]
         if attribute == "dexterity":  # (Clean Dodge doesn't come from DEX, so it isn't listed)
-            return [("Speed", f"{player.getSpeed():.2f}"), ("Evasion", f"{player.evasion() * 100:.1f}%")]
+            return [("Speed", f"{self.player.getSpeed():.2f}"), ("Evasion", f"{self.player.evasion() * 100:.1f}%")]
         if attribute == "intelligence":
             odds = dict(recipes.qualityOdds(bonus))
             return [("Crafted Masterwork", f"{odds['Masterwork']}%"), ("Crafted Fine", f"{odds['Fine']}%"),
                     ("Crafted Crude", f"{odds['Crude']}%"), ("Taking apart gives", f"{self.salvagePercent():g}%")]
         if attribute == "wisdom":
-            nothing, _, _ = loot.wallOdds(player.attributes["wisdom"])
+            nothing, _, _ = loot.wallOdds(self.player.attributes["wisdom"])
             return [("Healing potions", f"+{bonus}"), ("Walls give nothing", f"{nothing:g}%"),
                     ("Door sense", f"{self.doorSense()} tile" + ("s" if self.doorSense() != 1 else ""))]
         return []
@@ -3262,10 +3237,9 @@ class gameManager():
 
     def thirst(self):
         """Hollow Blade: a hit sometimes heals you."""
-        player = self.player
-        if player.hasEffect("lifedrinker") and player.damageTaken > 0 and rand.random() < relics.THIRST_CHANCE:
-            healed = min(relics.THIRST_HEAL, player.damageTaken)
-            player.damageTaken -= healed
+        if self.player.hasEffect("lifedrinker") and self.player.damageTaken > 0 and rand.random() < relics.THIRST_CHANCE:
+            healed = min(relics.THIRST_HEAL, self.player.damageTaken)
+            self.player.damageTaken -= healed
             self.addPopup(f"+{healed} HP", self.playerPositionFlat)
 
     def enemiesInLight(self):
@@ -3296,8 +3270,7 @@ class gameManager():
         """Hidden from enemies: standing in a plant you can hide in, or in a Smoke Bomb's smoke."""
         if self.playerPositionFlat in self.smoke:
             return True
-        here = self.currentLocation
-        return here[0] == 8 and len(here) > 2 and here[2].hides
+        return self.currentLocation[0] == 8 and len(self.currentLocation) > 2 and self.currentLocation[2].hides
 
     def useConsumable(self, index):
         """Drinks a potion or eats a meal from the inventory (thrown ones go through startThrow instead)."""
@@ -3314,8 +3287,7 @@ class gameManager():
     def startThrow(self, index):
         """Starts aiming: index is the potion's inventory slot, or PITCH_BOLT for the Sealed Pattern's bolt."""
         self.throwing = index
-        look = self.PlayerLookPosition
-        self.currentAimSpot = look if look in self.grid else self.playerPositionFlat
+        self.currentAimSpot = self.PlayerLookPosition if self.PlayerLookPosition in self.grid else self.playerPositionFlat
         self.refreshThrowAim()
 
     def startPitchBolt(self):
@@ -3549,15 +3521,14 @@ class gameManager():
     def collapseFloor(self, center, radius):
         """Every tile in the circle becomes a hole, bar doors, stations and camp pieces (they keep a scrap of floor).
         Enemies, chests, item piles and plants on it fall to the floor below; so do you, if you're on it."""
-        R = self.rowLength
-        cx, cy = center % R, center // R
+        cx, cy = center % self.rowLength, center // self.rowLength
         # (from the Scorched Depths, what falls lands on the floor that replaces it, at the same number)
         below = self.fallen.setdefault(self.level if self.proportion == SCORCHED else self.level + 1, [])
         for y in range(cy - radius, cy + radius + 1):
             for x in range(cx - radius, cx + radius + 1):
-                if not 0 <= x < R or not self.inCircle(x - cx, y - cy, radius):
+                if not 0 <= x < self.rowLength or not self.inCircle(x - cx, y - cy, radius):
                     continue
-                p = x + y * R
+                p = x + y * self.rowLength
                 tile = self.grid.get(p)
                 if tile is None:
                     continue
@@ -3614,12 +3585,11 @@ class gameManager():
         tile = self.grid.get(position)
         if tile is not None and tile[0] == 0 and position not in avoid:
             return position
-        R = self.rowLength
-        px, py = position % R, position // R
+        px, py = position % self.rowLength, position // self.rowLength
         best = None
         for i, t in self.grid.items():
             if t[0] == 0 and i not in avoid:
-                d = (i % R - px) ** 2 + (i // R - py) ** 2
+                d = (i % self.rowLength - px) ** 2 + (i // self.rowLength - py) ** 2
                 if best is None or d < best[0]:
                     best = (d, i)
         return best[1] if best else None
@@ -3654,14 +3624,13 @@ class gameManager():
     # BURN_CHANCE chance to set the target burning for BURN_TURNS turns, BURN_DAMAGE fire damage a turn.
 
     def firePlayer(self, damage, canIgnite=True):
-        player = self.player
-        dealt = max(0, damage - player.fireResistance())
+        dealt = max(0, damage - self.player.fireResistance())
         if dealt == 0:
             return
-        player.damageTaken += dealt
+        self.player.damageTaken += dealt
         self.bleed(self.playerPositionFlat)
-        if canIgnite and BURN_DAMAGE > player.fireResistance() and rand.random() < BURN_CHANCE:
-            player.burnTurns = BURN_TURNS  # shown as flames on you, not a message
+        if canIgnite and BURN_DAMAGE > self.player.fireResistance() and rand.random() < BURN_CHANCE:
+            self.player.burnTurns = BURN_TURNS  # shown as flames on you, not a message
 
     def enemyFireDamage(self, enemy, damage):
         """Fire damage after an enemy's resistance: flat fireResistance first, then fireResistPercent (0-1)."""
@@ -3780,8 +3749,8 @@ class gameManager():
 
     def stuckIn(self):
         """The plant you're trapped inside (one that blocks the way grew over you), or None."""
-        tile = self.currentLocation
-        return tile[2] if tile[0] == 8 and len(tile) > 2 and not tile[2].walkable else None
+        return self.currentLocation[2] if self.currentLocation[0] == 8 and len(self.currentLocation) > 2 \
+            and not self.currentLocation[2].walkable else None
 
     def interactKeyName(self):
         return pygame.key.name(self.settings.hotkeys["interact"]).upper()
@@ -3827,9 +3796,8 @@ class gameManager():
                 continue
             unit.burnTurns -= 1
             self.fireEnemy(position, BURN_DAMAGE, canIgnite=False, unit=unit)
-        player = self.player
-        if getattr(player, "burnTurns", 0) > 0 and not getattr(self, "simulatingAway", False):
-            player.burnTurns -= 1
+        if getattr(self.player, "burnTurns", 0) > 0 and not getattr(self, "simulatingAway", False):
+            self.player.burnTurns -= 1
             self.firePlayer(BURN_DAMAGE, canIgnite=False)
 
     # ------------------------------------------------------- burning ground
@@ -3975,14 +3943,12 @@ class gameManager():
             enemy.bloodSpot = position
         if getattr(self, "simulatingAway", False):
             return
-        player = self.player
-        here = self.playerPositionFlat
-        if 0 < player.getCurrentHealth() <= max(1, player.getMaxHealth() * LOW_HEALTH):
-            if self.playerBloodSpot == here:
-                self.addBlood(here, POOL)
+        if 0 < self.player.getCurrentHealth() <= max(1, self.player.getMaxHealth() * LOW_HEALTH):
+            if self.playerBloodSpot == self.playerPositionFlat:
+                self.addBlood(self.playerPositionFlat, POOL)
             elif self.playerBloodSpot is not None:
                 self.addBlood(self.playerBloodSpot, DRIP)
-        self.playerBloodSpot = here
+        self.playerBloodSpot = self.playerPositionFlat
 
     def animating(self):
         """True while something on screen moves: bursts, fire in view, something burning, or a throw that would
@@ -4198,16 +4164,15 @@ class gameManager():
         self.stepThrows()
         self.stepFloorEvent()
         self.stepPlants()
-        player = self.player
-        if player.hasEffect("regen") and self.turnCount % 20 == 0 and player.damageTaken > 0:
-            player.damageTaken -= 1  # Gilded Amulet
-        if player.hasEffect("fed_mend") and self.turnCount % 5 == 0 and player.damageTaken > 0:
-            player.damageTaken -= 1  # Bloodcap Stew
-        if player.hasEffect("fed_sick") and self.turnCount % relics.SICK_TURNS == 0 and player.getCurrentHealth() > 1:
-            player.damageTaken += 1  # Demise Stew's sickness
-        for tag in player.stepBuffs():
+        if self.player.hasEffect("regen") and self.turnCount % 20 == 0 and self.player.damageTaken > 0:
+            self.player.damageTaken -= 1  # Gilded Amulet
+        if self.player.hasEffect("fed_mend") and self.turnCount % 5 == 0 and self.player.damageTaken > 0:
+            self.player.damageTaken -= 1  # Bloodcap Stew
+        if self.player.hasEffect("fed_sick") and self.turnCount % relics.SICK_TURNS == 0 and self.player.getCurrentHealth() > 1:
+            self.player.damageTaken += 1  # Demise Stew's sickness
+        for tag in self.player.stepBuffs():
             self.addPopup(f"{relics.effectName(tag)} wore off", self.playerPositionFlat)
-        if self.addUnsealed and not player.hasEffect("seal_ward") and not self.unsealedBanished:
+        if self.addUnsealed and not self.player.hasEffect("seal_ward") and not self.unsealedBanished:
             validSpots = [k for k in self.grid.keys() if self.grid[k][0] == 2]
             if len(validSpots) > 0:
                 addPosition = rand.choice(validSpots)
@@ -4235,11 +4200,10 @@ class gameManager():
         if (self.turnCount + self.growthOffset(growTurns)) % growTurns != 0:
             return
         away = getattr(self, "simulatingAway", False)
-        here = self.playerPositionFlat
         overgrowth = self.activeEvent() == "overgrowth"
         overgrow = not away and overgrowth and self.currentLocation[0] == 0
         if overgrow:
-            playerTile, self.grid[here] = self.grid[here], copy.copy(self.currentLocation)
+            playerTile, self.grid[self.playerPositionFlat] = self.grid[self.playerPositionFlat], copy.copy(self.currentLocation)
         unitTiles = {}  # spot: its tile with the unit(s) on it, while the bare floor under it takes part in the step
         if overgrowth:
             for spot, tile in self.grid.items():
@@ -4256,11 +4220,11 @@ class gameManager():
         if sprouts:
             self.overgrowUnits(sprouts)
         if overgrow:
-            sprouted, self.grid[here] = self.grid[here], playerTile
+            sprouted, self.grid[self.playerPositionFlat] = self.grid[self.playerPositionFlat], playerTile
             if sprouted[0] == 8:
                 self.overgrowPlayer(sprouted)
         if self.proportion != metropolis.METROPOLIS or self.activeEvent() == "overgrowth":  # (a city only grows them in Overgrowth)
-            changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid=set() if away else {here}) or changed
+            changed = plants.keepAlive(self.grid, self.rooms, self.rowLength, avoid=set() if away else {self.playerPositionFlat}) or changed
         if changed:
             self.change = True
 
@@ -4362,6 +4326,10 @@ class gameManager():
         finalPosition = expansion.otherTurn(self, i, currentEnemy, campContext)  # fighting back, or drawn to a bonfire
         if finalPosition is not None:
             return finalPosition, currentEnemy
+        if ranged.isRanged(currentEnemy):  # an archer that sees you steps back or shoots (ranged.wildTurn)
+            finalPosition = ranged.wildTurn(self, i, currentEnemy)
+            if finalPosition is not None:
+                return finalPosition, currentEnemy
         finalPosition = i
         passes = 0
         moving = True
@@ -4708,44 +4676,45 @@ class gameManager():
 
     def windowSpec(self, windowId):
         """Everything the renderer needs to draw one window."""
-        player = self.player
         spec = {"id": windowId, "title": WINDOW_TITLES[windowId], "focused": windowId == self.focus,
                 "hotkey": self.settings.nameFor(WINDOW_HOTKEY[windowId]), "kind": "rows", "rows": [],
                 "selectable": windowId in LIST_WINDOWS, "selected": self.windowSel[windowId],
                 "position": self.settings.windowPositions.get(windowId)}
         if windowId == "character":
-            minDamage, maxDamage = player.getMinMaxDamage()
-            spec["rows"] = [("Health", f"{player.getCurrentHealth()} / {player.getMaxHealth()}"),
-                            ("Actions", f"{getattr(player, 'actionsSpent', 0)} / {getattr(player, 'actionsAllowed', 1)}"),
-                            ("AC", player.damageReduction()),
-                            ("Evasion", f"{player.evasion() * 100:.1f}%"), ("Clean Dodge", f"{player.cleanDodge() * 100:.0f}%"),
-                            ("Fire Resist", player.fireResistance()),
-                            ("Magic Resist", player.magicResistance()),
+            minDamage, maxDamage = self.player.getMinMaxDamage()
+            spec["rows"] = [("Health", f"{self.player.getCurrentHealth()} / {self.player.getMaxHealth()}"),
+                            ("Actions", f"{getattr(self.player, 'actionsSpent', 0)} / {getattr(self.player, 'actionsAllowed', 1)}"),
+                            ("AC", self.player.damageReduction()),
+                            ("Evasion", f"{self.player.evasion() * 100:.1f}%"), ("Clean Dodge", f"{self.player.cleanDodge() * 100:.0f}%"),
+                            ("Fire Resist", self.player.fireResistance()),
+                            ("Magic Resist", self.player.magicResistance()),
                             ("Door Sense", f"{self.doorSense()} tile" + ("s" if self.doorSense() != 1 else "")),
-                            ("Status", ", ".join(([f"Burning ({player.burnTurns})"] if getattr(player, "burnTurns", 0) > 0 else []) +
-                                                 [f"{relics.effectName(t)} ({n})" for t, n in player.drawbacks()]) or "Fine"),
-                            ("Gold", player.gold),
-                            ("Facing", self.getDirectionName()), ("Wall Damage", player.getWallDamage()),
-                            ("Damage", f"{minDamage} - {maxDamage}"), ("Vision", player.getVisionRange()),
-                            ("Effects", ", ".join(relics.effectName(t) for t in player.gearEffects()) or "None"),
-                            ("Meal", f"{player.meal} ({player.mealTurns()})" if getattr(player, "meal", None) and player.mealTurns() else "None"),
-                            ("Potions", ", ".join(f"{relics.effectName(t)} ({n})" for t, n in player.potionTurns()) or "None")]
+                            ("Status", ", ".join(([f"Burning ({self.player.burnTurns})"]
+                                                  if getattr(self.player, "burnTurns", 0) > 0 else []) +
+                                                 [f"{relics.effectName(t)} ({n})" for t, n in self.player.drawbacks()]) or "Fine"),
+                            ("Gold", self.player.gold),
+                            ("Facing", self.getDirectionName()), ("Wall Damage", self.player.getWallDamage()),
+                            ("Damage", f"{minDamage} - {maxDamage}"), ("Vision", self.player.getVisionRange()),
+                            ("Effects", ", ".join(relics.effectName(t) for t in self.player.gearEffects()) or "None"),
+                            ("Meal", f"{self.player.meal} ({self.player.mealTurns()})"
+                                     if getattr(self.player, "meal", None) and self.player.mealTurns() else "None"),
+                            ("Potions", ", ".join(f"{relics.effectName(t)} ({n})" for t, n in self.player.potionTurns()) or "None")]
         elif windowId == "room":
             spec["rows"] = [("Floor Type", self.floorTypeName()), ("Theme", self.theme.name),
                             ("Room Type", self.getRoomType(self.playerPositionFlat, self.rooms) or "-"),
                             ("Floor", self.level), ("Event", events.name(self.activeEvent()) if self.activeEvent() else "-"),
                             ("Standing On", self.currentPosition), ("Looking At", self.lookingAt())]
         elif windowId == "equipment":
-            spec["rows"] = [(slot, getattr(item, "name", item)) for slot, item in player.equipment.items()]
+            spec["rows"] = [(slot, getattr(item, "name", item)) for slot, item in self.player.equipment.items()]
             if self.swapActive():
                 spec["header"] = f"Swap in {self.swap['item'].name}: Enter swaps, Esc cancels"
-                spec["dimRows"] = {i for i, slot in enumerate(player.equipment) if slot not in self.swap["slots"]}
+                spec["dimRows"] = {i for i, slot in enumerate(self.player.equipment) if slot not in self.swap["slots"]}
             else:  # always shown (not just when focused) so the window doesn't change size
                 spec["header"] = "Enter takes off, Ctrl+Enter drops"
         elif windowId == "levelup":
-            spec["header"] = f"Gold {player.gold}     Next point costs {player.nextLevelGold}"
-            spec["rows"] = [(name.title(), value) for name, value in player.attributes.items()]
-            names = list(player.attributes)
+            spec["header"] = f"Gold {self.player.gold}     Next point costs {self.player.nextLevelGold}"
+            spec["rows"] = [(name.title(), value) for name, value in self.player.attributes.items()]
+            names = list(self.player.attributes)
             if self.focus == "levelup":  # the attached panel only shows while Level Up is focused
                 spec["preview"] = self.levelUpPreview(names[min(self.windowSel["levelup"], len(names) - 1)])
         elif windowId == "items":
@@ -4754,10 +4723,10 @@ class gameManager():
             spec["rows"] = [(unit.name, "") for unit in (getattr(self, "attackChoice", None) or {}).get("units", [])]
         elif windowId == "materials":
             spec["kind"] = "sections"
-            sections = [{"title": None, "rows": [("Gold", player.gold, (226, 181, 68))], "note": "Gold also pays for leveling up"}]
+            sections = [{"title": None, "rows": [("Gold", self.player.gold, (226, 181, 68))], "note": "Gold also pays for leveling up"}]
             for group in resources.GROUPS:
-                rows = [(name, player.materials[mid], color) for mid, (name, g, color) in resources.MATERIALS.items()
-                        if g == group and player.materials.get(mid, 0) > 0]
+                rows = [(name, self.player.materials[mid], color) for mid, (name, g, color) in resources.MATERIALS.items()
+                        if g == group and self.player.materials.get(mid, 0) > 0]
                 if rows:
                     sections.append({"title": group, "rows": rows})
             if len(sections) == 1:
@@ -4768,13 +4737,12 @@ class gameManager():
             tab = self.windowSel["loot"]
             spec["tabs"] = [name for name, _ in loot.LOOT_TABS]
             spec["tab"] = tab
-            found = player.lootFound
             sections = []
             compact = {"title": None, "rows": []}  # sources with one drop: one line each ("Coal Vein   Coal  always x2-3")
             table = loot.LOOT_TABS[tab][1]
             walls = table is loot.WALL_LOOT
             if walls:  # every wall rolls the same 0-2, better with Wisdom
-                nothing, one, two = loot.wallOdds(player.attributes["wisdom"])
+                nothing, one, two = loot.wallOdds(self.player.attributes["wisdom"])
                 sections.append({"title": None, "rows": [], "note":
                                  f"Walls give x0/x1/x2, ore and gem veins x1/x2/x3: {nothing:g}% / {one:g}% / {two:g}%. "
                                  "Wisdom raises the odds of more. Gold walls always give 1 "
@@ -4783,8 +4751,8 @@ class gameManager():
             for source, lines in table.items():
                 if len(lines) == 1:
                     materialId, chance, (fewest, most) = lines[0]
-                    sourceKnown = loot.discoveryKey(source) in found
-                    known = loot.discoveryKey(source, materialId) in found
+                    sourceKnown = loot.discoveryKey(source) in self.player.lootFound
+                    known = loot.discoveryKey(source, materialId) in self.player.lootFound
                     amount = f"x{fewest}" if fewest == most else f"x{fewest}-{most}"
                     odds = "always" if chance == 100 else f"{chance}%"
                     if walls:
@@ -4796,12 +4764,12 @@ class gameManager():
                     continue
                 rows = []
                 for materialId, chance, (fewest, most) in lines:
-                    known = loot.discoveryKey(source, materialId) in found
+                    known = loot.discoveryKey(source, materialId) in self.player.lootFound
                     amount = f"x{fewest}" if fewest == most else f"x{fewest}-{most}"
                     odds = "always" if chance == 100 else f"{chance}%"
                     color = loot.dropColor(materialId)
                     rows.append((loot.dropName(materialId) if known else "???", f"{odds}  {amount}", color if known else None))
-                title = loot.displayName(source) if loot.discoveryKey(source) in found else "???"
+                title = loot.displayName(source) if loot.discoveryKey(source) in self.player.lootFound else "???"
                 sections.append({"title": title, "rows": rows})
             if compact["rows"]:
                 sections.append(compact)
@@ -4812,13 +4780,13 @@ class gameManager():
             self.shopSpec(spec)
         elif windowId == "inventory":
             spec["kind"] = "grid"
-            spec["items"] = [playerClass.slotLabel(item) for item in player.inventory]
-            spec["capacity"] = player.inventoryLimit
+            spec["items"] = [playerClass.slotLabel(item) for item in self.player.inventory]
+            spec["capacity"] = self.player.inventoryLimit
             self.fitSelections()
             spec["visibleRows"] = INVENTORY_ROWS
             spec["scroll"] = self.inventoryScroll
             index = self.windowSel["inventory"]
-            spec["detail"] = self.itemDetail(player.inventory[index]) if index < len(player.inventory) else \
+            spec["detail"] = self.itemDetail(self.player.inventory[index]) if index < len(self.player.inventory) else \
                 [("muted", "Empty slot", "")]
         return spec
 
@@ -4859,9 +4827,9 @@ class gameManager():
             return []
         if self.shopTab == 0:
             return [("ware", index) for index in range(len(trader.wares))]
-        player = self.player
-        return [("item", index) for index, item in enumerate(player.inventory) if cityshops.buysItem(trader, item)] + \
-            [("material", materialId) for materialId in peddler.sellableMaterials(player) if cityshops.buysMaterial(trader, materialId)]
+        return [("item", index) for index, item in enumerate(self.player.inventory) if cityshops.buysItem(trader, item)] + \
+            [("material", materialId) for materialId in peddler.sellableMaterials(self.player)
+             if cityshops.buysMaterial(trader, materialId)]
 
     def toggleShopTab(self):
         self.shopTab = 1 - self.shopTab
@@ -4877,9 +4845,8 @@ class gameManager():
 
     def scrollShop(self):
         """Keeps the selected slot's row in view."""
-        visibleRows = self.painter.SHOP_ROWS
         selectedRow = self.windowSel["shop"] // INVENTORY_COLUMNS
-        self.shopScroll = max(selectedRow - visibleRows + 1, min(self.shopScroll, selectedRow))
+        self.shopScroll = max(selectedRow - self.painter.SHOP_ROWS + 1, min(self.shopScroll, selectedRow))
 
     def shopEnter(self, everything=False):
         """Enter in the shop: buy the selected ware, or sell the selected item (one potion off a stack) or one lot
@@ -4903,21 +4870,19 @@ class gameManager():
 
     def shopSlot(self, kind, which, trader):
         """(name, price text, dim) for one slot of the shop grid."""
-        player = self.player
         if kind == "ware":
             ware = trader.wares[which]
-            return ware.name, str(ware.price), ware.price > player.gold
+            return ware.name, str(ware.price), ware.price > self.player.gold
         if kind == "item":
-            item = player.inventory[which]
+            item = self.player.inventory[which]
             return playerClass.slotLabel(item), str(peddler.offerFor(item)), False
-        have = player.materials.get(which, 0)
+        have = self.player.materials.get(which, 0)
         gold, _ = peddler.offerForMaterial(have, cityshops.materialsPerGold(trader))
         return f"{resources.materialName(which)} x{have}", str(gold) if gold else "-", not gold
 
     def shopDetail(self, entry, trader):
         """The details panel for the selected slot: the item's own details (as in the Inventory, without its keys)
         and what it costs or what he pays."""
-        player = self.player
         kind, which = entry
         if kind == "ware":
             ware = trader.wares[which]
@@ -4925,18 +4890,18 @@ class gameManager():
                 lines = [line for line in self.itemDetail(ware.item) if line[0] != "hint"]
             elif ware.kind == "material":
                 lines = [("title", resources.materialName(ware.materialId), ""), ("label", "AMOUNT", str(ware.amount)),
-                         ("label", "IN YOUR POUCH", str(player.materials.get(ware.materialId, 0)))]  # (as text: 0 must show)
+                         ("label", "IN YOUR POUCH", str(self.player.materials.get(ware.materialId, 0)))]  # (as text: 0 must show)
             else:
                 lines = [("title", ware.name, ""), ("muted", ware.recipe.description, ""), ("label", "MAKES", ware.recipe.result)]
-            lines += [("price", "PRICE", f"{ware.price} gold"), ("label", "YOU HAVE", f"{player.gold} gold")]
+            lines += [("price", "PRICE", f"{ware.price} gold"), ("label", "YOU HAVE", f"{self.player.gold} gold")]
             hint = f"{self.interactKeyName()}  buy      Tab  sell"
         elif kind == "item":
-            item = player.inventory[which]
+            item = self.player.inventory[which]
             lines = [line for line in self.itemDetail(item) if line[0] != "hint"]
             lines.append(("price", "HE PAYS", f"{peddler.offerFor(item)} gold"))
             hint = f"{self.interactKeyName()}  sell      Tab  buy"
         else:
-            have = player.materials.get(which, 0)
+            have = self.player.materials.get(which, 0)
             perGold = cityshops.materialsPerGold(trader)
             gold, taken = peddler.offerForMaterial(have, perGold)
             lines = [("title", resources.materialName(which), ""), ("label", "IN YOUR POUCH", str(have)),
@@ -4986,7 +4951,6 @@ class gameManager():
     def itemDetail(self, item):
         """The lines in the inventory's details panel for one item: what it is, its bonuses, its effects, and
         how it compares with what you have on."""
-        player = self.player
         lines = [("title", item.name, "")]
         if item.Etype == "Consume" and item.effect == "Meal":
             lines.append(("label", "MEAL", ""))
@@ -4994,8 +4958,8 @@ class gameManager():
             for tag, turns in getattr(item, "buffs", {}).items():
                 name, text = relics.EFFECTS.get(tag, (tag, ""))
                 lines.append(("ench", f"{name}: {text} ({turns} turns)", ""))
-            if getattr(player, "meal", None):  # only one meal works at a time
-                lines.append(("worse", f"Replaces {player.meal}", ""))
+            if getattr(self.player, "meal", None):  # only one meal works at a time
+                lines.append(("worse", f"Replaces {self.player.meal}", ""))
             lines.append(("hint", "Enter  eat", ""))
             lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines
@@ -5003,8 +4967,8 @@ class gameManager():
             lines.append(("label", "LIGHT", ""))
             lines.append(("body", "Set it down and it gives off a dim light on its tile and the tiles around it, "
                                   "even after you walk away. Pick it back up any time", ""))
-            if player.potionStackLimit() > 1 or playerClass.countOf(item) > 1:
-                lines.append(("row", "In this stack", f"{playerClass.countOf(item)} / {player.potionStackLimit()}"))
+            if self.player.potionStackLimit() > 1 or playerClass.countOf(item) > 1:
+                lines.append(("row", "In this stack", f"{playerClass.countOf(item)} / {self.player.potionStackLimit()}"))
             lines.append(("hint", f"Enter or {self.dropGlowrockKey()}  set it down", ""))
             lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines
@@ -5017,7 +4981,7 @@ class gameManager():
             return lines
         if item.Etype == "Consume":
             lines.append(("label", "POTION", ""))
-            bonus = player.attributeBonuses.get(item.attributeScaling, 0)
+            bonus = self.player.attributeBonuses.get(item.attributeScaling, 0)
             effect = {"Heal": f"Heals {item.bonus}" + (f" (+{bonus} from WIS)" if bonus else ""),
                       "DoorLocate": "Shows the way to the next floor",
                       "Darkvision": f"Drink: see {relics.DARKVISION_RANGE} tiles in the dark for {item.bonus} turns. "
@@ -5029,13 +4993,13 @@ class gameManager():
                       "Explosive": f"Thrown: {item.bonus} damage to everything where it lands, you included. Breaks nearby walls"}.get(item.effect, item.effect)
                                
             lines.append(("body", effect, ""))
-            if player.potionStackLimit() > 1 or playerClass.countOf(item) > 1:
-                lines.append(("row", "In this stack", f"{playerClass.countOf(item)} / {player.potionStackLimit()}"))
+            if self.player.potionStackLimit() > 1 or playerClass.countOf(item) > 1:
+                lines.append(("row", "In this stack", f"{playerClass.countOf(item)} / {self.player.potionStackLimit()}"))
             lines.append(("hint", "Enter  aim and throw" if item.effect in THROWN_EFFECTS else "Enter  use", ""))
             lines.append(("hint", "Ctrl+Enter  drop", ""))
             return lines
         lines.append(("label", (item.slot or "").upper(), getattr(item, "quality", "")))
-        scaling = player.scalingBonus(item)
+        scaling = self.player.scalingBonus(item)
         attrs = item.attributeScaling if isinstance(item.attributeScaling, (tuple, list)) else (item.attributeScaling,)
         attrNames = "+".join(a[:3].upper() for a in attrs if a)
         for stat, value in self.statLines(item):
@@ -5046,9 +5010,9 @@ class gameManager():
             lines.append(("ench", f"{name}: {text}", ""))
         if item.Etype == "Unique" and not tags and item.description not in (None, "None"):
             lines.append(("ench", item.description, ""))
-        slots = player.slotsFor(item)
+        slots = self.player.slotsFor(item)
         if slots:
-            worn = [player.equipment[s] for s in slots if player.equipment[s] != "None"]
+            worn = [self.player.equipment[s] for s in slots if self.player.equipment[s] != "None"]
             free = len(worn) < len(slots)
             lines.append(("label", "NOW WEARING", "free slot" if free else ""))
             for other in worn:

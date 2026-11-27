@@ -30,15 +30,13 @@ def growPlantOnPlayer(game, plantKind):
     """Run a real enemy turn whose plant growth step sprouts `plantKind` on the player's tile.
     Returns the tile type the growth step saw where the player stands."""
     realGrowthStep = plants.step
-    playerSpot = game.playerPositionFlat
-    yourFloor = game.grid
     seen = {}
 
     def sproutOnThePlayer(grid, *args, **kwargs):
-        if grid is not yourFloor:  # (the floors near yours grow too: livingfloors.py)
+        if grid is not game.grid:  # (the floors near yours grow too: livingfloors.py)
             return False
-        seen["tileUnderPlayer"] = grid[playerSpot][0]
-        grid[playerSpot] = [PLANT, grid[playerSpot][1], plants.Plant.grown(plantKind)]
+        seen["tileUnderPlayer"] = grid[game.playerPositionFlat][0]
+        grid[game.playerPositionFlat] = [PLANT, grid[game.playerPositionFlat][1], plants.Plant.grown(plantKind)]
         return True
 
     plants.step = sproutOnThePlayer

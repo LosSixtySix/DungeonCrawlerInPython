@@ -116,11 +116,10 @@ def hostileToYou(game, unit):
 def foeInSight(game, position, follower):
     """(position, unit) of the nearest thing hostile to you this follower can see, within FIGHT_REACH of you."""
     found = []
-    player = game.playerPositionFlat
     for spot, unit in occupancy.allUnits(game):
         if unit is follower or not hostileToYou(game, unit):
             continue
-        if dwellers.distance(game, spot, player) <= FIGHT_REACH and dwellers.canSee(game, position, follower, spot):
+        if dwellers.distance(game, spot, game.playerPositionFlat) <= FIGHT_REACH and dwellers.canSee(game, position, follower, spot):
             found.append((dwellers.distance(game, position, spot), spot, unit))
     if not found:
         return None

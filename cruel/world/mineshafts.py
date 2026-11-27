@@ -90,29 +90,27 @@ def floorLabel(key, works=None):
 def putAside(game):
     """Takes the floor at game.level off the game: its saved grid and everything kept for its number. Returns it
     (for putBack). The floor must have been saved first (gameManager.saveLevel)."""
-    level = game.level
-    aside = {"levelGrid": game.levelGrids[level], "dicts": {}, "sets": {}}
+    aside = {"levelGrid": game.levelGrids[game.level], "dicts": {}, "sets": {}}
     for name in PER_FLOOR_DICTS:
         store = getattr(game, name)
-        if level in store:
-            aside["dicts"][name] = store.pop(level)
+        if game.level in store:
+            aside["dicts"][name] = store.pop(game.level)
     for name in PER_FLOOR_SETS:
         store = getattr(game, name)
-        aside["sets"][name] = level in store
-        store.discard(level)
+        aside["sets"][name] = game.level in store
+        store.discard(game.level)
     return aside
 
 
 def putBack(game, aside):
     """Puts a floor taken off by putAside back at game.level and loads it."""
-    level = game.level
-    game.levelGrids[level] = aside["levelGrid"]
+    game.levelGrids[game.level] = aside["levelGrid"]
     for name, value in aside["dicts"].items():
-        getattr(game, name)[level] = value
+        getattr(game, name)[game.level] = value
     for name, member in aside["sets"].items():
         if member:
-            getattr(game, name).add(level)
-    game.LoadLevel(level)
+            getattr(game, name).add(game.level)
+    game.LoadLevel(game.level)
 
 
 def climbDown(game, shaft):
@@ -464,12 +462,12 @@ def buildFarmhouses(grid, rowLength, rowCount, shaftSpot, works, rooms):
         if len(works.farmhouses) >= FARMHOUSES:
             break
         middleColumn, middleRow = round(shaftColumn + reach * math.cos(angle)), round(shaftRow + reach * math.sin(angle))
-        half = farmhouses.HALF
-        if not (inBounds(rowLength, rowCount, middleColumn - half - CLEARANCE, middleRow - half - CLEARANCE) and
-                inBounds(rowLength, rowCount, middleColumn + half + CLEARANCE, middleRow + half + CLEARANCE)):
+        if not (inBounds(rowLength, rowCount, middleColumn - farmhouses.HALF - CLEARANCE, middleRow - farmhouses.HALF - CLEARANCE) and
+                inBounds(rowLength, rowCount, middleColumn + farmhouses.HALF + CLEARANCE, middleRow + farmhouses.HALF + CLEARANCE)):
             continue
         farmhouse = farmhouses.shape(rowLength, middleColumn, middleRow, (shaftColumn, shaftRow))
-        if withClearance(rowLength, middleColumn - half, middleRow - half, 2 * half + 1, 2 * half + 1) & works.builtOn():
+        if withClearance(rowLength, middleColumn - farmhouses.HALF, middleRow - farmhouses.HALF,
+                         2 * farmhouses.HALF + 1, 2 * farmhouses.HALF + 1) & works.builtOn():
             continue
         crop = farmhouses.pickCrop(works.fields)
         for spot in farmhouse["walls"]:

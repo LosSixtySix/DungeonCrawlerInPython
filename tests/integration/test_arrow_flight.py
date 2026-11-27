@@ -64,10 +64,9 @@ class ThrowViewTests(ArrowFlightTest):
 
 class DrawArrowTests(ArrowFlightTest):
     def drawnColors(self, spot):
-        painter = self.game.painter
-        corner = painter.screenTile(spot)
-        return {tuple(painter.win.get_at((corner.x + column, corner.y + row)))[:3]
-                for column in range(painter.tileSize) for row in range(painter.tileSize)}
+        corner = self.game.painter.screenTile(spot)
+        return {tuple(self.game.painter.win.get_at((corner.x + column, corner.y + row)))[:3]
+                for column in range(self.game.painter.tileSize) for row in range(self.game.painter.tileSize)}
 
     def test_a_faction_arrow_is_drawn_with_its_cloth_fletching(self):
         self.game.painter.drawArrow({"from": self.archerSpot, "to": self.targetSpot, "look": "tidewater",

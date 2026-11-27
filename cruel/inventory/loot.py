@@ -80,6 +80,7 @@ def rollWall(source, wisdom):
 # Keyed by enemy.name (as spelled in enemies.py)
 ENEMY_LOOT = {
     "Goblin": [("bone", 35, (1, 1)), ("scrap", 25, (1, 1))],
+    "Goblin Archer": [("bone", 35, (1, 1)), ("scrap", 25, (1, 1))],  # (as a Goblin)
     "Dew Grub": [("meat", 70, (1, 2)), ("dew", 40, (1, 1))],
     "Young Dew Grub": [("meat", 50, (1, 1))],
     "Goblin Chieftan": [("scrap", 60, (1, 2)), ("bone", 40, (1, 1)), ("relic:horned_crown", 2, (1, 1))],

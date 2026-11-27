@@ -30,52 +30,46 @@ class WaitTests(WaitTest):
         self.assertEqual(settings.ACTION_LABELS["wait"], "Wait a Turn")
 
     def test_space_spends_your_action_and_you_stay_put(self):
-        game = self.game
-        player = game.player
-        player.startRound()
-        actionsAllowed = player.actionsAllowed
-        turn = game.turnCount
+        self.game.player.startRound()
+        actionsAllowed = self.game.player.actionsAllowed
+        turn = self.game.turnCount
         for _ in range(actionsAllowed):
-            keyDown(game, pygame.K_SPACE)
+            keyDown(self.game, pygame.K_SPACE)
             self.endFrame()
-        self.assertEqual(game.turnCount, turn + 1, "the world took its turn")
-        self.assertEqual(game.playerPositionFlat, self.here)
+        self.assertEqual(self.game.turnCount, turn + 1, "the world took its turn")
+        self.assertEqual(self.game.playerPositionFlat, self.here)
 
     def test_it_waits_with_a_window_open_too(self):
-        game = self.game
-        keyDown(game, settings.DEFAULT_HOTKEYS["inventory"])
-        self.assertEqual(game.focus, "inventory")
-        keyDown(game, pygame.K_SPACE)
-        self.assertTrue(game.enemyMove)
+        keyDown(self.game, settings.DEFAULT_HOTKEYS["inventory"])
+        self.assertEqual(self.game.focus, "inventory")
+        keyDown(self.game, pygame.K_SPACE)
+        self.assertTrue(self.game.enemyMove)
 
     def test_holding_it_keeps_waiting(self):
-        game = self.game
-        self.assertTrue(game.isRepeatable(pygame.K_SPACE))
+        self.assertTrue(self.game.isRepeatable(pygame.K_SPACE))
         event = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE, mod=0)
-        game.onKeyDown(event)
+        self.game.onKeyDown(event)
         self.endFrame()
-        game.onKeyDown(event)  # (held: the key repeating)
-        self.assertTrue(game.enemyMove)
+        self.game.onKeyDown(event)  # (held: the key repeating)
+        self.assertTrue(self.game.enemyMove)
 
     def test_rebound_wait_follows_its_new_key(self):
-        game = self.game
-        game.settings.rebind("wait", pygame.K_z)
+        self.game.settings.rebind("wait", pygame.K_z)
         try:
-            keyDown(game, pygame.K_SPACE)
-            self.assertFalse(game.enemyMove)
-            keyDown(game, pygame.K_z)
-            self.assertTrue(game.enemyMove)
+            keyDown(self.game, pygame.K_SPACE)
+            self.assertFalse(self.game.enemyMove)
+            keyDown(self.game, pygame.K_z)
+            self.assertTrue(self.game.enemyMove)
         finally:
-            game.settings.resetHotkeys()
+            self.game.settings.resetHotkeys()
 
     def test_a_move_key_you_had_put_on_space_keeps_moving_you(self):
-        game = self.game
-        game.settings.hotkeys["move_right"] = pygame.K_SPACE  # (bound before Wait was added)
+        self.game.settings.hotkeys["move_right"] = pygame.K_SPACE  # (bound before Wait was added)
         try:
-            keyDown(game, pygame.K_SPACE)
-            self.assertEqual(game.playerPositionFlat, self.here + 1)
+            keyDown(self.game, pygame.K_SPACE)
+            self.assertEqual(self.game.playerPositionFlat, self.here + 1)
         finally:
-            game.settings.resetHotkeys()
+            self.game.settings.resetHotkeys()
 
 
 if __name__ == "__main__":

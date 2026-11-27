@@ -284,8 +284,7 @@ def moveGrub(game, position, farmer):
 
 def withinReach(game, position, spot):
     """Is spot within REACH tiles of position, across or diagonally (a farmer lifts grubs over a pen's fence)?"""
-    rowLength = game.rowLength
-    return max(abs(position % rowLength - spot % rowLength), abs(position // rowLength - spot // rowLength)) <= REACH
+    return max(abs(position % game.rowLength - spot % game.rowLength), abs(position // game.rowLength - spot // game.rowLength)) <= REACH
 
 
 def stepOrGiveUp(game, position, farmer, goal):
