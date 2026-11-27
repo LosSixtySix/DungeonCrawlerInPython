@@ -1581,6 +1581,8 @@ class renderer():
             pygame.draw.circle(self.win, self.effectColor(shot["effect"]), rect.center, max(2, self.tileSize // 4))
         for fromTile, toTile, progress in throws.get("glides", ()):
             self.drawGlidingBolt(fromTile, toTile, progress, time)
+        for arrow in throws.get("arrows", ()):
+            self.drawArrow(arrow)
         for landing, radius, effect, age in throws["explosions"]:
             if effect == "Pitch":  # the bolt's own hit frames, once it has got there
                 if age >= 0:
@@ -1600,6 +1602,21 @@ class renderer():
         progress = max(0.0, min(1.0, progress))
         spot = (round(start.x + (end.x - start.x) * progress), round(start.y + (end.y - start.y) * progress))
         self.win.blit(self.sprites["pitchBolt"][sprites.pitchBoltFrame(time)], spot)
+
+    def drawArrow(self, arrow):
+        """A Goblin Archer's arrow: partway along its flight, or sinking in or lying where it landed, turned to the
+        nearest of 8 directions and fletched in its archer's faction cloth (sprites.arrowRows, arrowColors)."""
+        frame, progress, alpha = arrow["frame"]
+        fromTile, toTile = arrow["from"], arrow["to"]
+        direction = sprites.arrowDirection(fromTile % self.rowLength, fromTile // self.rowLength,
+                                           toTile % self.rowLength, toTile // self.rowLength)
+        picture = self.sprites["arrows"].get(arrow["look"], self.sprites["arrows"][None])[frame][direction]
+        if alpha < 1:
+            picture = picture.copy()
+            picture.set_alpha(int(255 * alpha))
+        start, end = self.screenTile(fromTile), self.screenTile(toTile)
+        spot = (round(start.x + (end.x - start.x) * progress), round(start.y + (end.y - start.y) * progress))
+        self.win.blit(picture, spot)
 
     def drawAimCursor(self, position, effect):
         """Where you're aiming, when the throw would land short of it (an enemy or a wall in the way): four corner
