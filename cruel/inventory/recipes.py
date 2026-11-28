@@ -89,15 +89,18 @@ class Recipe():
     "scrap" / "reforge" / "rekindle"   the relic stations' recipes, made for one item in your pack (target)
     "salvage"  takes a crafted item in your pack (target) apart at the station that made it, for some materials
     For items, makeItem(bonus, bonus2) builds the equipment; bonus (and bonus2 for two-stat gear) are the
-    Common-quality stats. enchants are effect tags the item always has (see relics.EFFECTS)."""
+    Common-quality stats. enchants are effect tags the item always has (see relics.EFFECTS).
+    otherNeeds lists other sets of materials that pay for the recipe just as well as needs does (Fibrous Cloth takes
+    Shadowfern or Emberroot). Each set should use different materials from the others."""
 
     def __init__(self, recipeId, name, station, turns, needs, kind, description, result,
-                 makes=None, amount=1, makeItem=None, bonus=0, bonus2=0, enchants=(), target=None):
+                 makes=None, amount=1, makeItem=None, bonus=0, bonus2=0, enchants=(), target=None, otherNeeds=()):
         self.id = recipeId
         self.name = name
         self.station = station
         self.turns = turns
         self.needs = needs          # material id (or "gold") -> count
+        self.otherNeeds = list(otherNeeds)  # other {material id: count} sets that work instead of needs
         self.kind = kind
         self.description = description
         self.result = result        # short summary of what it makes, for the window
@@ -108,6 +111,11 @@ class Recipe():
         self.bonus2 = bonus2
         self.enchants = list(enchants)
         self.target = target        # the item a relic-station recipe works on
+
+    @property
+    def needOptions(self):
+        """Every set of materials that pays for this recipe: needs first, then otherNeeds."""
+        return [self.needs] + self.otherNeeds
 
     def build(self, quality):
         """The finished item at this quality, named like "Fine Stone Pick" (Common has no prefix). Masterwork
@@ -194,10 +202,10 @@ RECIPES = [
            "A folding bench you carry with you. Works anywhere.", "Unlocks the Workbench", makes="workbench"),
     Recipe("handle", "Wooden Handle", "hand", 1, {"wood": 2}, "material",
            "Goes into every pick and weapon.", "1 Wooden Handle", makes="handle"),
-    Recipe("fibrous_cloth", "Fibrous Cloth", "hand", 1, {"shadowfern": 1, "emberroot": 1}, "material",
-           f"Fern fronds woven tight around stringy root. Any recipe that needs Hide takes "
+    Recipe("fibrous_cloth", "Fibrous Cloth", "hand", 1, {"shadowfern": 1}, "material",
+           f"Fern fronds or stringy root, woven tight. Any recipe that needs Hide takes "
            f"{resources.FIBROUS_CLOTH_PER_HIDE} Fibrous Cloth in place of each one.", "1 Fibrous Cloth",
-           makes="fibrous_cloth"),
+           makes="fibrous_cloth", otherNeeds=[{"emberroot": 1}]),
     Recipe("torch", "Torch", "hand", 1, {"wood": 1, "coal": 1}, "item",
            "Pushes your light out further.", "Hands  Vision +2", bonus=2, makeItem=gear("Light", "Torch", "Hands", None)),
     Recipe("glowrock", "Glowrock", "hand", 1, {"stone": 1, "glowcap": 1}, "potion",

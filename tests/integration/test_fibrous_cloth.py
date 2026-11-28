@@ -1,4 +1,4 @@
-"""Fibrous Cloth: made by hand from Shadowfern and Emberroot, it stands in for Hide, FIBROUS_CLOTH_PER_HIDE of it for
+"""Fibrous Cloth: made by hand from Shadowfern or Emberroot (Recipe.otherNeeds), it stands in for Hide, FIBROUS_CLOTH_PER_HIDE of it for
 each Hide a recipe is short (resources.STAND_INS, PlayerClass.have and spendMaterials).
 
 Integration tests."""
@@ -12,21 +12,59 @@ PER_HIDE = resources.FIBROUS_CLOTH_PER_HIDE
 
 
 class RecipeTests(unittest.TestCase):
-    def test_it_is_made_by_hand_from_shadowfern_and_emberroot(self):
+    def test_it_is_made_by_hand_from_shadowfern_or_emberroot(self):
         recipe = recipes.RECIPES_BY_ID["fibrous_cloth"]
         self.assertEqual((recipe.station, recipe.kind, recipe.makes), ("hand", "material", "fibrous_cloth"))
-        self.assertEqual(recipe.needs, {"shadowfern": 1, "emberroot": 1})
+        self.assertEqual(recipe.needOptions, [{"shadowfern": 1}, {"emberroot": 1}])
         self.assertEqual(resources.materialName("fibrous_cloth"), "Fibrous Cloth")
 
     def test_three_cloth_for_every_hide(self):
         self.assertEqual(PER_HIDE, 3)
 
-    def test_crafting_it_turns_the_plants_into_cloth(self):
-        game = newGame()
-        game.player.addMaterial("shadowfern", 2)
-        game.player.addMaterial("emberroot", 1)
-        game.finishCraft(recipes.RECIPES_BY_ID["fibrous_cloth"])
-        self.assertEqual(game.player.materials, {"shadowfern": 1, "fibrous_cloth": 1})
+
+class MakingClothTests(unittest.TestCase):
+    def setUp(self):
+        self.game = newGame()
+        self.player = self.game.player
+        self.clothRecipe = recipes.RECIPES_BY_ID["fibrous_cloth"]
+
+    def test_shadowfern_alone_makes_cloth(self):
+        self.player.addMaterial("shadowfern", 2)
+        self.assertIsNone(self.game.craftProblem(self.clothRecipe))
+        self.game.finishCraft(self.clothRecipe)
+        self.assertEqual(self.player.materials, {"shadowfern": 1, "fibrous_cloth": 1})
+
+    def test_emberroot_alone_makes_cloth(self):
+        self.player.addMaterial("emberroot", 2)
+        self.assertIsNone(self.game.craftProblem(self.clothRecipe))
+        self.game.finishCraft(self.clothRecipe)
+        self.assertEqual(self.player.materials, {"emberroot": 1, "fibrous_cloth": 1})
+
+    def test_shadowfern_is_used_before_emberroot(self):
+        self.player.addMaterial("shadowfern", 1)
+        self.player.addMaterial("emberroot", 1)
+        self.game.finishCraft(self.clothRecipe)
+        self.assertEqual(self.player.materials, {"emberroot": 1, "fibrous_cloth": 1})
+
+    def test_every_plant_of_either_kind_counts_towards_how_many_can_be_made(self):
+        self.player.addMaterial("shadowfern", 2)
+        self.player.addMaterial("emberroot", 3)
+        self.assertEqual(self.game.craftableCount(self.clothRecipe), 5)
+
+    def test_neither_plant_is_not_enough(self):
+        self.assertEqual(self.game.craftProblem(self.clothRecipe), "not enough materials")
+        self.assertEqual(self.game.craftableCount(self.clothRecipe), 0)
+
+    def test_the_crafting_window_shows_both_plants_with_or_between(self):
+        self.player.addMaterial("emberroot", 2)
+        self.game.openWindow("crafting")
+        self.game.craftTab = recipes.STATIONS.index("hand")
+        recipesShown = recipes.forStation("hand")
+        self.game.windowSel["crafting"] = [recipe.id for recipe in recipesShown].index("fibrous_cloth")
+        detail = self.game.windowSpec("crafting")["detail"]
+        needsLabel = next(index for index, row in enumerate(detail) if row[0] == "label" and row[1] == "NEEDS")
+        self.assertEqual(detail[needsLabel + 1:needsLabel + 4],
+                         [("short", "Shadowfern", "0 / 1"), ("muted", "or", ""), ("need", "Emberroot", "2 / 1")])
 
 
 class StandInTests(unittest.TestCase):
