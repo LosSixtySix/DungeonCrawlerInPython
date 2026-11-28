@@ -4677,6 +4677,10 @@ class gameManager():
             return " and ".join(self.describeUnit(enemy) for enemy in occupancy.unitsAt(self, self.PlayerLookPosition))
         return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
 
+    def positionLabel(self):
+        """Where you stand on the map, for the Room window: "(x: 3, y: 7)", counted from the top-left corner."""
+        return f"(x: {self.playerPositionFlat % self.rowLength}, y: {self.playerPositionFlat // self.rowLength})"
+
     def describeUnit(self, enemy):
         """An enemy's name for Looking At, with what's worth knowing about it."""
         shop = cityshops.shopName(enemy.shopKind) if cityshops.isMerchant(enemy) else None
@@ -4713,7 +4717,8 @@ class gameManager():
             spec["rows"] = [("Floor Type", self.floorTypeName()), ("Theme", self.theme.name),
                             ("Room Type", self.getRoomType(self.playerPositionFlat, self.rooms) or "-"),
                             ("Floor", self.level), ("Event", events.name(self.activeEvent()) if self.activeEvent() else "-"),
-                            ("Standing On", self.currentPosition), ("Looking At", self.lookingAt())]
+                            ("Standing On", self.currentPosition), ("Looking At", self.lookingAt()),
+                            ("Position", self.positionLabel())]
         elif windowId == "equipment":
             spec["rows"] = [(slot, getattr(item, "name", item)) for slot, item in self.player.equipment.items()]
             if self.swapActive():
