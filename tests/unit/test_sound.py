@@ -64,6 +64,40 @@ class SoundSystemTests(unittest.TestCase):
         self.gameSound.stopGameTheme()
         self.assertFalse(self.gameSound.inRun)
 
+    def test_the_metropolis_music_loads(self):
+        self.assertTrue(os.path.isdir(paths.resourcePath(sound.CITY_MUSIC)))
+        self.assertTrue(self.gameSound.cityTracks)
+
+    def test_in_a_city_the_playlist_is_the_metropolis_music(self):
+        self.assertIs(self.gameSound.playlist(), self.gameSound.gameTracks)
+        self.gameSound.setCity(True)
+        self.assertIs(self.gameSound.playlist(), self.gameSound.cityTracks)
+        self.gameSound.setCity(False)
+        self.assertIs(self.gameSound.playlist(), self.gameSound.gameTracks)
+
+    def test_walking_into_a_city_fades_the_game_track_out_for_a_city_track(self):
+        self.gameSound.playGameTheme()
+        self.assertIn(self.gameSound.gameTheme, self.gameSound.gameTracks)
+        self.gameSound.setCity(True)
+        self.assertTrue(self.gameSound.switching, "the game track fades out")
+        self.gameSound.startNextTrack()  # (what update does once it's quiet)
+        self.assertIn(self.gameSound.gameTheme, self.gameSound.cityTracks)
+
+    def test_leaving_the_city_goes_back_to_the_game_music(self):
+        self.gameSound.setCity(True)
+        self.gameSound.playGameTheme()
+        self.assertIn(self.gameSound.gameTheme, self.gameSound.cityTracks)
+        self.gameSound.setCity(False)
+        self.assertTrue(self.gameSound.switching)
+        self.gameSound.startNextTrack()
+        self.assertIn(self.gameSound.gameTheme, self.gameSound.gameTracks)
+
+    def test_staying_in_the_city_keeps_the_track_playing(self):
+        self.gameSound.setCity(True)
+        self.gameSound.playGameTheme()
+        self.gameSound.setCity(True)
+        self.assertFalse(self.gameSound.switching)
+
     def test_effects_play_without_crashing(self):
         self.gameSound.playHit()
         self.gameSound.playExplosion()

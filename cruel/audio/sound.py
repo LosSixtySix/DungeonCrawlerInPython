@@ -18,6 +18,8 @@ each time, so repeats don't sound robotic).
     its own folder with its .json) is in the playlist: one is picked at random as the run starts and fades in as
     the menu theme fades out. After TRACK_MINUTES it fades out and a different one fades in. Going back to the
     title fades it out. A new track only needs its folder dropped into music/gameMusic/.
+  - In a Metropolis the city's own music plays instead: the tracks in music/metropolis/ (set by setCity). Walking
+    into a city fades the game track out and a city track in; leaving fades back to the game music.
   - A Bomb going off plays the explosion, and every swing at a wall plays a hit.
   - Now and then in a run (every AMBIENCE_GAP seconds, picked at random each time), one of the sounds in
     music/ambience/ plays quietly: a drip somewhere in the dark. Each sound has its own folder with its _sfx.json;
@@ -29,6 +31,7 @@ nothing when muted. If the computer has no audio device, or the files are missin
 
 MENU_THEME = "music/mainMenuTheme/dungeon_depths.json"
 GAME_MUSIC = "music/gameMusic"  # one folder per track, each with its .json
+CITY_MUSIC = "music/metropolis"  # the Metropolis's theme: one folder per track, each with its .json
 EXPLOSION = "music/soundEffects/explosion/explosion_sfx.json"
 HIT = "music/soundEffects/hit/hit_sfx.json"
 AMBIENCE = "music/ambience"  # one folder per sound, each with its _sfx.json
@@ -50,6 +53,8 @@ class Sound():
         self.ambience = []      # the ambient sounds (SoundVariations), one per folder in music/ambience/
         self.nextAmbience = None  # when the next ambient sound plays (pygame ticks), while in a run
         self.gameTracks = []    # every game track that loaded (LoopingMusic)
+        self.cityTracks = []    # every Metropolis track that loaded: they play instead while you're in a city
+        self.inCity = False     # you're in a Metropolis (setCity)
         self.gameTheme = None   # the one playing now
         self.inRun = False      # game music is wanted (between playGameTheme and stopGameTheme)
         self.trackStart = 0     # when the current game track started (pygame ticks)
@@ -66,11 +71,8 @@ class Sound():
             return
         self.silence = self.makeSilence()
         self.menuTheme = self.loadMusic(MENU_THEME, MENU_CHANNEL)
-        folder = paths.resourcePath(GAME_MUSIC)
-        for manifest in sorted(glob.glob(os.path.join(folder, "*", "*.json"))):
-            track = self.loadMusic(manifest, GAME_CHANNEL)
-            if track is not None:
-                self.gameTracks.append(track)
+        self.gameTracks = self.loadTracks(GAME_MUSIC)
+        self.cityTracks = self.loadTracks(CITY_MUSIC)
         self.explosion = self.loadEffect(paths.resourcePath(EXPLOSION))
         self.hit = self.loadEffect(paths.resourcePath(HIT))
         for manifest in sorted(glob.glob(os.path.join(paths.resourcePath(AMBIENCE), "*", "*.json"))):
@@ -95,6 +97,15 @@ class Sound():
         gets this instead: the fade ends, the silence plays, and then the channel really is quiet."""
         frequency, sampleFormat, channels = pygame.mixer.get_init()
         return pygame.mixer.Sound(buffer=bytes((frequency // 100) * channels * (abs(sampleFormat) // 8)))
+
+    def loadTracks(self, folder):
+        """Every track in folder (one folder per track, each with its .json) that loads, on the game music channel."""
+        tracks = []
+        for manifest in sorted(glob.glob(os.path.join(paths.resourcePath(folder), "*", "*.json"))):
+            track = self.loadMusic(manifest, GAME_CHANNEL)
+            if track is not None:
+                tracks.append(track)
+        return tracks
 
     def loadMusic(self, manifest, channel):
         try:
@@ -156,9 +167,31 @@ class Sound():
         if self.gameTheme is None or not self.gameTheme.is_playing:
             self.startNextTrack()
 
+    def playlist(self):
+        """The tracks to pick from now: the city's in a Metropolis (if it has any), the game music anywhere else."""
+        return self.cityTracks if self.inCity and self.cityTracks else self.gameTracks
+
+    def setCity(self, inCity):
+        """Call every frame with whether you're in a Metropolis. When that changes, the track playing fades out and
+        one from the other playlist fades in."""
+        if inCity == self.inCity:
+            return
+        self.inCity = inCity
+        if self.inRun and not self.switching and self.gameTheme is not None and self.gameTheme.is_playing                 and self.gameTheme not in self.playlist():
+            self.fadeOutForNext()
+
+    def fadeOutForNext(self):
+        """The track playing fades out; update starts the next one once it's quiet."""
+        self.switching = True
+        self.gameFadeStart = None
+        self.gameTheme.channel.queue(self.silence)  # (see makeSilence)
+        self.gameTheme.stop(fade_ms=GAME_FADE_OUT_MS)
+
     def startNextTrack(self):
-        """Fades in a game track picked at random, not the one that just played (unless it's the only one)."""
-        choices = [t for t in self.gameTracks if t is not self.gameTheme] or self.gameTracks
+        """Fades in a track from the playlist picked at random, not the one that just played (unless it's the only
+        one)."""
+        tracks = self.playlist()
+        choices = [t for t in tracks if t is not self.gameTheme] or tracks
         if not choices:
             return
         self.gameTheme = random.choice(choices)
@@ -205,10 +238,7 @@ class Sound():
         if self.switching:
             if not self.gameTheme.channel.get_busy():  # the old track has faded out: in comes the next
                 self.startNextTrack()
-        elif pygame.time.get_ticks() - self.trackStart >= TRACK_MINUTES * 60000 and len(self.gameTracks) > 1:
-            self.switching = True
-            self.gameFadeStart = None
-            self.gameTheme.channel.queue(self.silence)  # (see makeSilence)
-            self.gameTheme.stop(fade_ms=GAME_FADE_OUT_MS)
+        elif pygame.time.get_ticks() - self.trackStart >= TRACK_MINUTES * 60000 and len(self.playlist()) > 1:
+            self.fadeOutForNext()
         elif self.gameFadeStart is not None and self.gameTheme.is_playing:
             self.gameTheme.set_volume(self.gameThemeVolume())

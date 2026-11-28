@@ -431,6 +431,7 @@ class gameManager():
         """State that only matters while the game is running. Reset for a new game and after loading a save."""
         self.scene = "playing"
         self.sound.stopMenuTheme()  # the menu music fades out as the run starts
+        self.sound.setCity(self.proportion == metropolis.METROPOLIS)  # (a run loaded in a city starts on its music)
         self.sound.playGameTheme()  # and the quiet in-game music comes in
         self.enemyMove = False
 
@@ -5150,6 +5151,7 @@ class gameManager():
     def RunGame(self):
         while self.running:
             self.clock.tick(FPS)
+            self.sound.setCity(self.scene == "playing" and self.proportion == metropolis.METROPOLIS)  # the city's own music
             self.sound.update()
 
             if self.scene in ("title", "attempts"):
