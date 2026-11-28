@@ -1236,9 +1236,10 @@ class gameManager():
             return "already made"
         if recipe.target is not None and not any(item is recipe.target for item in self.player.inventory):
             return "it's not in your pack any more"
-        if self.player.gold < recipe.needs.get("gold", 0):
+        needs = self.needsToCraft(recipe)
+        if self.player.gold < needs.get("gold", 0):
             return "not enough gold"
-        if not self.player.hasMaterials(recipe.needs):
+        if not self.player.hasMaterials(needs):
             return "not enough materials"
         if recipe.kind == "item" and len(self.player.inventory) >= self.player.inventoryLimit:
             return "inventory is full"
@@ -1255,11 +1256,18 @@ class gameManager():
     def salvagePercent(self):
         return recipes.salvagePercent(self.player.attributes["intelligence"])
 
+    def needsToCraft(self, recipe):
+        """The materials one craft of this recipe will cost: the first of its needOptions the player can pay for,
+        or its usual needs when they can't pay for any."""
+        return next((needs for needs in recipe.needOptions if self.player.hasMaterials(needs)), recipe.needs)
+
     def craftableCount(self, recipe):
-        """How many times the pouch (and gold) could pay for this recipe."""
+        """How many times the pouch (and gold) could pay for this recipe, adding up every set of materials that
+        pays for it (they use different materials, so each set counts on its own)."""
         if not recipe.needs:
             return 1
-        return min(self.player.have(m) // n for m, n in recipe.needs.items())
+        return sum(min(self.player.have(materialId) // count for materialId, count in needs.items())
+                   for needs in recipe.needOptions)
 
     def startCrafting(self, times):
         recipe = self.selectedRecipe()
@@ -1373,7 +1381,7 @@ class gameManager():
             self.grid[spot] = [0, self.grid[spot][1]]
             self.craftMessage = f"{recipes.STATION_INFO[recipe.station]['name']} packed away"
             return
-        self.player.spendMaterials(recipe.needs)
+        self.player.spendMaterials(self.needsToCraft(recipe))
         if recipe.kind == "station":
             self.player.stations.add(recipe.makes)
             message = f"{recipe.name} made: new tab unlocked"
@@ -1529,6 +1537,8 @@ class gameManager():
             if recipe.needs:
                 detail.append(("label", "NEEDS", turns))
                 detail += needRows(recipe.needs)
+                for otherNeeds in recipe.otherNeeds:
+                    detail += [("muted", "or", "")] + needRows(otherNeeds)
                 if recipe.needs.get("gold"):
                     detail.append(("muted", f"Your next level-up costs {self.player.nextLevelGold} gold.", ""))
             else:
