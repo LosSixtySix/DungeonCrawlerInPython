@@ -12,6 +12,7 @@ from cruel.inventory import items
 from cruel.world import plants
 from cruel.world import peddler
 from cruel.world import metropolis
+from cruel.world import ropes
 
 
 # Dithered light: tiles in view get a pattern of dark pixels the further they are from the player.
@@ -275,7 +276,8 @@ class renderer():
     def draw(self, grid, rooms, player, playerPosition, aimLine, hud, windows, pause, message=None, messageSeconds=1, messageShade=255,
              lightTime=0.0, lightStyle=None, lightOnly=False, popups=(), throws=None, blood=None,bloodDry = None, openOrder=(),
              console=None, glintOnly=False, fireLight=None, smoke=None, overlayOnly=False, memoryFade=None, wallLamps=None,
-             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None, darkSight=None, sharedTiles=None, worldTurn=0):
+             memoryFalloff=None, zoom=1, glowLight=None, ownSight=None, darkSight=None, sharedTiles=None, worldTurn=0,
+             floorCracks=None):
         """Draws one game frame.
         hud: (health, maxHealth, gold, floor) or None to hide it.
         windows: list of window dicts (see drawWindow), drawn in order so the last one is on top.
@@ -294,6 +296,7 @@ class renderer():
         darkSight: the tiles you see by Darkvision past your light (no light there: drawn dim and dithered).
         sharedTiles: {space: the second unit on it} (occupancy.py): two small units drawn smaller side by side, or a
         small unit over a giant's corner.
+        floorCracks: {tile: 0-2} how cracked the floor tiles being dug look (digging.crackStages).
         Returns (message finished fading?, {window id: pygame.Rect}) so the game manager can tell which
         window the mouse is over."""
         self.win.fill((0, 0, 0))  # past the floor's edges is black
@@ -309,6 +312,7 @@ class renderer():
         self.ownSight = ownSight or set()
         self.darkSight = darkSight or set()
         self.sharedTiles = sharedTiles or {}
+        self.floorCracks = floorCracks or {}
         self.memoryFade = memoryFade or {}  # remembered tile -> how far it has faded to black, 0..1
         self.memoryFalloff = memoryFalloff  # (radius, curve, door darkest) for drawMemoryFalloff, or None
         self.smokeHere = smoke or {}  # Smoke Bomb smoke: whoever stands in it isn't drawn
@@ -1478,6 +1482,15 @@ class renderer():
     BLOOD_DARK, BLOOD, BLOOD_LIGHT = (92, 6, 10), (138, 14, 20), (186, 52, 52)
     DRIED_DARK, DRIED = (48, 28, 22), (82, 44, 32)
 
+    def floorPicture(self, name, maker, i, rooms, memorized):
+        """A picture colored from tile i's floor (maker(floor color, tile size)), made once per name and floor color."""
+        floor = self.floorColor(i, rooms, memorized)
+        cache = self.__dict__.setdefault("floorPictureCache", {})
+        key = (name, tuple(floor), self.tileSize)
+        if key not in cache:
+            cache[key] = maker(floor, self.tileSize)
+        return cache[key]
+
     def floorFill(self, i, rooms, memorized, x, y):
         self.fillTile(self.floorColor(i, rooms, memorized), x, y)
         amount = self.blood.get(i, 0) if self.blood else 0
@@ -1697,7 +1710,7 @@ class renderer():
     # The map surface is kept from frame to frame. Each tile remembers a signature of everything that decides how
     # it looks (tileSignature); a frame only redraws the tiles whose signature changed. A new floor, theme or tile
     # size starts over (resetMap). Anything drawn on the map outside this (the aim line) clears its tiles' signatures.
-    LIGHT_EXEMPT = (1, 3, 5, 6, 7, 8, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT, metropolis.MINESHAFT)  # never dithered by the light, so they stand out
+    LIGHT_EXEMPT = (1, 3, 5, 6, ropes.HANGING_ROPE, 7, 8, 9, expansion.CAMP, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT, metropolis.MINESHAFT)  # never dithered by the light, so they stand out
 
     def resetMap(self):
         self.tileSigs = {}
@@ -1847,6 +1860,8 @@ class renderer():
             extra = (obj.kind, getattr(obj, "stage", None), obj.ready if obj.staged else None, self.bodyLook(bodies.bodyUnder(obj)))
         elif kind == expansion.HOLE:
             extra = self.holeSides(grid, i)
+        elif kind == 0:
+            extra = getattr(self, "floorCracks", {}).get(i)  # (being dug: its cracks)
         elif kind == expansion.CAMP:
             extra = (obj.kind, obj.hp, len(getattr(obj, "brokenPoints", ())),
                      self.frameTicks // sprites.BONFIRE_FRAME_MS % len(self.sprites["bonfire"]) if obj.kind == "bonfire" else None)
@@ -2108,6 +2123,13 @@ class renderer():
                 else:  # (cracked as it's hit, like a wall: no damage bar)
                     self.mapSurface.blit(self.crackedPicture(self.sprites["spawner"], piece, ("spawner",)),
                                          (x * self.tileSize, y * self.tileSize))
+            case ropes.ROPED_HOLE:  # a hole with a rope tied to it (ropes.py): a way down and back up
+                self.floorFill(i, rooms, memorized, x, y)
+                self.mapSurface.blit(self.floorPicture("ropedHole", sprites.makeRopedHole, i, rooms, memorized),
+                                     (x * self.tileSize, y * self.tileSize))
+            case ropes.HANGING_ROPE:  # the rope's end below a roped hole, in the light from above like the Door Up
+                self.floorFill(i, rooms, memorized, x, y)
+                self.mapSurface.blit(self.sprites["hangingRope"], (x * self.tileSize, y * self.tileSize))
             case expansion.HOLE:  # broken floor: a drop to the floor below, running into the holes beside it
                 floor = self.floorColor(i, rooms, memorized)
                 key = (self.holeSides(grid, i), i % 5, tuple(floor))
@@ -2151,3 +2173,8 @@ class renderer():
                     self.drawUnit(second, i, x * self.tileSize + offset, y * self.tileSize + offset // 2, small=True)
             case _:  # Floor
                 self.floorFill(i, rooms, memorized, x, y)
+                stage = getattr(self, "floorCracks", {}).get(i) if grid[i][0] == 0 else None
+                if stage is not None:  # being dug (digging.py): cracks that grow as it's dug
+                    crack = self.floorPicture(("crack", stage), lambda floor, size: sprites.makeFloorCrack(stage, floor, size),
+                                              i, rooms, memorized)
+                    self.mapSurface.blit(crack, (x * self.tileSize, y * self.tileSize))

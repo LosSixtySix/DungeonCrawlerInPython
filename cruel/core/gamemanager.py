@@ -35,6 +35,8 @@ from cruel.world import sight
 from cruel.world import sightmemory
 from cruel.world import followers
 from cruel.world import cityshops
+from cruel.world import digging
+from cruel.world import ropes
 from cruel.core import devconsole
 from cruel.core import updater
 from cruel.audio import sound
@@ -389,6 +391,7 @@ class gameManager():
         self.floorEvents = {}  # floor -> its event ({"id", "turnsLeft", "active"}, see events.py), if it has one
         self.fallen = {}  # floor -> [(position, tile)]: what fell into it through a hole, put there when you arrive
         self.memoryFade = {}  # floor -> {tile: turns it has been fading} (see stepForgetting)
+        self.floorCracks = {}  # floor -> {tile: a Wall standing in for the floor}: floor dug at but not broken (digging.py)
         self.scorchedDoors = {}  # floor -> where its Scorched door is (one per Molten Vault floor at most)
         self.wallLamps = {}  # floor -> {tile: metropolis.WallLamp} (a city's lamps on walls)
         self.trackStarts = set()  # floors with no door back up (the Scorched Depths, and the floor below it)
@@ -1718,6 +1721,8 @@ class gameManager():
             self.enterScorched()
         elif self.currentLocation[0] == metropolis.MINESHAFT:
             mineshafts.climb(self)
+        elif ropes.climb(self):  # (on a roped hole or a rope's end: up or down it)
+            pass
         elif self.playerPositionFlat in self.doorPositions and not mineshafts.onSideFloor(self):
             self.onOpenDoor()
 
@@ -1812,6 +1817,9 @@ class gameManager():
             expansion.hitStructure(self, target)
         elif tile[0] == 8:  # a plant: harvest it
             self.harvestPlant(target)
+        elif tile[0] == expansion.HOLE:  # a hole: tie a Rope to it (with none, it takes no turn)
+            if not ropes.tieRope(self, target):
+                return
         self.enemyMove = True
 
     def attackUnit(self, target, enemy):
@@ -2302,12 +2310,16 @@ class gameManager():
         occupancy.useShared(self, data[8] if len(data) > 8 else {})  # (the second units on its spaces: none in older saves)
         self.setTheme(theme)
 
-    def changeLevel(self, newLevel, falling=False):
+    def changeLevel(self, newLevel, falling=False, arriveAt=None):
+        """To a floor you've been on before. falling: you land where you fell, or on the nearest open floor to it.
+        arriveAt: the tile you arrive on (a rope's end); otherwise you arrive where you were (doors line up)."""
         self.saveLevel()
         self.level = newLevel
         self.deepest = max(self.deepest, self.level)
         self.LoadLevel(newLevel)
-        if falling:  # you land where you fell, or on the nearest open floor to it
+        if arriveAt is not None:
+            self.playerPositionFlat = arriveAt
+        elif falling:  # you land where you fell, or on the nearest open floor to it
             self.playerPositionFlat = self.openSpot(self.playerPositionFlat) or self.playerPositionFlat
         self.currentLocation = copy.copy(self.grid[self.playerPositionFlat])
         self.afterLevelChange()
@@ -2345,7 +2357,7 @@ class gameManager():
         """Every floor deeper than last is gone for good: its saved grid, its doors, and what's kept per floor."""
         del self.levelGrids[last + 1:]
         del self.doorPositions[last + 1:]
-        for store in (self.floorEvents, self.camps, self.memoryFade, self.scorchedDoors, self.fallen):
+        for store in (self.floorEvents, self.camps, self.memoryFade, self.scorchedDoors, self.fallen, self.floorCracks):
             for floor in [f for f in store if f > last]:
                 del store[floor]
         self.motherlodes = {f for f in self.motherlodes if f <= last}
@@ -2716,6 +2728,10 @@ class gameManager():
             self.currentPosition = "Door to previous Level"
         elif self.currentLocation[0] == SCORCHED_DOOR:
             self.currentPosition = "Scorched Door"
+        elif self.currentLocation[0] == ropes.ROPED_HOLE:
+            self.currentPosition = "Roped Hole"
+        elif self.currentLocation[0] == ropes.HANGING_ROPE:
+            self.currentPosition = "Rope"
         elif self.currentLocation[0] == 3:
             self.currentPosition = "Items" if len(self.currentLocation[2]) > 1 else "Item"
         elif self.currentLocation[0] == 9 and bodies.isBody(self.currentLocation[2]):
@@ -3536,7 +3552,7 @@ class gameManager():
                 if kind == 2:
                     tile[2].holeBelow = True  # it stands over a hole now
                     continue
-                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, SCORCHED_DOOR, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT,
+                if kind in (4, 6, 7, expansion.CAMP, expansion.HOLE, ropes.ROPED_HOLE, ropes.HANGING_ROPE, SCORCHED_DOOR, peddler.SIGNPOST, metropolis.SHOP_SIGN, metropolis.STREET_LIGHT,
                             metropolis.MINESHAFT):
                     continue
                 second = occupancy.sharedTiles(self).pop(p, None)
@@ -3570,6 +3586,12 @@ class gameManager():
         """You fell through a hole: FALL_DAMAGE, and you land on the floor below, where you fell (or on the nearest
         open floor to it there)."""
         self.player.damageTaken += FALL_DAMAGE
+        self.descend()
+        self.bleed(self.playerPositionFlat)
+
+    def descend(self):
+        """Down through the floor to the one below, landing where you were (or on the nearest open floor to it):
+        the way a fall goes, and a rope (ropes.climbDown)."""
         if mineshafts.onSideFloor(self):  # from a works floor you fall to the floor below its city
             mineshafts.fallOff(self)
         if self.proportion == SCORCHED:  # the floor below the Scorched Depths is a new one, like its door
@@ -3578,7 +3600,6 @@ class gameManager():
             self.changeLevel(self.level + 1, falling=True)
         else:
             self.goToNewLevel()
-        self.bleed(self.playerPositionFlat)
 
     def openSpot(self, position, avoid=()):
         """position if it's open floor, else the nearest open floor tile to it (None if there's none)."""
@@ -3702,7 +3723,7 @@ class gameManager():
     def overgrowPlayer(self, plantTile):
         """A plant sprouted on your tile (Overgrowth): it hurts you. One you can walk through just grows around
         you. One that blocks the way pushes you onto an empty tile beside you, or, with nowhere to go, traps you
-        inside it until you break it (Ctrl + interact works on your own tile)."""
+        inside it until you break it (Ctrl + interact)."""
         plant = plantTile[2]
         if not plant.planted:  # (a planted plant never hurts anyone)
             self.player.damageTaken += OVERGROWTH_DAMAGE
@@ -3756,25 +3777,27 @@ class gameManager():
         return pygame.key.name(self.settings.hotkeys["interact"]).upper()
 
     def interactHere(self):
-        """Ctrl + interact: use the tile you're standing on. A plant you're in is picked (breaking you free if it
-        trapped you); a chest or pile opens."""
-        tile = self.currentLocation
-        if tile[0] == 8:
-            plant = tile[2]
-            if plant.kind == organizers.DEMISE and not self.player.hasEffect("demise_ward"):
-                self.magicPlayer(DEMISE_DAMAGE)  # its thorns, as when you pick it beside you
-            else:
-                stage = plant.pick()
-                self.currentLocation = [0, tile[1]]
-                if stage is None:
-                    if plant.walkable:  # (pulling free of a plant that trapped you says nothing)
-                        self.addPopup("Not ripe", self.playerPositionFlat)
-                else:
-                    self.collectDrops(loot.rollPick(plant, stage), loot.plantSource(plant, stage), self.playerPositionFlat)
+        """Ctrl + interact: break free of the plant that trapped you (Overgrowth) if one has; otherwise dig at the
+        floor you face (digging.py), opening a hole to the floor below once it gives way."""
+        stuck = self.stuckIn()
+        if stuck is not None:
+            self.breakFree(stuck)
+        elif digging.digFloor(self, self.PlayerLookPosition):
+            self.sound.playHit()
             self.enemyMove = True
-            self.change = True
-        elif tile[0] in (3, 9) and self.roomItems is not None:
-            self.openWindow("items")
+
+    def breakFree(self, plant):
+        """You break the plant you're trapped in (picking it, with whatever it gives if it's ripe). Organizer's
+        Demise only stings you with its thorns unless you wear its ward."""
+        if plant.kind == organizers.DEMISE and not self.player.hasEffect("demise_ward"):
+            self.magicPlayer(DEMISE_DAMAGE)  # its thorns, as when you pick it beside you
+        else:
+            stage = plant.pick()
+            self.currentLocation = [0, self.currentLocation[1]]
+            if stage is not None:
+                self.collectDrops(loot.rollPick(plant, stage), loot.plantSource(plant, stage), self.playerPositionFlat)
+        self.enemyMove = True
+        self.change = True
 
     def stepDemise(self):
         """Organizer's Demise hurts everything standing in it with magic, except Organizers. Its kills are the
@@ -4518,6 +4541,7 @@ class gameManager():
             "camps": self.camps,
             "fallen": self.fallen,
             "memoryFade": self.memoryFade,
+            "floorCracks": self.floorCracks,
             "scorchedDoors": self.scorchedDoors,
             "wallLamps": self.wallLamps,
             "trackStarts": self.trackStarts,
@@ -4549,6 +4573,7 @@ class gameManager():
             self.camps = data.get("camps", {})
             self.fallen = data.get("fallen", {})
             self.memoryFade = data.get("memoryFade", {})
+            self.floorCracks = data.get("floorCracks", {})
             self.scorchedDoors = data.get("scorchedDoors", {})
             self.wallLamps = data.get("wallLamps", {})
             self.trackStarts = data.get("trackStarts", set())
@@ -4665,7 +4690,8 @@ class gameManager():
             return f"{piece.name} ({piece.hp}/{piece.maxHp})" if piece.kind == "spawner" else piece.name
         if tile[0] == 5 and len(tile) > 2:
             return " and ".join(self.describeUnit(enemy) for enemy in occupancy.unitsAt(self, self.PlayerLookPosition))
-        return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)"}.get(tile[0], "Floor")
+        return {0: "Floor", 3: "Chest", 4: "Door Down", 6: "Door Up", SCORCHED_DOOR: "Scorched Door", expansion.HOLE: "Hole (a drop to the floor below)",
+                ropes.ROPED_HOLE: "Roped Hole (a way down and back up)", ropes.HANGING_ROPE: "Rope (up to the floor above)"}.get(tile[0], "Floor")
 
     def describeUnit(self, enemy):
         """An enemy's name for Looking At, with what's worth knowing about it."""
@@ -5098,7 +5124,7 @@ class gameManager():
             wallLamps=metropolis.wallLampsHere(self),
             memoryFade=self.memoryShades(), memoryFalloff=(FORGET_DISTANCE, FORGET_CURVE, DOOR_SHADE_MOST),
             popups=self.popupView(), blood=self.blood, bloodDry = self.bloodDry, console=self.console.view(), worldTurn=self.worldTurn,
-            smoke=self.smoke, zoom=self.settings.mapZoom,
+            smoke=self.smoke, zoom=self.settings.mapZoom, floorCracks=digging.crackStages(self),
             openOrder=[w for w in getattr(self, "openOrder", []) if w in self.openWindows])
 
         if messageKey is not None and messageFinished:

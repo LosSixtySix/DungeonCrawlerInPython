@@ -34,6 +34,7 @@ MATERIALS = {
     "relic_dust": ("Relic Dust", "Refined", (184, 154, 232)),
     "charcoal": ("Charcoal", "Refined", (52, 46, 44)),  # burns in place of coal, CHARCOAL_PER_COAL to one
     "fibrous_cloth": ("Fibrous Cloth", "Refined", (112, 124, 84)),  # stands in for hide, FIBROUS_CLOTH_PER_HIDE to one
+    "rope": ("Rope", "Refined", (150, 130, 90)),  # tied to a hole, a way down and back up (ropes.py)
     "bone": ("Bone", "Drops", (216, 207, 184)),
     "scrap": ("Goblin Scrap", "Drops", (106, 110, 118)),
     "hide": ("Hide", "Drops", (122, 98, 80)),
