@@ -79,6 +79,9 @@ def scaleStat(bonus, quality):
     return max(1, value)
 
 
+ROPE_CLOTH = 3  # Fibrous Cloth in one Rope
+
+
 class Recipe():
     """kind:
     "station"  makes a station (unlocks its tab)        "upgrade"  the Leather Pouch (bigger stacks)
@@ -211,6 +214,9 @@ RECIPES = [
     Recipe("glowrock", "Glowrock", "hand", 1, {"stone": 1, "glowcap": 1}, "potion",
            "A stone rubbed with crushed Glowcap. Set it down and it glows faintly.",
            "Set down: a dim light on its tile and the tiles around it", makeItem=potion("Glowrock", items.GLOW)),
+    Recipe("rope", "Rope", "hand", 1, {"fibrous_cloth": ROPE_CLOTH}, "material",
+           "Fibrous Cloth twisted into a line. Face a hole and interact to tie it: then you can climb down and "
+           "back up again.", "1 Rope", makes="rope"),
 
     # ---- Workbench
     Recipe("stone_pick", "Stone Pick", "workbench", 2, {"handle": 1, "stone": 3}, "item",

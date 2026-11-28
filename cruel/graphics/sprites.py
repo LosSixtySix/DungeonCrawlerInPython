@@ -1023,6 +1023,65 @@ def makeHole(openSides, variant, floor, tileSize):
     return makeSurface(holeRows(openSides, variant), roles_, tileSize)
 
 
+# ---------------------------------------------------------------- ropes and dug floor (from the Rope and Pits sheet)
+# All top down. f, a, b and k in the roped hole are the hole itself, colored from the floor (pitRoles), so it matches
+# the room it's in; the rest are the rope's own colors (ROPE_COLORS).
+
+ROPE_COLORS = {"r": (134, 140, 92), "R": (176, 170, 118), "d": (90, 96, 62), "n": (150, 112, 74), "N": (94, 68, 44),
+               "c": (26, 26, 30), "e": (138, 140, 146)}
+
+ROPED_HOLE = [  # a hole with a rope tied off at a stake on its left lip, running down into the dark (ropes.ROPED_HOLE)
+    "f..faaafff",
+    "....bbbaaf",
+    "faaa.kbaff",
+    "annbk.kkba",
+    "fNrrddkkba",
+    "frrkkkkkba",
+    "fNNbbbkbaf",
+    "faakaakkba",
+    "affbffbaff",
+    "affaffaaff",
+]
+
+HANGING_ROPE = [  # the rope's end on the floor below, in the light from the hole above, like the Door Up (ropes.HANGING_ROPE)
+    "..........",
+    "...mmm.m..",
+    "..mwM..mm.",
+    ".mm.......",
+    ".m...rr...",
+    ".m..dR.dr.",
+    "....rd.rR.",
+    ".mmm..Mm..",
+    "..m.mmm...",
+    "..........",
+]
+
+FLOOR_CRACKS = [  # a floor tile being dug (digging.py): light, medium, heavy; b is a spot giving way (pitRoles)
+    ["..........", "..........", "..........", "....c.....", "....cc....",
+     ".....c....", "......c...", "..........", "..........", ".........."],
+    ["..........", "..c.......", "...c...c..", "....c.cc..", "....cc....",
+     "...ec.c...", "..c...cc..", ".c.....c..", "..........", ".........."],
+    [".c......c.", "..c....c..", "...c.ecc..", "c..cccc...", ".cccbbcce.",
+     "...cbbc..c", "..ecccc.c.", ".cc..e.cc.", "c....c..c.", ".....c...."],
+]
+
+
+def makeRopedHole(floor, tileSize):
+    """The roped hole for a given floor color (drawn over the floor: its '.' pixels are bare floor)."""
+    return makeSurface(ROPED_HOLE, {**pitRoles(floor), "f": floor, **ROPE_COLORS}, tileSize)
+
+
+def makeFloorCrack(stage, floor, tileSize):
+    """Cracks over a floor tile being dug, stage 0 (light) to 2 (heavy), for a given floor color."""
+    return makeSurface(FLOOR_CRACKS[stage], {**pitRoles(floor), **ROPE_COLORS}, tileSize)
+
+
+def hangingRopeRoles(colors):
+    """The Door Up's moonbeam colors (m, M, L, w: its a, b, W, w) with the rope's own."""
+    moonbeam = roles(colors, colors["doorPrev"])
+    return {"m": moonbeam["a"], "M": moonbeam["b"], "L": moonbeam["W"], "w": moonbeam["w"], **ROPE_COLORS}
+
+
 # The Fire Giant: 20x20, top-down, facing up. It covers 2x2 tiles; each tile draws its own quarter.
 FIRE_GIANT = [
     "....................",
@@ -1241,6 +1300,7 @@ def buildSprites(colors, tileSize):
                    for name, (rows, fixed) in GIANT_SPRITES.items()},
         "unsealed": [makeShadowed(unsealedFrame(colors, f), enemyRoles(colors, UNSEALED_COLORS), tileSize) for f in range(SHARD_FRAMES)],
         "doorUp": makeSurface(MOONBEAM, roles(colors, colors["doorPrev"]), tileSize),
+        "hangingRope": makeSurface(HANGING_ROPE, hangingRopeRoles(colors), tileSize),
         "stations": {sid: makeShadowed(rows, enemyRoles(colors, fixed), tileSize) for sid, (rows, fixed) in STATION_SPRITES.items()},
         "plants": {kind: makeShadowed(rows, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind, rows in PLANT_SPRITES.items()},
         "sprouts": {kind: makeShadowed(SPROUT, enemyRoles(colors, plants.PLANTS[kind]["colors"]), tileSize) for kind in PLANT_SPRITES},

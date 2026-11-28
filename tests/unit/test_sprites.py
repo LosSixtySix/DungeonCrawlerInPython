@@ -170,6 +170,18 @@ class SurfaceTests(unittest.TestCase):
             self.assertEqual(sprites.makePit(style, floorColor, 10).get_size(), (10, 10))
         self.assertEqual(sprites.makeHole("ns", 3, floorColor, 10).get_size(), (10, 10))
 
+    def test_rope_pictures_and_floor_cracks_draw_at_tile_size(self):
+        floorColor = self.theme.colors["floorStone"]
+        self.assertEqual(sprites.makeRopedHole(floorColor, 10).get_size(), (10, 10))
+        for stage in range(len(sprites.FLOOR_CRACKS)):
+            self.assertEqual(sprites.makeFloorCrack(stage, floorColor, 10).get_size(), (10, 10))
+        self.assertEqual(sprites.makeSurface(sprites.HANGING_ROPE, sprites.hangingRopeRoles(self.theme.colors), 10).get_size(), (10, 10))
+
+    def test_there_are_three_crack_stages_each_ten_by_ten(self):
+        self.assertEqual(len(sprites.FLOOR_CRACKS), 3)
+        for rows in sprites.FLOOR_CRACKS + [sprites.ROPED_HOLE, sprites.HANGING_ROPE]:
+            self.assertEqual([len(row) for row in rows], [10] * 10)
+
     def test_hole_shapes_are_repeatable_and_open_sides_have_no_lip(self):
         self.assertEqual(sprites.holeRows("e", 5), sprites.holeRows("e", 5))
         allOpen = sprites.holeRows("nesw", 1)
